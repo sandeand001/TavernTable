@@ -324,4 +324,9 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
   return delta;
 }
 
-module.exports = { participantState, participantDelta, reuseParticipantGeometry };
+module.exports = {
+  participantState,
+  participantDelta,
+  reuseParticipantGeometry,
+  participantProjectionSource: projectionSource,
+};

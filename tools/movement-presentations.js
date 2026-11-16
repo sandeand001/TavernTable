@@ -100,6 +100,7 @@ async function visibleMovementPresentations({
   state,
   sinceSceneRevision,
   previousView = null,
+  world: snapshotWorld = null,
 }) {
   if (!scene || !view.observerTokenId || !updates.length) return [];
   const [
@@ -113,7 +114,8 @@ async function visibleMovementPresentations({
       pathToFileURL(path.join(root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js')).href
     ),
   ]);
-  const world = CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+  const world =
+    snapshotWorld ?? CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
   const observer = scene.creatures.find(({ id }) => id === view.observerTokenId);
   const observerMapId = scene.version === 3 ? observer.mapId : 'map-main';
   const origin = world.toCampaignPosition(observerMapId, observer.pose.world);
@@ -139,8 +141,8 @@ async function visibleMovementPresentations({
       ![update.motion.from, ...update.motion.route].every(
         (point) =>
           maps.has(point.mapId) &&
-          point.gridX < world.getMap(point.mapId).grid.cols &&
-          point.gridY < world.getMap(point.mapId).grid.rows &&
+          point.gridX < world.getMapSnapshot(point.mapId).grid.cols &&
+          point.gridY < world.getMapSnapshot(point.mapId).grid.rows &&
           (actor.owned ||
             world.hasLineOfSight(
               origin,
@@ -172,8 +174,8 @@ async function visibleMovementPresentations({
       ![...(entry.from ? [entry.from] : []), entry.placement].every(
         (point) =>
           maps.has(point.mapId) &&
-          point.gridX < world.getMap(point.mapId).grid.cols &&
-          point.gridY < world.getMap(point.mapId).grid.rows &&
+          point.gridX < world.getMapSnapshot(point.mapId).grid.cols &&
+          point.gridY < world.getMapSnapshot(point.mapId).grid.rows &&
           (actor.owned ||
             world.hasLineOfSight(
               origin,

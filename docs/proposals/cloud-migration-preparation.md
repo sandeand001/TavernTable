@@ -5324,3 +5324,60 @@ native world, and canonical input is unchanged. The generated
 (**232.203 seconds**), and **31** real managed HTTP/SSE cases
 (**425.925 seconds**) pass. These local candidate results do not replace the
 still-required hosted receipt distribution or actual four-to-five-hour run.
+
+### Actual managed movement exposes repeated motion-world construction
+
+The sight candidate is privately published as `00022-pdx`, source
+`3d14ae1...`, frontend `57cb5484...`, with unchanged service/IAM settings.
+Its exact image again passes 38 hashes and native/isolation/exit gates.
+Current SDK classes preserve the original nine signed-in fixture principals;
+the real owner uses the normal stable-root/picker path. All ten observations
+start at generation 18 under 200-ms-RTT calibration.
+
+Two valid facing receipts take **5,127.9/2,473.5 ms**, with SDK readiness
+**5,130.2/4,448.6 ms**. The first actual five-foot move has HTTP 200 in
+**3,639.3 ms** and is independently confirmed at canonical scene revision 21,
+but six member presence acknowledgements abort and SDK readiness ends with
+`stream-closed`. The game itself stays live, three other member observations
+reach generation 21, and the native owner remains current. The move is not
+resent or counted as a ready-client success.
+
+Existing private revision request logs independently show server durations
+**4.868191/2.217027/3.025643 seconds**, so the receipt tails are not solely
+browser callback delay. ACKs that reach the server return quickly; the failed
+client requests must not be relabeled successful from those server logs.
+Hosted/original complexity checks retain the same eight records (5,410 bytes),
+42 maps, eight actors, 116 connections and 1,228 volumes, with no added
+placeables, sight/cover bounds or effects. Isolated real-SDK controls with zero
+observers still take **3,626.6 ms** for movement and **2,215.5/2,057.5 ms** for
+facing under the same added RTT. The moving actor is legitimately returned to
+its original cell and preflight facing. All observers are then closed, the
+game is verified paused, transports restored and precision workers stopped.
+
+The private local feedback loop is corrected to use nine actual
+`CloudPlayerSessionConnection` instances and a draining owner observation,
+including real movement, SDK readiness and all-client convergence. Earlier
+raw-stream receipt probes did not cover this complete consumer path.
+That loop exposes **eleven** native world constructions for each move, versus
+two for facing: live motion filtering reconstructs the complete source world
+separately for every participant after their ordinary snapshot projection.
+
+The candidate reuses the already validated, exact-content/catalog/ruleset-bound
+projection source for movement filtering and uses immutable map query snapshots
+for waypoint bounds. Per-recipient actor visibility, route clipping, private
+cost removal and final fresh access/head checks remain unchanged. The local-host
+fallback still builds its own world, with a focused equivalence/hidden-actor
+regression.
+
+In the complete local managed-client loop, movement world constructions fall
+from **eleven to two**. Out/back SDK readiness changes from
+**4,124.382/3,994.473 ms** to **2,500.587/2,437.583 ms**; all-client convergence
+changes from **5,311.211/5,140.279 ms** to **3,062.458/2,953.510 ms**, and
+combined process CPU from **4,297/4,220 ms** to **1,548/1,328 ms**.
+Finite receipts still vary around **1.37-1.63 seconds**, missing the unchanged
+1.5-second local diagnostic margin in some cases; this is not a hosted pass.
+All **31** real managed HTTP/SSE cases pass (**425.218 seconds**), all **six**
+projection cases pass, and **seven** directly related legacy authorization/Undo
+tests pass in two suites (**2.246 seconds**). The generated 51-map projection is
+**591.423/121.056/116.581 ms**. The twenty-sample hosted distribution and complete
+four-to-five-hour rehearsal remain open.

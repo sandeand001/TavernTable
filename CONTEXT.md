@@ -208,6 +208,10 @@
   Sight rays reject only solids wholly outside their vertical segment span
   before the existing exact convex tests; boundary hits and true floor/ceiling
   occlusion remain unchanged.
+  Live motion filtering shares the same exact captured query world and immutable
+  map snapshots instead of rebuilding a private world for every recipient.
+  Current per-view route visibility and final access/head checks still run
+  separately; this reuse never publishes old movement on a rejoin.
   This is measured CPU reuse, not an
   offline authority, historical-animation cache or relaxed admission limit.
 - **Private cloud images (M2 development slice verified)**: preserve canonical

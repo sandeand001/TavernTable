@@ -4821,12 +4821,13 @@ class CloudCampaignStore {
     if (packet === null || packet.sessionId !== command.sessionId) return [];
     const saved = await frame.promise;
     const catalog = await this.resources.catalog(saved.campaign);
-    const library = new CampaignCharacters({ ...saved, catalog });
-    const scene = decodeScene(saved.scene, { library, ruleset: saved.campaign.ruleset });
+    const { participantProjectionSource } = require('./participant-state.js');
+    const { library, scene, world } = participantProjectionSource(saved, catalog, saved.campaign);
     const presentations = await visibleMovementPresentations({
       root: path.resolve(__dirname, '..', '..'),
       scene,
       library,
+      world,
       view: next.state,
       updates: packet.entries.map((entry) => ({
         ...structuredClone(entry),

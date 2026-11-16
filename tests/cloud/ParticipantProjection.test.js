@@ -14,7 +14,10 @@ const { HostResources } = require('../../tools/host-resources.js');
 const {
   participantState,
   reuseParticipantGeometry,
+  participantProjectionSource,
 } = require('../../tools/cloud/participant-state.js');
+const { visibleMovementPresentations } = require('../../tools/movement-presentations.js');
+const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlacements.js');
 const { sceneState } = require('../helpers/sceneState.js');
 const {
   sealPlayerAssets,
@@ -197,6 +200,44 @@ test('successive actor checkpoints reuse immutable artwork without hiding curren
   assert.equal(renamed.assets.location.name, 'Updated region');
   assert.notEqual(renamed.state.publicScene.assetKey, moved.state.publicScene.assetKey);
   assert.notEqual(renamed.state.publicScene.assets, null);
+});
+
+test('shared motion geometry preserves per-observer visibility without changing the legacy projection', async (t) => {
+  const f = await fixture(t);
+  const first = await f.project([f.first], 'token-1');
+  const second = await f.project([f.second], 'token-2');
+  const { scene, library, world } = participantProjectionSource(
+    f.state,
+    f.catalog,
+    f.state.campaign
+  );
+  const placement = sceneActorPlacement(scene, scene.creatures[0]);
+  const from = structuredClone(placement);
+  from.pose.world.x -= 0.1;
+  const update = {
+    commandId: 'scoped_motion_reuse',
+    tokenId: 'token-1',
+    kind: 'move',
+    sceneRevision: f.state.sceneRevision,
+    charactersRevision: f.state.revision,
+    motion: { kind: 'walk', completed: true, from, route: [placement] },
+  };
+  const input = {
+    root: path.resolve(__dirname, '..', '..'),
+    scene,
+    library,
+    state: f.state,
+    updates: [update],
+    sinceSceneRevision: 0,
+  };
+  const legacy = await visibleMovementPresentations({ ...input, view: first.state });
+  const shared = await visibleMovementPresentations({ ...input, world, view: first.state });
+  assert.deepEqual(shared, legacy);
+  assert.deepEqual(
+    shared.map(({ commandId }) => commandId),
+    [update.commandId]
+  );
+  assert.deepEqual(await visibleMovementPresentations({ ...input, world, view: second.state }), []);
 });
 
 test('certified public terrain is deeply immutable without trusting merely frozen or previously valid inputs', async (t) => {
