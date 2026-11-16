@@ -860,7 +860,12 @@ class CloudCampaignStore {
         await transaction.get(this._presenceConnections(id).doc(connectionId)),
         id
       );
-      if (connection === null || connection.uid !== uid) throw unavailableCampaign();
+      if (connection === null || connection.uid !== uid)
+        throw new CloudError(
+          409,
+          'client-presence-expired',
+          'This live connection ended; reconnect using current campaign access'
+        );
       if (stableStringify(connection.access) !== stableStringify(participant.access))
         throw new CloudError(
           409,
@@ -947,7 +952,12 @@ class CloudCampaignStore {
     return this._transaction(async (transaction) => {
       const admitted = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
       const connection = this._presenceConnection(await transaction.get(reference), id);
-      if (connection === null || connection.uid !== uid) throw unavailableCampaign();
+      if (connection === null || connection.uid !== uid)
+        throw new CloudError(
+          409,
+          'client-presence-expired',
+          'This live connection ended; reconnect using current campaign access'
+        );
       if (
         connection.sessionId !== sessionId ||
         stableStringify(connection.access) !== stableStringify(admitted.participant.access)
