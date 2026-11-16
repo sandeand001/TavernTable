@@ -4,6 +4,7 @@ const {
   campaignRecordCharacterId,
 } = require('../../src/campaigns/CampaignCharacters.js');
 const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
+const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { playerGameplayState } = require('../../src/campaigns/ServerGameplay.js');
 const { validatePlayerState } = require('../../src/campaigns/PlayerPublicProtocol.js');
 const { CHARACTER_IMAGE_FIELDS } = require('../../src/config/characters/CharacterImages.js');
@@ -14,6 +15,38 @@ const {
   validateCloudParticipantSnapshot,
   applyCloudParticipantDelta,
 } = require('../../src/campaigns/CloudParticipantProtocol.js');
+
+const sources = new WeakMap();
+
+function projectionSource(state, catalog, campaign) {
+  const fingerprint = stableStringify(state);
+  const cached = sources.get(state);
+  if (
+    cached?.fingerprint === fingerprint &&
+    cached.catalog === catalog &&
+    cached.ruleset === campaign.ruleset
+  )
+    return cached;
+  const library = new CampaignCharacters({ ...state, catalog });
+  const scene = state.scene
+    ? decodeScene(state.scene, { library, ruleset: campaign.ruleset })
+    : null;
+  const world = scene
+    ? CampaignWorld.fromScene(scene, { ruleset: campaign.ruleset, library })
+    : null;
+  const source = {
+    fingerprint,
+    catalog,
+    ruleset: campaign.ruleset,
+    library,
+    scene,
+    world,
+    published: new PublishedMaps(path.resolve(__dirname, '..', '..'), world),
+    views: new Map(),
+  };
+  sources.set(state, source);
+  return source;
+}
 
 async function participantState({
   state,
@@ -26,7 +59,7 @@ async function participantState({
   placementGrants = [],
   visitedRoomIds = [],
 }) {
-  const library = new CampaignCharacters({ ...state, catalog });
+  const { library, scene, world, published, views } = projectionSource(state, catalog, campaign);
   const known = new Set(library.list().map((character) => character.id));
   if (characterIds.some((id) => !known.has(id)))
     throw new CloudError(
@@ -34,9 +67,6 @@ async function participantState({
       'invalid-campaign-membership',
       'Current assigned character data could not be verified'
     );
-  const scene = state.scene
-    ? decodeScene(state.scene, { library, ruleset: campaign.ruleset })
-    : null;
   const grant =
     options.placementGrantId === undefined
       ? null
@@ -68,8 +98,7 @@ async function participantState({
       'participant-view-forbidden',
       'Choose a currently assigned real creature before viewing the world'
     );
-  const published = new PublishedMaps(path.resolve(__dirname, '..', '..'));
-  const view = await published.view({
+  const viewOptions = {
     scene,
     library,
     ownedIds: characterIds,
@@ -78,7 +107,18 @@ async function participantState({
     presentationVersion: 1,
     placementGrant: arrival ? grant : null,
     noObserver: observerTokenId === null,
-  });
+  };
+  const viewKey = stableStringify([characterIds, observerTokenId, mapId, arrival ? grant : null]);
+  let pendingView = views.get(viewKey);
+  if (!pendingView) {
+    pendingView = published.view(viewOptions);
+    if (views.size >= 32) views.delete(views.keys().next().value);
+    views.set(viewKey, pendingView);
+    void pendingView.catch(() => {
+      if (views.get(viewKey) === pendingView) views.delete(viewKey);
+    });
+  }
+  const view = await pendingView;
   const render = arrival
     ? {
         version: 1,
@@ -122,7 +162,14 @@ async function participantState({
     return { ...actor, portraitImage: null };
   });
   const visible = new Set(actors.filter((actor) => actor.owned).map((actor) => actor.id));
-  const gameplay = playerGameplayState(scene, library, characterIds, undo);
+  const gameplay = playerGameplayState(scene, library, characterIds, undo, {
+    visibleIds: visible,
+    world: world ?? undefined,
+    observerSight: {
+      tokenId: view.observerTokenId,
+      tokenIds: new Set(actors.map((actor) => actor.id)),
+    },
+  });
   gameplay.ownedTokens = gameplay.ownedTokens.filter((actor) => visible.has(actor.tokenId));
   if (gameplay.turn && !visible.has(gameplay.turn.tokenId)) gameplay.turn.tokenId = null;
   const result = {

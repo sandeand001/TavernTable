@@ -44,7 +44,7 @@ export function connectionGroundEntry(world, connection, mapId, localWorld, opti
   if (!end) throw new Error('The connection is not attached to this map');
   const position = connectionEndpointFeet(world, end);
   if (connection.kind === 'window') {
-    const owner = world.getMap(connection.feature.mapId);
+    const owner = world.getMapSnapshot(connection.feature.mapId);
     if (wideRectangularWindow(owner, connection)) {
       const bounds = connectionFeatureBounds(world, connection, options)[0],
         current = world.toCampaignPosition(mapId, localWorld);
@@ -109,7 +109,7 @@ export function connectionApertureBounds(owner, connection, bounds) {
 }
 
 export function connectionEndpointFeet(world, end) {
-  const unit = world.getMap(end.mapId).grid.tileWorldSize / 5;
+  const unit = world.getMapSnapshot(end.mapId).grid.tileWorldSize / 5;
   return world.toCampaignPosition(end.mapId, {
     x: end.positionFeet.x * unit,
     y: end.positionFeet.y * unit,
@@ -119,7 +119,7 @@ export function connectionEndpointFeet(world, end) {
 
 export function connectionFeatureBounds(world, connection, options = {}) {
   const { mapId, volumeIds, terrainCells } = connection.feature;
-  const map = world.getMap(mapId);
+  const map = world.getMapSnapshot(mapId);
   const geometry =
     mapId === options.mapId && options.geometry ? options.geometry : world.getMapGeometry(mapId);
   const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));

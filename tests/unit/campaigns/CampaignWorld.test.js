@@ -69,6 +69,26 @@ test('moving an unchanged map invalidates geometry identities used by transforme
   expect(world.getMapGeometry('map-main')).not.toBe(geometry);
 });
 
+test('shared query maps cannot mutate canonical terrain and refresh after a replacement checkpoint', () => {
+  const world = CampaignWorld.fromScene(sceneState(), context());
+  const previous = world.getMapSnapshot('map-main');
+  expect(() => {
+    previous.terrain.heights[0][0] = 9;
+  }).toThrow(TypeError);
+  const editable = world.getMap('map-main');
+  editable.terrain.heights[0][0] = 7;
+  expect(world.getMap('map-main').terrain.heights[0][0]).toBe(0);
+  const changed = world.save();
+  changed.maps[0].terrain.heights[0][0] = 1;
+  changed.maps[0].originFeet.y = 5;
+  world.acceptCheckpoint(changed);
+  expect(previous.terrain.heights[0][0]).toBe(0);
+  expect(world.getMapSnapshot('map-main')).toMatchObject({
+    originFeet: { y: 5 },
+    terrain: { heights: changed.maps[0].terrain.heights },
+  });
+});
+
 function floorMap(id, originFeet, quarterTurns = 0) {
   const scene = sceneState();
   return {

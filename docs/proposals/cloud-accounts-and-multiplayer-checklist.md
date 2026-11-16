@@ -1466,16 +1466,22 @@ Revalidation in the intended environment remains part of M1 and M4.
     never grants another seat's access.
 
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
-  - **Status:** in progress. Complete native cloud gameplay paths are being
-    finished and regression-tested before enabling either gameplay capability.
-    Actual player controls now have a **434-test / 25-suite** native regression
-    gate. The complete **29-case** cloud HTTP/SSE gate, including ten managed SDK
-    participants, is supplemented by **three** current flight/denial HTTP/SSE
-    cases after native entrance-approach parity. Matching exact runtime/frontend
-    packages pass their local gates. Hosted gameplay activation and complete-world
-    acceptance remain gated, not a completed full-session rehearsal.
-    The selected private campaign and returning seats are ready; a short
-    technical pilot is not substituted for the required four-to-five-hour run.
+  - **Status:** in progress. The owner approved gameplay activation and matching
+    publication only to the existing private pilot; both gameplay capabilities
+    are deliberately enabled there. Normal returning-owner startup now works.
+    The first member admission exposed full-world projection latency and
+    temporarily busy processing slots; the private game is safely paused and
+    **no full-session rehearsal has started**. Local profiling reproduced the
+    selected 42-map/eight-actor projection at roughly seven seconds. Scoped
+    native reuse preserves the committed public output exactly and reduces
+    that local cold/warm read to **698/28 ms**; nine representative scoped
+    views take **843 ms**, not a hosted latency claim. A generated
+    **51-map / 134-connection / eight-actor** regression fails before the fix
+    and passes its two-second CPU gate. Current coupled gates pass **227 native
+    tests / 16 suites**, **31 real cloud HTTP/SSE cases**, and three focused
+    projection tests. Exact packaging and private hosted admission recheck
+    remain required. A short technical pilot is not substituted for the required
+    four-to-five-hour run, production approval or selected-source cutover.
   - **Depends:** `M5-05`, `M4-12`.
   - **Success:** exercise a representative four-to-five-hour session: Free Play,
     combat, doors/rooms, assets, sheets, animation, reconnects, backup work and

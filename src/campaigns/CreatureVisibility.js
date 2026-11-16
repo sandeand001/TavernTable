@@ -59,16 +59,18 @@ export function visiblePlayerMapIds(world, observer, options = {}) {
   const visible = new Set(
     world
       .listLocationMaps(observer.mapId)
-      .filter(({ id }) => world.getMap(id).base !== 'floor')
+      .filter(({ id }) => world.getMapSnapshot(id).base !== 'floor')
       .map(({ id }) => id)
   );
   visible.add(observer.mapId);
   const connections = world.getConnections();
+  const checkedConnections = new Set();
   let changed = true;
   while (changed) {
     changed = false;
     for (const connection of connections) {
       if (
+        checkedConnections.has(connection.id) ||
         connection.enabled === false ||
         (connection.kind === 'door' && connection.open !== true) ||
         !connection.ends.some((end) => visible.has(end.mapId)) ||
@@ -76,9 +78,10 @@ export function visiblePlayerMapIds(world, observer, options = {}) {
         !world.sharesLocation(observer.mapId, connection.feature.mapId)
       )
         continue;
+      checkedConnections.add(connection.id);
       let seen;
       if (['door', 'window', 'opening'].includes(connection.kind)) {
-        const owner = world.getMap(connection.feature.mapId);
+        const owner = world.getMapSnapshot(connection.feature.mapId);
         seen = connectionFeatureBounds(world, connection).some((bounds) => {
           const axis = connectionOpeningAxis(owner, connection, bounds);
           const wide = axis === 'x' ? 'z' : 'x';
@@ -130,7 +133,7 @@ export function physicalSightObstacles(world, mapId = null) {
   const origin = mapId ?? world.save().view.mapId;
   const obstacles = world.getObstacles({ mapId: origin });
   for (const { id } of world.listLocationMaps(origin)) {
-    const map = world.getMap(id);
+    const map = world.getMapSnapshot(id);
     if (map.terrain.sightBounds === undefined && map.terrain.placeables.some(isSightPlaceable))
       throw Object.assign(
         new Error(

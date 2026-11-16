@@ -5,11 +5,12 @@ import { collectCollisionObstacles } from '../systems/dice/DicePhysics.js';
 import { gameplayError } from './ServerGameplay.js';
 
 export default class ServerTargeting {
-  constructor({ runtime, scene, library, actor, ownedIds }) {
+  constructor({ runtime, scene, library, actor, ownedIds, visibleIds }) {
     this.runtime = runtime;
     this.scene = scene;
     this.actor = actor;
     this.ownedIds = new Set(ownedIds);
+    this.visibleIds = visibleIds;
     const map = runtime.world.getMap(actor.mapId);
     this.map = map;
     this.gm = {
@@ -24,6 +25,7 @@ export default class ServerTargeting {
 
   beginQuery() {
     this.cachedBoard = null;
+    this.cachedVisible = null;
   }
 
   board() {
@@ -53,7 +55,9 @@ export default class ServerTargeting {
   }
 
   visible() {
-    return playerCreatureVisibility({
+    if (this.visibleIds)
+      return this.scene.creatures.filter((entry) => this.visibleIds.has(entry.id));
+    return (this.cachedVisible ||= playerCreatureVisibility({
       world: this.runtime.world,
       creatures: this.scene.creatures.map((entry) => ({
         ...entry,
@@ -62,7 +66,7 @@ export default class ServerTargeting {
       ownedIds: [...this.ownedIds],
       publishedIds: this.runtime.world.listMaps().map((entry) => entry.id),
       observerTokenId: this.actor.id,
-    }).visible;
+    }).visible);
   }
 
   validate(token, action, selection) {

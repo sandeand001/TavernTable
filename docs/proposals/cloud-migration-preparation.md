@@ -5019,3 +5019,73 @@ formatting, ESLint and layering pass. This is a client transport correction;
 the existing private API image/permissions/settings need no change.
 Fresh client publication and retry of the same normally authenticated owner
 startup remain required before continuing the rehearsal.
+
+### Full-world private admission diagnosis and scoped native reuse
+
+The matching client-only publication lets the actual returning owner open the
+selected board normally: eight original records/actors, 42 maps, ready and clean
+autosave. Under the owner's private-only activation approval, nine disposable
+managed member identities retain their invited seats and original/shared
+assignments. The first three member startups do not become ready. Temporary
+`503 cloud-requests-busy` follows; health, identity denial, CORS preflight and
+unchanged service/IAM checks do not establish a persistent CORS/configuration
+failure. The pending original end action is recovered by same-ID retry, all
+member observations are closed, and the actual server is paused. There is no
+cohort readiness timestamp: the required four-to-five-hour rehearsal has not
+started.
+
+A single unshaped participant read on this actual large copy takes
+**25,237.7 ms**. Read-only local replay of its independent approved source
+reproduces **7,110/6,842 ms** cold/repeated public projection without network or
+authority writes. CPU profiling identifies repeated native targeting sight,
+repeated complete map copies and duplicate full-world/view materialization,
+not resource catalog loading. A supposed unresolved-ready leak is not asserted:
+the actual participant subscription already rejects pending readiness on close.
+
+The correction reuses only native work tied to the exact snapshot:
+
+- Native world query maps are deeply immutable per-map snapshots; ordinary
+  editable copies and canonical replacement behavior remain unchanged. The
+  actual public-player location adapter implements the same query seam.
+- One physical sight pass checks each reachable connection once, and native
+  targeting shares one result within its existing resettable query lifetime.
+- Weak source identity plus complete captured-content, catalog and ruleset
+  checks protect shared source geometry. At most 32 source-local render views
+  are keyed by exact assignments, observer, displayed map and arrival grant;
+  failed preparation is evicted and still rejects its callers.
+- Already filtered owned gameplay is not computed for hidden actors. The
+  current server-derived observer sight is reused only for that same actor;
+  other controlled actors and actual commands retain native sight queries.
+  Membership, live epoch and current head are still verified before and after
+  materialization. Sheets, image slots, Undo and current gameplay are never
+  taken from another participant's response or cached authority.
+
+The actual source's complete public result matches committed code exactly;
+all eight source observers preserve the original physical sight results and
+canonical input is unchanged. Latest local readings are **697.802/28.234 ms**
+cold/warm, with **843.057 ms** for nine representative member views. These
+CPU-only figures exclude managed identity, Firestore, Storage, hosting, network
+and imposed RTT and do not replace hosted acceptance.
+
+A synthetic, publicly reproducible generated castle has **51 maps, 134
+connections, eight actors and four spellcasters**. The same test fails against
+the committed pre-fix projector at **7,275.516/6,930.700/6,852.472 ms**, then
+passes the unchanged two-second per-projection requirement at
+**1,009.122/400.600/400.320 ms**. The focused cache tests also verify assignment,
+private-sheet/image and hidden-budget isolation, zero unchanged warm artwork,
+no canonical mutation, and same-object record/geometry invalidation.
+
+Final coupled native gate: **227 tests / 16 suites**, **185.378 seconds**,
+open-handle detection enabled. This includes actual traversal popup
+crawling/approach/cancellation/fractional flight after completing the public
+map-query adapter. The complete managed HTTP/SSE world gate passes **31/31**,
+**411.119 seconds**, including ten SDK identities, revoked access, warm cache,
+native movement/doors/Undo/flight and no historical route/action replay.
+The three focused projection cases pass in **2.587 seconds**. Affected ESLint
+and layering pass. These are focused current gates, not a new whole-repository
+stable result.
+
+The existing private runtime/frontend must still be packaged, checked,
+published and exercised with the retained real owner before admission can be
+declared resolved. No work-slot, concurrency, timeout, resource, IAM, production,
+source-cutover or deferred routine-save presentation change is part of this fix.

@@ -182,6 +182,17 @@
   are never migrated as authority. Private copies and fixture identities are
   tracked separately; full gameplay/session rehearsal and production/cutover
   approvals remain gated.
+- **Participant projection source**: private server-only native geometry belongs
+  to one exact canonical snapshot, not an account's cached authority. Weak source
+  identity, complete captured-content and catalog/ruleset checks prevent stale
+  reuse; bounded render views include their full assignment/observer/map/arrival
+  inputs. Every participant still passes fresh access/head checks, and sheets,
+  image slots, transient Undo and public gameplay remain separately projected.
+  Reuse the current observer's server-derived sight only for that same actor;
+  other controlled actors and actual commands retain their own physical queries.
+  Native query maps are immutable snapshots; editable map copies and replacement
+  checkpoints keep their existing behavior. This is measured CPU reuse, not an
+  offline authority, historical-animation cache or relaxed admission limit.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.
   Current JPEG/PNG/WebP files use bounded HTTP uploads and exact-byte delivery.

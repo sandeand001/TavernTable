@@ -4,8 +4,9 @@ const { createHash } = require('node:crypto');
 const three = require('three');
 
 class PublishedMaps {
-  constructor(root) {
+  constructor(root, snapshotWorld = null) {
     this.root = root;
+    this.snapshotWorld = snapshotWorld;
     this.cache = new Map();
   }
 
@@ -71,7 +72,8 @@ class PublishedMaps {
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href),
     ]);
-    const world = CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+    const world =
+      this.snapshotWorld ?? CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
     if (placementGrant) {
       if (presentationVersion !== 1 || observerTokenId !== null)
         throw Object.assign(

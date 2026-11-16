@@ -8,7 +8,7 @@ const dot = (a, b) => AXES.reduce((total, axis) => total + a[axis] * b[axis], 0)
 
 export function doorLeafCells(world, connection, options = {}) {
   if (connection.kind !== 'door') throw new Error('Choose a door to change its state');
-  const map = world.getMap(connection.feature.mapId);
+  const map = world.getMapSnapshot(connection.feature.mapId);
   const unit = map.grid.tileWorldSize / 5;
   const ends = connection.ends.map((end) =>
     world.toMapPosition(map.id, connectionEndpointFeet(world, end))
@@ -82,7 +82,7 @@ export function nearbyDoors(world, observer, options = {}) {
       !world.sharesLocation(observer.mapId, connection.feature.mapId)
     )
       return false;
-    const map = world.getMap(connection.feature.mapId);
+    const map = world.getMapSnapshot(connection.feature.mapId);
     const unit = map.grid.tileWorldSize / 5;
     return doorLeafCells(world, connection, { ...options, open: false }).some((cell) => {
       const local = (point) => Object.fromEntries(AXES.map((axis) => [axis, point[axis] * unit]));

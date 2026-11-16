@@ -24,6 +24,11 @@ import {
 } from './PhysicalMapQueries.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+const freezeSnapshot = (value) => {
+  for (const nested of Object.values(value))
+    if (nested !== null && typeof nested === 'object') freezeSnapshot(nested);
+  return Object.freeze(value);
+};
 const finitePoint = (value) =>
   value !== null &&
   typeof value === 'object' &&
@@ -38,6 +43,7 @@ export default class CampaignWorld {
     validateScene(scene, context);
     this._context = context;
     this._geometries = new Map();
+    this._mapSnapshots = new WeakMap();
     this._obstacleCache = new Map();
     this._mapRevision = 0;
     if (scene.version === 3) {
@@ -112,6 +118,12 @@ export default class CampaignWorld {
 
   getMap(id) {
     return copy(this._map(id));
+  }
+
+  getMapSnapshot(id) {
+    const map = this._map(id);
+    if (!this._mapSnapshots.has(map)) this._mapSnapshots.set(map, freezeSnapshot(copy(map)));
+    return this._mapSnapshots.get(map);
   }
 
   getMapGeometry(id) {

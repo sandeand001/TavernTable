@@ -33,6 +33,10 @@ export default class PublicPlayerLocation {
     return map;
   }
 
+  getMapSnapshot(id) {
+    return this.getMap(id);
+  }
+
   listMaps() {
     return [...this.maps.values()].map(({ id, name }) => ({ id, name }));
   }

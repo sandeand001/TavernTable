@@ -50,8 +50,12 @@ export function gameplayError(message, code, status = 422) {
   return Object.assign(new Error(message), { code, status });
 }
 
-export function gameplayRuntime(scene, library, undo = new Map()) {
-  const world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library });
+export function gameplayRuntime(
+  scene,
+  library,
+  undo = new Map(),
+  world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
+) {
   const actors = scene.creatures.map((saved) => {
     const actor = {
       id: saved.id,
@@ -103,7 +107,13 @@ function playerMovementBudget(combat, actor, travelMode) {
       };
 }
 
-export function playerGameplayState(scene, library, ownedIds, undo = new Map()) {
+export function playerGameplayState(
+  scene,
+  library,
+  ownedIds,
+  undo = new Map(),
+  { visibleIds, world, observerSight } = {}
+) {
   if (!scene)
     return {
       version: 1,
@@ -111,7 +121,7 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
       ownedTokens: [],
       turn: null,
     };
-  const runtime = gameplayRuntime(scene, library, undo);
+  const runtime = gameplayRuntime(scene, library, undo, world);
   const owned = new Set(ownedIds);
   return {
     version: 1,
@@ -126,7 +136,11 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
         }
       : null,
     ownedTokens: runtime.actors
-      .filter((actor) => owned.has(actor.characterSheetId))
+      .filter(
+        (actor) =>
+          owned.has(actor.characterSheetId) &&
+          (visibleIds === undefined || visibleIds.has(actor.id))
+      )
       .map((actor) => {
         runtime.combat.targeting = new ServerTargeting({
           runtime,
@@ -134,6 +148,7 @@ export function playerGameplayState(scene, library, ownedIds, undo = new Map()) 
           library,
           actor,
           ownedIds,
+          visibleIds: observerSight?.tokenId === actor.id ? observerSight.tokenIds : undefined,
         });
         const status = runtime.combat.status(actor);
         const movement = playerMovementBudget(runtime.combat, actor);
