@@ -640,6 +640,16 @@ export default class CloudCampaignClientStore {
     let presentations = [];
     if (['scene', 'characters'].includes(operation)) {
       const capture = operation === 'scene' ? input : input.scene;
+      if (capture && Object.hasOwn(capture, 'trackRoomVisits')) {
+        if (capture.trackRoomVisits !== true)
+          throw failure(
+            400,
+            'invalid-campaign-change',
+            'The native room-visit hint must not override cloud room authority.'
+          );
+        // Cloud visits come from canonical occupancy, not the local-host hint.
+        delete capture.trackRoomVisits;
+      }
       if (capture && Object.hasOwn(capture, 'presentations')) {
         if (
           !ownerWorld ||

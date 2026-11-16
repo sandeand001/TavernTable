@@ -836,6 +836,9 @@
   same physical-occupancy rule. Discovery survives backend replacement and
   leaving the room, but never grants current terrain, actor, image or door sight;
   those remain bound to the active real observer.
+  The cloud transport consumes the native local-host `trackRoomVisits:true`
+  hint instead of forwarding it into canonical changes. It rejects false or
+  malformed overrides; server-derived visit tracking cannot be disabled by a client.
 - **Shared movement presentation**: receiving DM/player models replay committed
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;

@@ -4986,3 +4986,36 @@ is rejected. The complete **six-case** native package gate passes,
 Fresh repaired Hosting publication and the same returning-browser URL must
 pass before starting gameplay. No production, source cutover, account changes
 or original-host changes are performed.
+
+The repaired Hosting package, still the same `8fb7dbee` application bytes,
+is published as version `83d94432953afc8b`. Actual retired entry returns
+302/no-store to the current 200 entry; unknown entry hashes, retired asset paths
+and private configuration stay 404. Reloading the actual failed `f24257b` URL
+and then navigating the same browser through the stable root both reach the
+current app without cache clearing. The real owner remains signed in.
+
+### Native owner startup request adaptation
+
+Opening the selected private cloud copy through its actual enabled picker
+then exposes a separate `400 invalid-campaign-request` on the initial board save.
+The save is definitively rejected before publication, not acknowledged; the
+selected live session stays paused and the full-session rehearsal has not begun.
+
+The native scene facade adds `trackRoomVisits:true` for the local host.
+Activating the cloud room capability exposed that untranslated hint in a strict
+canonical cloud request. The client adapter now consumes exactly that known
+true hint for both scene and nested atomic character/scene saves, just as it
+already separates native presentations. It does not broaden backend fields,
+turn room discovery off, accept caller-selected visit data or mutate the
+caller's captured object. False/null/string overrides fail before HTTP.
+
+The actual native `CampaignCharacters.saveScene` and bound character-edit path
+reproduce the rejection and now pass through real emulator HTTP while paused.
+**Three real HTTP/SSE cases**, **36.040 seconds**, also retain server-derived
+room discovery/privacy and scoped native owner routes. The coupled client,
+picker, player-session and actual native shared-model gate passes **85 tests /
+four suites**, **33.107 seconds**, with open-handle detection; affected
+formatting, ESLint and layering pass. This is a client transport correction;
+the existing private API image/permissions/settings need no change.
+Fresh client publication and retry of the same normally authenticated owner
+startup remain required before continuing the rehearsal.

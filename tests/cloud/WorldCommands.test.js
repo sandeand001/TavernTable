@@ -2884,6 +2884,50 @@ test(
 );
 
 test(
+  'native paused owner scene and character saves translate local visit hints without sending client room authority',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    await f.owner.client.controlLiveSession(f.campaign.id, 'end', f.live);
+    const original = await f.owner.client.readCharacters(f.campaign.id);
+    const library = new CampaignCharacters({
+      ...original,
+      catalog: f.catalog,
+      store: f.owner.client,
+    });
+    const scene = JSON.parse(original.scene);
+    scene.maps[0].name = 'Native paused preparation';
+    const captured = {
+      scene,
+      value: encodeScene(scene, { ruleset: '2014', library }),
+    };
+    await library.saveScene(async () => captured);
+    const prepared = await f.owner.client.readCharacters(f.campaign.id);
+    assert.equal(prepared.sceneRevision, original.sceneRevision + 1);
+    assert.equal(prepared.revision, original.revision);
+    assert.equal(f.owner.client.pending, null);
+    scene.maps[0].name = 'Native atomic paused preparation';
+    library.bindScene({
+      capture: async () => ({
+        scene,
+        value: encodeScene(scene, { ruleset: '2014', library }),
+      }),
+    });
+    await library.edit(f.hero, { notes: 'An authorized paused native sheet edit' });
+    const atomic = await f.owner.client.readCharacters(f.campaign.id);
+    assert.equal(atomic.sceneRevision, prepared.sceneRevision + 1);
+    assert.equal(atomic.revision, prepared.revision + 1);
+    assert.equal(JSON.parse(atomic.scene).maps[0].name, scene.maps[0].name);
+    assert.equal(
+      new CampaignCharacters({ ...atomic, catalog: f.catalog }).get(f.hero).notes,
+      'An authorized paused native sheet edit'
+    );
+    assert.equal((await f.owner.client.getLiveSession(f.campaign.id)).state, 'paused');
+    assert.equal(f.owner.client.pending, null);
+  }
+);
+
+test(
   'native control refusals remain definitive through real cloud HTTP and never trap the player in uncertain-command retry',
   { timeout: 60000 },
   async (t) => {

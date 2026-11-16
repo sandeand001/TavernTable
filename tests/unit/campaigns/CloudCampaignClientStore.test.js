@@ -236,6 +236,7 @@ test('a live owner scene captures its epoch and native route separately from can
     revision: 0,
     charactersRevision: 0,
     scene: 'canonical-owner-scene',
+    trackRoomVisits: true,
     presentations,
   };
   setup.fetch.mockImplementation(async () => ({
@@ -258,6 +259,7 @@ test('a live owner scene captures its epoch and native route separately from can
       charactersRevision: 0,
       scene: 'canonical-owner-scene',
     });
+    expect(captured.trackRoomVisits).toBe(true);
     expect(setup.store.isLocalChange({ origin: { uid: 'uid-a', commandId } })).toBe(true);
     expect(setup.store.isLocalChange({ origin: { uid: 'another-account', commandId } })).toBe(
       false
@@ -269,6 +271,23 @@ test('a live owner scene captures its epoch and native route separately from can
     release();
   }
   expect(setup.store.wantsSharedPresentations(campaignId)).toBe(false);
+});
+
+test('a native visit hint cannot disable or replace cloud-derived room tracking', async () => {
+  const setup = fixture();
+  for (const trackRoomVisits of [false, null, 'true']) {
+    await expect(
+      setup.store.commitScene(campaignId, {
+        ruleset: '2014',
+        revision: 0,
+        charactersRevision: 0,
+        scene: 'canonical-owner-scene',
+        trackRoomVisits,
+      })
+    ).rejects.toMatchObject({ status: 400, code: 'invalid-campaign-change' });
+    expect(setup.store.pending).toBeNull();
+  }
+  expect(setup.fetch).not.toHaveBeenCalled();
 });
 
 test('a live client acknowledges only its captured channel and explicitly closes it without leaving idle traffic or timers', async () => {
