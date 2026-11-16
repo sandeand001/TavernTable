@@ -267,6 +267,7 @@ async function verifyCloudFrontend(output) {
   const manifest = JSON.parse(
     await fs.readFile(path.join(publicRoot, 'frontend-manifest.json'), 'utf8')
   );
+  const retired = manifest.retiredReleases === undefined ? [] : manifest.retiredReleases;
   if (
     manifest.version !== 1 ||
     !validDigest(manifest.release) ||
@@ -279,6 +280,9 @@ async function verifyCloudFrontend(output) {
     manifest.releases[0] !== manifest.release ||
     manifest.releases.some((value) => !validDigest(value)) ||
     new Set(manifest.releases).size !== manifest.releases.length ||
+    !Array.isArray(retired) ||
+    retired.some((value) => !validDigest(value) || manifest.releases.includes(value)) ||
+    new Set(retired).size !== retired.length ||
     !Array.isArray(manifest.files) ||
     !manifest.files.length
   )
@@ -329,22 +333,24 @@ async function verifyCloudFrontend(output) {
   )
     throw invalid('The public output contains an undeclared file');
   const hosting = JSON.parse(await fs.readFile(path.join(root, 'firebase.json'), 'utf8'));
-  const expected = hostingConfiguration(manifest.release);
+  const expected = hostingConfiguration(manifest.release, retired);
   if (JSON.stringify(hosting) !== JSON.stringify(expected))
     throw invalid('The Hosting configuration does not match the reviewed static-only package');
   return manifest;
 }
 
-function hostingConfiguration(release) {
+function hostingConfiguration(release, retired = []) {
   return {
     hosting: {
       public: 'public',
       ignore: [],
-      redirects: ['/', '/index.html'].map((source) => ({
-        source,
-        destination: `/releases/${release}/index.html`,
-        type: 302,
-      })),
+      redirects: ['/', '/index.html', ...retired.map((id) => `/releases/${id}/index.html`)].map(
+        (source) => ({
+          source,
+          destination: `/releases/${release}/index.html`,
+          type: 302,
+        })
+      ),
       headers: [
         {
           source: '**',
@@ -427,6 +433,10 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
   const old = previous === null ? null : await verifyCloudFrontend(previous);
   if (old && old.runtimeDigest !== runtimeDigest)
     throw invalid('A retained release must use the same explicit account/API runtime');
+  const releases = old && old.release !== release ? [release, old.release] : [release];
+  const retiredReleases = [...new Set([...(old?.retiredReleases || []), ...(old?.releases || [])])]
+    .filter((id) => !releases.includes(id))
+    .sort();
   await fs.mkdir(path.dirname(output), { recursive: true });
   let staging = await fs.mkdtemp(path.join(path.dirname(output), '.frontend-package-'));
   try {
@@ -460,7 +470,8 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
     const manifest = {
       version: 1,
       release,
-      releases: old && old.release !== release ? [release, old.release] : [release],
+      releases,
+      retiredReleases,
       runtimeDigest,
       compatibility: COMPATIBILITY,
       externalModules: application.externals,
@@ -473,7 +484,7 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
     );
     await fs.writeFile(
       path.join(staging, 'firebase.json'),
-      JSON.stringify(hostingConfiguration(release), null, 2) + '\n'
+      JSON.stringify(hostingConfiguration(release, retiredReleases), null, 2) + '\n'
     );
     await verifyCloudFrontend(staging);
     await fs.rename(staging, output);

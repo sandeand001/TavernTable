@@ -165,6 +165,12 @@ test('a deterministic static-only package contains only reachable code, approved
 test('one verified previous release survives an update and unsupported or corrupted packages cannot be retained', async (t) => {
   const f = await fixture(t);
   const first = await f.build('first');
+  const legacy = { ...first };
+  delete legacy.retiredReleases;
+  await fs.writeFile(
+    path.join(f.out('first'), 'public', 'frontend-manifest.json'),
+    JSON.stringify(legacy)
+  );
   await f.write('src/name.js', "export const name = 'second release';\n");
   const second = await f.build('second', { previous: f.out('first') });
   assert.notEqual(first.release, second.release);
@@ -178,6 +184,45 @@ test('one verified previous release survives an update and unsupported or corrup
   const third = await f.build('third', { previous: f.out('second') });
   assert.deepEqual(third.releases, [third.release, second.release]);
   assert.ok(third.files.every((file) => !file.path.startsWith(`releases/${first.release}/`)));
+  const thirdHosting = JSON.parse(
+    await fs.readFile(path.join(f.out('third'), 'firebase.json'), 'utf8')
+  ).hosting;
+  assert.deepEqual(
+    thirdHosting.redirects.find((rule) => rule.source === `/releases/${first.release}/index.html`),
+    {
+      source: `/releases/${first.release}/index.html`,
+      destination: `/releases/${third.release}/index.html`,
+      type: 302,
+    }
+  );
+  assert(
+    thirdHosting.headers.some(
+      (rule) =>
+        rule.source === '/releases/*/index.html' &&
+        rule.headers.some((header) => header.key === 'Cache-Control' && header.value === 'no-store')
+    )
+  );
+  assert(
+    !thirdHosting.redirects.some((rule) =>
+      [`/releases/${third.release}/index.html`, `/releases/${second.release}/index.html`].includes(
+        rule.source
+      )
+    )
+  );
+  await f.write('src/name.js', "export const name = 'fourth release';\n");
+  const fourth = await f.build('fourth', { previous: f.out('third') });
+  const fourthHosting = JSON.parse(
+    await fs.readFile(path.join(f.out('fourth'), 'firebase.json'), 'utf8')
+  ).hosting;
+  for (const retired of [first.release, second.release])
+    assert.deepEqual(
+      fourthHosting.redirects.find((rule) => rule.source === `/releases/${retired}/index.html`),
+      {
+        source: `/releases/${retired}/index.html`,
+        destination: `/releases/${fourth.release}/index.html`,
+        type: 302,
+      }
+    );
   const manifestPath = path.join(f.out('second'), 'public', 'frontend-manifest.json');
   await fs.writeFile(manifestPath, JSON.stringify({ ...second, compatibility: { runtime: 99 } }));
   await assert.rejects(f.build('bad-version', { previous: f.out('second') }), {
@@ -188,6 +233,23 @@ test('one verified previous release survives an update and unsupported or corrup
   await assert.rejects(f.build('bad-bytes', { previous: f.out('second') }), {
     code: 'invalid-frontend-package',
   });
+});
+
+test('retired entry metadata rejects malformed history, duplicate redirects and retained-entry loops', async (t) => {
+  const f = await fixture(t);
+  const built = await f.build('retired-validation');
+  const manifestPath = path.join(f.out('retired-validation'), 'public', 'frontend-manifest.json');
+  for (const retiredReleases of [
+    null,
+    ['../src/config/FirebaseConfig.json'],
+    [built.release],
+    ['a'.repeat(64), 'a'.repeat(64)],
+  ]) {
+    await fs.writeFile(manifestPath, JSON.stringify({ ...built, retiredReleases }));
+    await assert.rejects(verifyCloudFrontend(f.out('retired-validation')), {
+      code: 'invalid-frontend-package',
+    });
+  }
 });
 
 test('emulator/local/secret-bearing configurations and escaped or computed module imports fail without output', async (t) => {

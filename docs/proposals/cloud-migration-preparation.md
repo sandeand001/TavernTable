@@ -4945,3 +4945,44 @@ and ESLint pass. Fresh activation packages and their existing-service-only
 publication still need completion. The earlier `87fd2c5` local artifacts retain
 their exact recorded meaning; they are not relabeled as containing this launch
 switch change.
+
+### Private publication and returning-entry recovery
+
+The approved activation source `25c2deb329e8c75f077c66ab2191bc02c62d4750`
+passes its own fresh exact Linux gate: **31 source hashes**, both-ruleset
+Cover/fractional flight, real d20, non-root/read-only/no-network CPU1/GiB1,
+authentication/private-file checks and clean exit. Its local image
+`taverntable-cloud:m5-private-gameplay-25c2deb` has OCI index
+`sha256:8cdbd4ea32bede2f700f380ea9b4dfb3d6b152091ffcac509d304f9d86d4e572`
+and runnable manifest
+`sha256:43b6689b1a254b42da52b418308dcd103e85d27d5395b6fb0c75da09021106ca`.
+Local-check RSS **247,263,232 bytes** is not a hosted peak claim.
+
+The exact index is published only to the existing test registry and applied
+as an image-only update to `taverntable-api-test-00016-4rr`. Actual readiness
+is 200 and anonymous account access 401. Existing service account, runtime
+settings, origin, latest traffic and invocation IAM fingerprints are preserved.
+
+Matching frontend
+`8fb7dbee4f99b897ce023e65cab27e938e515f0ef54282bc0b87b97291289a98`
+is published only to the existing private website, initially Hosting version
+`16fb0312910f1798`. Actual manifest plus nine critical client/HTML bodies match
+local hashes; root/metadata/entry no-store, immutable asset caching and four
+private-path 404s pass. The original owner remains normally authenticated; the
+selected rehearsal campaign is still paused.
+
+Actual returning-browser navigation nevertheless follows a previously cached
+stable redirect to the older `f24257b` entry and receives 404 after that third
+static tree is pruned. Clearing the browser cache or navigating directly to the
+new hash would hide, not fix, the returning-user problem.
+
+The builder now carries known retired entry IDs forward separately from the
+two retained static trees and emits exact no-store 302s from only those entry
+shells to the current shell. Unknown paths/assets never become redirects;
+current/retained entries cannot loop. Missing history in an older version-1
+manifest remains valid, while null/malformed/duplicate/retained-loop metadata
+is rejected. The complete **six-case** native package gate passes,
+**2.440 seconds**, with unchanged privacy, integrity and no-overwrite checks.
+Fresh repaired Hosting publication and the same returning-browser URL must
+pass before starting gameplay. No production, source cutover, account changes
+or original-host changes are performed.
