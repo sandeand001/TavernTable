@@ -70,12 +70,12 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** **77m52.226s**, all ten scopes current at
-  generation **348**, **124 accepted member commands**, original identities,
-  no pending mutation, permanent access error or 503. An ordinary member
-  reconnect passes the bounded ten-scope health check in **1,101.8 ms**.
-  At the preceding exported 93-command checkpoint, durable p95 is **3,911.9 ms**,
-  maximum **6,060.9 ms**; **56/93** exceed the original two-second benchmark.
+- **Latest actual checkpoint:** **109m46.747s**, all ten scopes current at
+  generation **399**, **175 accepted member commands**, original identities,
+  no pending mutation, permanent access error or 503. Four natural presence
+  ACK409s have recovered; ordinary aborted ACKs remain recorded. Exact
+  observations are saved privately. Partial durable p95 is **4,175.3 ms**,
+  maximum **6,407.7 ms**; **119/175** exceed the original two-second benchmark.
   No new numeric pass is claimed.
 - **Recovery preparation:** the older compatible implementation now has the
   same presence fix backported on isolated source `681c5f0...`. Its image
@@ -1574,6 +1574,12 @@ Revalidation in the intended environment remains part of M1 and M4.
     scene340, character17 with **124 accepted member commands**. A sampled
     member2 reconnection reconciles normally in **1,101.8 ms**, rather than being
     misclassified as a permanent failure. No account/seat reset is used.
+    The next exact exported checkpoint at **109m46.747s** has all ten current at
+    generation399, scene391, character17 with **175 accepted commands**.
+    Four natural ACK409s are retained with all affected members current.
+    Partial durable p95 is **4,175.3 ms**, maximum **6,407.7 ms**; SDK-ready p95
+    is **6,228.2 ms**, maximum **7,452.0 ms**. All **119/175** above the original
+    two-second benchmark remain included; no ordinary command retry is hidden.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.

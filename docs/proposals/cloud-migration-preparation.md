@@ -5887,3 +5887,18 @@ scopes pass bounded health at **generation348 / scene340 / character17**.
 An initial instantaneous sample catches member2 during normal renewal; the
 bounded reconciliation check passes in **1,101.8 ms**. That transient sample is
 retained, not treated as a repeat of the old permanent-denial bug.
+
+The second exact sanitized export at **109m46.747s** retains all three role
+datasets, verified browser hashes and a combined summary. All ten scopes are
+ready/current at **generation399 / scene391 / character17**, with **175
+accepted commands** (47 primary, 128 other members), one correct off-turn
+refusal and no pending mutation, permanent access error or 503. Four natural
+presence ACK409 responses (primary5, members1/4/8) recover with the original
+identities. Six aborted ACK transports remain recorded. No ordinary accepted
+command has multiple observed attempts in this partial dataset.
+
+The full retained 175-command partial set has durable p95 **4,175.3 ms**,
+maximum **6,407.7 ms**, SDK-ready p95 **6,228.2 ms**, maximum **7,452.0 ms**;
+**119/175** exceed the original two-second target. This is not a new numeric
+pass or rendered-animation timing. The active phase is still running; the
+actual quiet warning/keep-active/pause/grace sequence remains ahead.
