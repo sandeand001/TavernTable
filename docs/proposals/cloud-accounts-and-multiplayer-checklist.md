@@ -53,7 +53,10 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   data is retained. The corrected helper now passes a real reconnection check,
   waiting **2,496.6 ms** for all ten scopes to recover. A fresh full-duration
   attempt is **running from 2026-11-16T19:48:10.195Z**. No setup or aborted
-  attempt time is credited.
+  attempt time is credited. At **28 minutes 5 seconds**, all ten scopes are
+  current at generation **188**, with **52 accepted world commands**, no pending
+  operation or permanent access error, and no 503. Reconnection waits and one
+  aborted owner presence ACK are retained rather than hidden.
 - **Latest complete regression gate:** **307 suites / 4,067 tests passed** in
   **1,820.696 seconds**, with open-handle detection. The focused native movement
   gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
@@ -1529,6 +1532,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     topology and resources; an uncertain restore recovers the same copy.
     The actual real-owner restore-as-copy and hosted rollback/drain drill remain
     unperformed.
+    Read-only inspection verifies the retained generation-131 complete file
+    (654,129 bytes, eight records/actors, 42 maps, 116 connections), both approved
+    image digests and both retained frontend entries. A local rollback package
+    is fully verified with all **1,216 application file hashes unchanged**,
+    retaining both full frontend trees and all six retired-entry bridges.
+    A separately fenced image helper refuses mutation without real completed
+    rehearsal evidence; only its read-only preflight and negative guard ran.
+    Incompatible package metadata is rejected before deployment. None of these
+    preparation checks substitutes for the actual restore/rollback/client drain.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of

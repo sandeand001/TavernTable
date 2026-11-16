@@ -5649,3 +5649,46 @@ The actual implementation remains source `103ac90...`, API `00024-2ps`,
 frontend `57cb5484...`, with unchanged private-only approval and runtime/IAM.
 The owner's manual native animation check remains explicitly deferred. Updates
 to this evidence and the checklist are mirrored into the working checkout.
+
+### Ongoing checkpoint and fenced recovery preparation (2026-11-16)
+
+At **1,685.204 seconds** of the third real-clock attempt, the native owner and
+all nine managed members are current at generation **188** (scene revision 182,
+character revision 13). There are **52 accepted world commands**, no pending
+operation or permanent member access error, and no 503. The helper retained
+normal reconciliation waits of **990.7 ms** and **7,000.3 ms**, separate from
+durable receipt timing and the earlier 2,496.6-ms preflight proof. One aborted
+owner presence ACK is retained and is not reported as a successful request.
+The run remains in progress, not a four-hour pass.
+
+Read-only recovery preparation successfully reads and validates the real retained
+generation-131 complete file: **654,129 bytes**, version 2, eight records/eight
+actors, 42 maps and 116 connections. Portable owner/role/key/seat claims are absent.
+The file is held in private operational memory, not committed. No restore copy
+has been created.
+
+Artifact Registry confirms the exact current `049eb798...` and previous
+compatible-candidate `ec364e4c...` OCI indexes and existing tags remain available.
+Their source bindings come from the earlier verified publication fences;
+availability is not misrepresented as a new image/runtime gate. Read-only Hosting
+checks return 200/no-store for both current `57cb5484...` and retained
+`0a99c475...` entries, 302/no-store from the retired `ece3f79f...` entry to current,
+and 404/no-store for an unknown retired asset. Hosting has not changed.
+
+A local recovery package activates the retained compatible frontend while
+preserving **both complete frontend trees**, all **six known retired-entry
+bridges**, the same explicit account/API runtime and unchanged provenance.
+Existing package verification passes **1,216 files / 578,532,930 application
+bytes**, with every application file hash unchanged. It is not published.
+A temporary incompatible participant-contract package is rejected with
+`invalid-frontend-package` before artifact reads/deployment; the exact temporary
+files/directories are removed. This is a package guard, not a live client-drain
+test.
+
+A private operator helper is pinned only to the two already approved image
+digests. Mutation requires an actual completed-rehearsal evidence file and keeps
+the existing ETag, image-only update, settings, latest-traffic and IAM guards.
+Syntax, refusal without that evidence, and read-only live preflight pass.
+No image, Hosting, infrastructure, IAM, production or source-of-truth change is
+performed. Actual owner restore-as-copy, live compatibility/rollback and
+incompatible-client drain proofs remain outstanding.
