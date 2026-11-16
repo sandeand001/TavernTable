@@ -68,6 +68,12 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
+- **Recovery preparation:** the older compatible implementation now has the
+  same presence fix backported on isolated source `681c5f0...`. Its image
+  `288625ba...` passes 13 lifecycle cases and the exact 38-hash Linux runtime
+  gate, and is privately available without replacing API25 or the candidate.
+  Refreshed recovery guards reject both image changes without real completed
+  rehearsal evidence. This preparation does not complete the actual M5-07 drill.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
@@ -1573,9 +1579,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     rehearsal evidence; only its read-only preflight and negative guard ran.
     Incompatible package metadata is rejected before deployment. None of these
     preparation checks substitutes for the actual restore/rollback/client drain.
-    Earlier backend recovery fences predate the presence fix and must be
-    refreshed before use; an image with the confirmed denial bug is not silently
-    accepted as a production fallback.
+    A safe compatible backend candidate is now prepared rather than using an
+    image with the confirmed denial bug: source `681c5f0...` backports the same
+    presence fix to the older `0ba906c...` implementation. Its **13 lifecycle
+    cases** and exact **38-source-hash** isolated Linux runtime gate pass, and
+    image `288625ba...` is privately published as a separate recovery artifact.
+    The active/published current candidate pointers remain API25/image792.
+    Refreshed current/recovery fences pass read-only registry/service inspection
+    and refuse both mutations without real completed rehearsal evidence.
+    Neither the actual rollback nor the actual backup restore has been performed.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of

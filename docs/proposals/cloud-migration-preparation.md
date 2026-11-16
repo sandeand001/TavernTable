@@ -5790,3 +5790,35 @@ other members. Native owner startup is **2,690.1 ms**, and member admission
 (character revision 15 to 17) and two warm private-image rejoins pass. The run
 remains in progress; no full-duration success is claimed. A new complete stable
 gate is running independently on the fixed source.
+
+### Presence-safe compatible recovery artifact prepared (2026-11-16)
+
+The former rollback images also contain the confirmed false campaign-denial
+bug, so they are not silently accepted as a good production fallback. Instead,
+an owned isolated branch starts at the older compatible `0ba906c...` baseline
+and backports only the committed presence correction, its two regressions and
+the domain invariant. It preserves that older metadata implementation; no
+application code or branch in the user's working checkout is changed.
+
+Unchanged dependency manifests are verified before reusing installed modules.
+The **13 coupled lifecycle cases pass in 111.952 seconds**, including the real
+managed HTTP reconnect, current revocation denial and 55/60/15 lifecycle logic.
+Formatting and normal staged lint/layering hooks pass. The isolated committed
+source is **`681c5f0...`**. Its exact local image **`288625ba...`** passes the
+**38-source-hash** Linux Node24.22.3/nonroot/read-only/no-network/CPU1/GiB1 gate,
+including both-edition native Cover/flight, 501 d20 frames, 16MP limit, private
+resource denials and graceful exit0. Local check RSS is **263,626,752 bytes**,
+not hosted memory evidence.
+
+That image is published only to the existing private registry as a separate
+recovery artifact. Full private state comparison confirms the existing active
+and published candidate fields remain unchanged; only three recovery metadata
+fields are added. Read-only inspection still confirms **API25/image792**, the
+same runtime/origins/IAM and both exact registry indexes.
+
+The existing recovery operator is now fenced to current f5/image792 and this
+presence-safe compatible source681/image288. Both image-changing actions refuse
+execution before authentication/network work when the real completed-rehearsal
+gate is absent. Its read-only preflight passes. No fake completion gate is
+created, no actual rollback/restore has run, and the active real-clock rehearsal
+continues unchanged. M5-07 remains unchecked.
