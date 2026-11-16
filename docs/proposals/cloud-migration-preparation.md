@@ -5147,3 +5147,56 @@ It preserves the exact request work order, quotas, live authorization,
 durability and follow-up work. Its `[DEBUG-m5-receipt]` instrumentation is
 temporary and must be removed after diagnosis. The completed full-session
 gate remains open; this short aborted attempt is not four-hour acceptance.
+
+### Measured observer scheduling and receipt-formatting corrections
+
+The exact diagnostic image `60a6091` passes **37 source hashes** and the
+unchanged isolated Linux gate, then publishes only as private revision
+`taverntable-api-test-00018-ssp`. Its first zero-observer control reports
+**3,495.830 ms** handler time and **1,870 ms** process CPU; the following
+warm controls report **1,811.510/1,554.474 ms** handler time and
+**820/930 ms** process CPU. Browser completion is separately
+**1,997.400/1,746.800 ms**, unshaped and without observers. These few controls
+do not establish p95 or ten-client acceptance.
+
+The source-specific emulator feedback loop shows a real observer contribution:
+durable completion is **2,597/2,718 ms** with ten observers versus
+**1,417 ms** without them, including a **1.1-1.4-second** event-loop stall.
+The source is shared once, not rebuilt independently for every viewer.
+Profiling also attributes repeated complete native geometry serialization to
+single entrance/door queries. The corrections are:
+
+- Queue pure participant projections cooperatively between I/O turns without
+  moving request work after response, weakening source/authority checks or
+  dropping failed requests.
+- Carry forward only immutable compiled geometry into fresh query-world forks
+  when complete map contents match. Mutable edit operations, actor/combat data
+  and participant outputs are not shared; changed heights and transforms
+  invalidate the optimization.
+- Select and defensively copy the requested native volume rather than saving
+  every volume and private construction definition for each entrance or door.
+- Build receipt budgets from the existing native combat/location rules, with
+  lazy native world creation only when intermediate physical route conversion
+  needs it. Command execution and complete outgoing scene validation remain
+  authoritative and unchanged.
+
+A focused query-fork regression fails before implementation and now proves
+fresh actors, independent geometry edits and physical terrain/transform
+invalidation. Rejected participant views do not poison the next queued
+authorized view. Actual native control/receipt/flight/door/privacy regression
+passes **251 tests / 19 suites**, **188.656 seconds**, with open-handle
+detection. All **31** real managed HTTP/SSE world cases pass in
+**413.283 seconds**. The generated 51-map/134-connection/eight-actor projection
+gate passes at **696.622/218.904/220.660 ms**. A source-specific local HTTP
+profile improves to approximately **1,505/1,509 ms** with ten observers;
+its conservative 1.5-second diagnostic margin is still missed by 5-10 ms,
+and is not relabeled a hosted pass.
+
+The supported browser opener also permits separate owned test pages; it does
+not require or authorize arbitrary isolated browser-context creation. The
+primary managed player, other eight SDK clients and actual owner renderer are
+being separated so one test page's native rendering/JSON work cannot
+artificially block another client's measured receipt callback. Existing seats
+and original assignments remain verified; no real owner sign-in method or
+credentials change. The required actual 200-ms-RTT hosted p95 and complete
+four-to-five-hour run remain open. No slow sample is discarded.

@@ -89,6 +89,38 @@ test('shared query maps cannot mutate canonical terrain and refresh after a repl
   });
 });
 
+test('query forks preserve fresh actors and independent geometry while changed maps invalidate compiled terrain', () => {
+  const validation = context();
+  const scene = sceneState();
+  scene.terrain.heights = scene.terrain.heights.map((row) => row.map(() => 0));
+  const world = CampaignWorld.fromScene(scene, validation);
+  const origin = { x: 7.5, y: 0, z: 7.5 };
+  const target = { x: 17.5, y: 0, z: 7.5 };
+  expect(world.hasLineOfSight(origin, target)).toBe(true);
+  const next = world.save();
+  next.creatures[0].gridX = 2;
+  next.creatures[0].pose.world.x = 2.5;
+  const fork = world.forkQuery(next, validation);
+  expect(fork.getCreature('token-1').pose.world.x).toBe(2.5);
+  expect(world.getCreature('token-1').pose.world.x).toBe(1.5);
+  fork.getMapGeometry('map-main').addSolid({
+    id: 'fork-only-wall',
+    bounds: { min: { x: 12, y: 0, z: 0 }, max: { x: 13, y: 15, z: 25 } },
+  });
+  expect(fork.hasLineOfSight(origin, target)).toBe(false);
+  expect(world.hasLineOfSight(origin, target)).toBe(true);
+  const changed = world.save();
+  changed.maps[0].originFeet.y = 5;
+  changed.maps[0].terrain.heights[0][0] = 1;
+  const edited = world.forkQuery(changed, validation);
+  expect(
+    edited.findSupportBelow({ x: 2.5, y: 100, z: 2.5 }, { mapId: 'map-main' }).positionFeet.y
+  ).toBeCloseTo(6.5);
+  expect(
+    world.findSupportBelow({ x: 2.5, y: 100, z: 2.5 }, { mapId: 'map-main' }).positionFeet.y
+  ).toBe(0);
+});
+
 function floorMap(id, originFeet, quarterTurns = 0) {
   const scene = sceneState();
   return {

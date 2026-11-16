@@ -19,9 +19,8 @@ export function doorLeafCells(world, connection, options = {}) {
   const normal = Object.fromEntries(AXES.map((axis) => [axis, direction[axis] / length]));
   const geometry =
     options.mapId === map.id && options.geometry ? options.geometry : world.getMapGeometry(map.id);
-  const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));
   return connection.feature.volumeIds.map((id) => {
-    const volume = volumes.get(id);
+    const volume = geometry.getVolume(id);
     if (!volume || volume.operation !== 'subtract')
       throw new Error('The door no longer has its physical opening');
     const center = Object.fromEntries(

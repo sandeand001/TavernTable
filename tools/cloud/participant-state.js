@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { setImmediate: yieldToIO } = require('node:timers/promises');
 const {
   default: CampaignCharacters,
   campaignRecordCharacterId,
@@ -17,6 +18,22 @@ const {
 } = require('../../src/campaigns/CloudParticipantProtocol.js');
 
 const sources = new WeakMap();
+const predecessors = new WeakMap();
+let projectionTail = Promise.resolve();
+
+function reuseParticipantGeometry(state, previous) {
+  const source = sources.get(previous);
+  if (
+    source?.world &&
+    source.campaignId === state.campaign.id &&
+    source.ruleset === state.campaign.ruleset
+  )
+    predecessors.set(state, {
+      campaignId: source.campaignId,
+      ruleset: source.ruleset,
+      world: source.world,
+    });
+}
 
 function projectionSource(state, catalog, campaign) {
   const fingerprint = stableStringify(state);
@@ -31,24 +48,42 @@ function projectionSource(state, catalog, campaign) {
   const scene = state.scene
     ? decodeScene(state.scene, { library, ruleset: campaign.ruleset })
     : null;
+  const previous = predecessors.get(state) ?? cached;
+  const context = { ruleset: campaign.ruleset, library };
   const world = scene
-    ? CampaignWorld.fromScene(scene, { ruleset: campaign.ruleset, library })
+    ? previous?.world &&
+      previous.campaignId === state.campaign.id &&
+      previous.ruleset === campaign.ruleset
+      ? previous.world.forkQuery(scene, context)
+      : CampaignWorld.fromScene(scene, context)
     : null;
   const source = {
     fingerprint,
     catalog,
     ruleset: campaign.ruleset,
+    campaignId: state.campaign.id,
     library,
     scene,
     world,
     published: new PublishedMaps(path.resolve(__dirname, '..', '..'), world),
     views: new Map(),
   };
+  predecessors.delete(state);
   sources.set(state, source);
   return source;
 }
 
-async function participantState({
+function participantState(input) {
+  const project = async () => {
+    await yieldToIO();
+    return projectParticipantState(input);
+  };
+  const task = projectionTail.then(project, project);
+  projectionTail = task;
+  return task;
+}
+
+async function projectParticipantState({
   state,
   catalog,
   campaign,
@@ -279,4 +314,4 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
   return delta;
 }
 
-module.exports = { participantState, participantDelta };
+module.exports = { participantState, participantDelta, reuseParticipantGeometry };

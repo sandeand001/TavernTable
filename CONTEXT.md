@@ -191,7 +191,13 @@
   Reuse the current observer's server-derived sight only for that same actor;
   other controlled actors and actual commands retain their own physical queries.
   Native query maps are immutable snapshots; editable map copies and replacement
-  checkpoints keep their existing behavior. This is measured CPU reuse, not an
+  checkpoints keep their existing behavior. Query-world forks retain compiled
+  immutable terrain only for byte-identical maps while rebuilding fresh actors,
+  combat and permission-filtered views; edits and transforms invalidate reuse,
+  and mutable geometry operations remain independent. Receipt budgets use native
+  combat/location state without rebuilding geometry merely to format a receipt;
+  intermediate physical route conversions still use the native world.
+  This is measured CPU reuse, not an
   offline authority, historical-animation cache or relaxed admission limit.
 - **Private cloud images (M2 development slice verified)**: preserve canonical
   embedded image rows while finalizing immutable, hash-addressed private bytes.

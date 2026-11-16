@@ -1,6 +1,6 @@
 const stableStringify = require('fast-json-stable-stringify');
 const { CloudError } = require('./cloud-error.js');
-const { participantDelta } = require('./participant-state.js');
+const { participantDelta, reuseParticipantGeometry } = require('./participant-state.js');
 const { cloudOwnerDelta } = require('../../src/campaigns/CloudOwnerProtocol.js');
 const { isCloudUUID, isCloudParticipantRequest } = require('../../src/campaigns/CloudProtocol.js');
 
@@ -208,7 +208,16 @@ class ParticipantChanges {
       charactersRef: head.charactersRef,
     });
     if (group.frame?.key === key) return group.frame.promise;
-    const frame = { key, head, promise: this.store._loadSnapshot(head) };
+    const previous = group.frame?.state;
+    const frame = {
+      key,
+      head,
+      promise: this.store._loadSnapshot(head).then((state) => {
+        if (previous) reuseParticipantGeometry(state, previous);
+        frame.state = state;
+        return state;
+      }),
+    };
     group.frame = frame;
     void frame.promise.catch(() => {
       if (group.frame === frame) group.frame = null;

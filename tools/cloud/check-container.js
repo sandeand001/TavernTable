@@ -228,6 +228,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'src/campaigns/CampaignWorld.js', 'src/campaigns/CampaignConnectionGeometry.js',
     'src/campaigns/CampaignDoors.js', 'src/campaigns/CreatureVisibility.js',
     'src/campaigns/ServerTargeting.js',
+    'src/terrain/TerrainGeometry.js',
     'src/campaigns/PlayerCommandProtocol.js', 'src/entities/creatures/TokenMovement.js',
     'src/campaigns/CampaignCover.js', 'src/config/token-adapter/CoverMetrics.js',
     'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',

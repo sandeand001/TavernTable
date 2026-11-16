@@ -61,6 +61,18 @@ function mergeSpans(spans) {
   return merged;
 }
 
+function volumeSnapshot(volume) {
+  return {
+    ...volume,
+    bounds: cloneBounds(volume.bounds),
+    ...(volume.shape
+      ? {
+          shape: JSON.parse(JSON.stringify(volume.shape)),
+        }
+      : {}),
+  };
+}
+
 export class TerrainGeometry {
   constructor({ widthFeet, depthFeet, getTerrainHeightFeet, terrainThicknessFeet = null }) {
     if (
@@ -551,19 +563,29 @@ export class TerrainGeometry {
     return cells;
   }
 
+  getVolume(id) {
+    const volume = this._operations.get(id);
+    return volume ? volumeSnapshot(volume) : null;
+  }
+
+  cloneQuery() {
+    const geometry = new TerrainGeometry({
+      widthFeet: this.widthFeet,
+      depthFeet: this.depthFeet,
+      getTerrainHeightFeet: this._getTerrainHeightFeet,
+      terrainThicknessFeet: this.terrainThicknessFeet,
+    });
+    geometry.load(this.save());
+    // Query forks retain immutable checkpoint heights and cells, but not editable operations.
+    geometry._solidCells = this._solidCells ? Object.freeze([...this._solidCells]) : null;
+    return geometry;
+  }
+
   save() {
     return {
       version: this._structures.size ? 3 : this.hasCurves ? 2 : 1,
       ...(this._structures.size ? { structures: this.getStructures() } : {}),
-      volumes: [...this._operations.values()].map((volume) => ({
-        ...volume,
-        bounds: cloneBounds(volume.bounds),
-        ...(volume.shape
-          ? {
-              shape: JSON.parse(JSON.stringify(volume.shape)),
-            }
-          : {}),
-      })),
+      volumes: [...this._operations.values()].map(volumeSnapshot),
     };
   }
 

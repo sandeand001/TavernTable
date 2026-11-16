@@ -122,7 +122,6 @@ export function connectionFeatureBounds(world, connection, options = {}) {
   const map = world.getMapSnapshot(mapId);
   const geometry =
     mapId === options.mapId && options.geometry ? options.geometry : world.getMapGeometry(mapId);
-  const volumes = new Map(geometry.save().volumes.map((volume) => [volume.id, volume]));
   const unit = map.grid.tileWorldSize / 5;
   const local = (point) => ({ x: point.x * unit, y: point.y * unit, z: point.z * unit });
   if (terrainCells) {
@@ -145,7 +144,7 @@ export function connectionFeatureBounds(world, connection, options = {}) {
     });
   }
   return volumeIds.map((id) => {
-    const volume = volumes.get(id);
+    const volume = geometry.getVolume(id);
     if (!volume)
       throw new ConnectionUnavailableError(
         'This entrance no longer has its physical opening or staircase'

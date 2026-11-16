@@ -83,6 +83,10 @@ test('shared snapshot geometry keeps sheets, image slots and hidden owned gamepl
   const first = await f.project([f.first], 'token-1');
   const second = await f.project([f.second], 'token-2');
   const party = await f.project([f.first, f.second], 'token-1');
+  await assert.rejects(
+    f.project([f.first], 'token-2'),
+    (error) => error.code === 'participant-view-forbidden'
+  );
   const warm = await f.project([f.first], 'token-1', first.state.publicScene.assetKey);
   assert.deepEqual(
     first.state.publicScene.actors.map(({ id }) => id),

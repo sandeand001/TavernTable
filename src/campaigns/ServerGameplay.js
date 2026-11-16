@@ -35,6 +35,7 @@ import { nearbyDoors } from './CampaignDoors.js';
 import { findCoverWall, coverDestination } from './CampaignCover.js';
 import { COVER_POSES } from '../config/token-adapter/CoverMetrics.js';
 import { connectionTravelCost } from './CampaignTravel.js';
+import { mapLocationId } from './CampaignLocations.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
@@ -56,6 +57,13 @@ export function gameplayRuntime(
   undo = new Map(),
   world = CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
 ) {
+  return {
+    world,
+    ...combatRuntime(scene, library, undo, (actor) => world.getLocationId(actor.mapId)),
+  };
+}
+
+function combatRuntime(scene, library, undo, getLocationId) {
   const actors = scene.creatures.map((saved) => {
     const actor = {
       id: saved.id,
@@ -78,7 +86,7 @@ export function gameplayRuntime(
   const combat = new CombatSession({
     library,
     hasToken: (actor) => actors.includes(actor),
-    getLocationId: (actor) => world.getLocationId(actor.mapId),
+    getLocationId,
   });
   combat.restore(scene.combat, actors);
   for (const actor of actors) {
@@ -93,7 +101,7 @@ export function gameplayRuntime(
     combat.status(actor);
     combat.states.get(actor).undo = copy(retained);
   }
-  return { world, actors, combat };
+  return { actors, combat };
 }
 
 function playerMovementBudget(combat, actor, travelMode) {
@@ -741,7 +749,15 @@ async function applyPlayerFall(
 export function playerCommandReceipt(result, previousScene, library) {
   const { type, routeFeet, ...receipt } = copy(result.receipt);
   receipt.kind = type;
-  const runtime = gameplayRuntime(result.scene, library);
+  const maps = new Map(
+    result.scene.version === 3
+      ? result.scene.maps.map((map) => [map.id, map])
+      : [['map-main', { id: 'map-main' }]]
+  );
+  const runtime = combatRuntime(result.scene, library, new Map(), (actor) =>
+    mapLocationId(maps.get(actor.mapId))
+  );
+  let world;
   const actor = runtime.actors.find((entry) => entry.id === receipt.tokenId);
   if (actor) {
     const status = runtime.combat.status(actor);
@@ -769,23 +785,27 @@ export function playerCommandReceipt(result, previousScene, library) {
       receipt.route = routeFeet?.length
         ? routeFeet.slice(1).map((position, index, points) => {
             if (index === points.length - 1) return copy(receipt.placement);
-            const source = runtime.world.getMap(from.mapId);
-            const target = runtime.world.getMap(receipt.placement.mapId);
-            const local = runtime.world.toMapPosition(source.id, position);
+            world ??= CampaignWorld.fromScene(result.scene, { ruleset: library.ruleset, library });
+            const source = world.getMap(from.mapId);
+            const target = world.getMap(receipt.placement.mapId);
+            const local = world.toMapPosition(source.id, position);
             const inside =
               local.x >= 0 &&
               local.z >= 0 &&
               local.x < source.grid.cols * source.grid.tileWorldSize &&
               local.z < source.grid.rows * source.grid.tileWorldSize;
             const map = inside ? source : target;
-            const world = runtime.world.toMapPosition(map.id, position);
+            const point = world.toMapPosition(map.id, position);
             return {
               mapId: map.id,
-              gridX: Math.floor(world.x / map.grid.tileWorldSize),
-              gridY: Math.floor(world.z / map.grid.tileWorldSize),
+              gridX: Math.floor(point.x / map.grid.tileWorldSize),
+              gridY: Math.floor(point.z / map.grid.tileWorldSize),
               facingAngle:
                 from.facingAngle + ((map.quarterTurns - source.quarterTurns) * Math.PI) / 2,
-              pose: { kind: receipt.placement.pose.kind === 'flight' ? 'flight' : 'ground', world },
+              pose: {
+                kind: receipt.placement.pose.kind === 'flight' ? 'flight' : 'ground',
+                world: point,
+              },
             };
           })
         : [copy(receipt.placement)];

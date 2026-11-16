@@ -120,6 +120,16 @@ export default class CampaignWorld {
     return copy(this._map(id));
   }
 
+  forkQuery(scene, context) {
+    const world = CampaignWorld.fromScene(scene, context);
+    for (const [id, map] of world._mapsById) {
+      const geometry = this._geometries.get(id);
+      if (geometry && JSON.stringify(this._mapsById.get(id)) === JSON.stringify(map))
+        world._geometries.set(id, geometry.cloneQuery());
+    }
+    return world;
+  }
+
   getMapSnapshot(id) {
     const map = this._map(id);
     if (!this._mapSnapshots.has(map)) this._mapSnapshots.set(map, freezeSnapshot(copy(map)));

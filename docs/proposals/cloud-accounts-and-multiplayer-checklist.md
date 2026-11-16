@@ -1491,6 +1491,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     work; temporary diagnostics must be removed after the fix. No completed
     four-to-five-hour run, production approval or selected-source cutover is
     claimed.
+    Follow-up native scheduling/receipt/query fixes now pass **251 tests /
+    19 suites**, all **31** real HTTP/SSE world cases and the generated
+    full-world CPU gate. Their exact packages and hosted p95 verification
+    remain pending; these focused gates are not a full-session pass.
   - **Depends:** `M5-05`, `M4-12`.
   - **Success:** exercise a representative four-to-five-hour session: Free Play,
     combat, doors/rooms, assets, sheets, animation, reconnects, backup work and
