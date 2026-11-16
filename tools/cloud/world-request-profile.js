@@ -1,7 +1,63 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { Session } = require('node:inspector/promises');
 
 const requests = new AsyncLocalStorage();
 const instrumented = new WeakSet();
+let sampling = false;
+
+function hotFunctions(profile) {
+  const nodes = new Map(profile.nodes.map((node) => [node.id, node]));
+  const totals = new Map();
+  for (let index = 0; index < profile.samples.length; index++) {
+    const frame = nodes.get(profile.samples[index]).callFrame;
+    const filename = frame.url.replace(/^file:\/\//, '').replace(/^\/app\//, '');
+    const key = `${frame.functionName || '(anonymous)'}|${filename}:${frame.lineNumber + 1}`;
+    totals.set(key, (totals.get(key) || 0) + profile.timeDeltas[index]);
+  }
+  return [...totals]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 24)
+    .map(([frame, time]) => ({ frame, ms: time / 1000 }));
+}
+
+async function sampleCpu(trace) {
+  if (sampling) return null;
+  sampling = true;
+  const session = new Session();
+  session.connect();
+  try {
+    await session.post('Profiler.enable');
+    await session.post('Profiler.start');
+  } catch (error) {
+    trace.samplingError = error.code || error.name;
+    console.error('[DEBUG-m5-cpu-profile-failed]', { code: trace.samplingError });
+    session.disconnect();
+    sampling = false;
+    return null;
+  }
+  let stopping;
+  const stop = () => {
+    if (stopping) return stopping;
+    clearTimeout(timer);
+    stopping = session
+      .post('Profiler.stop')
+      .then(({ profile }) => {
+        trace.sampledCpu = hotFunctions(profile);
+      })
+      .catch((error) => {
+        trace.samplingError = error.code || error.name;
+        console.error('[DEBUG-m5-cpu-profile-failed]', { code: trace.samplingError });
+      })
+      .finally(() => {
+        session.disconnect();
+        sampling = false;
+      });
+    return stopping;
+  };
+  const timer = setTimeout(() => void stop(), 15000);
+  timer.unref();
+  return stop;
+}
 
 async function timed(trace, name, operation) {
   const started = performance.now();
@@ -88,12 +144,14 @@ async function profileWorldRequest(operation) {
   const started = performance.now();
   const cpu = process.cpuUsage();
   const trace = { stages: {}, transactionAttempts: 0 };
+  const stop = await sampleCpu(trace);
   try {
     return await requests.run(trace, operation);
   } catch (error) {
     trace.errorCode = error?.code || error?.name || 'non-error';
     throw error;
   } finally {
+    await stop?.();
     const used = process.cpuUsage(cpu);
     console.info(
       '[DEBUG-m5-receipt] ' +

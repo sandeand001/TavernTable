@@ -5200,3 +5200,22 @@ artificially block another client's measured receipt callback. Existing seats
 and original assignments remain verified; no real owner sign-in method or
 credentials change. The required actual 200-ms-RTT hosted p95 and complete
 four-to-five-hour run remain open. No slow sample is discarded.
+
+The matching optimized private revision `00019-wz4` and frontend
+`f7d3fe51...` pass **38 exact source checks** and published-byte checks.
+Supported separate owner/primary/eight-observer pages preserve all ten managed
+identities and original seats. All three links independently recalibrate to
+approximately 200 ms RTT, but the first isolated receipt still takes
+**10,450 ms**. Its server trace attributes **2,232.884 ms** to canonical
+command work and **7,759.111 ms** to assigned backup follow-up before response,
+with **9,420 ms** process CPU across that window. Later valid receipts also
+remain slow; they are retained and the private game is confirmed paused again.
+This disproves treating test-page separation or admission CPU fixes as a
+completed end-to-end performance fix.
+
+Temporary diagnosis is therefore extended with a single in-process CPU sampler,
+bounded to **15 seconds** and the **24 hottest function frames** per sampled
+request. It opens no inspector network port and records no locals, arguments,
+identities or payloads. Stage/CPU observations from this instrumented revision
+are diagnostic, not latency acceptance; all temporary profiling code still
+requires removal before the final release.
