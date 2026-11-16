@@ -48,23 +48,22 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
 `M5-11`.
 
 - **Current task:** `M5-06`, the representative ten-client, four-to-five-hour
-  rehearsal. It is not complete. The earlier **19-minute 33.813-second** attempt
-  stopped on an instantaneous helper assertion during owner reconnection; its
-  data is retained. The corrected helper now passes a real reconnection check,
-  waiting **2,496.6 ms** for all ten scopes to recover. A fresh full-duration
-  attempt is **running from 2026-11-16T19:48:10.195Z**. No setup or aborted
-  attempt time is credited. At **28 minutes 5 seconds**, all ten scopes are
-  current at generation **188**, with **52 accepted world commands**, no pending
-  operation or permanent access error, and no 503. Reconnection waits and one
-  aborted owner presence ACK are retained rather than hidden.
+  rehearsal. It is not complete. The latest attempt stopped after **44 minutes
+  24.697 seconds**: one player's presence ACK returned `campaign-not-found`
+  during renewal and the client latched a denial. The same verified UID still
+  passes fresh original-seat access and participant-snapshot checks. This is
+  being fixed as a channel-liveness/access-classification bug, not bypassed by
+  resetting accounts or marking the rehearsal passed. All **83 accepted world
+  commands** and the earlier helper failures are retained; no aborted time is
+  credited to the required full-duration run.
 - **Latest complete regression gate:** **307 suites / 4,067 tests passed** in
   **1,820.696 seconds**, with open-handle detection. The focused native movement
   gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
 - **Private pilot:** API `00024-2ps`, implementation `103ac90...`, frontend
   `57cb5484...`. Gameplay is enabled only in the approved private pilot.
-  The game is live only for this bounded private rehearsal, using the same nine
-  fixture identities and native owner. The prior attempt ended with a verified
-  pause, closed observations and complete saved backup at generation **131**.
+  The game is now verified paused. All nine member observations are closed,
+  owner streams and pending operations are zero, transports/workers are
+  restored/stopped and the complete final backup is saved at generation **219**.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
@@ -1510,7 +1509,18 @@ Revalidation in the intended environment remains part of M1 and M4.
     **2026-11-16T19:48:10.195Z**. Its initial hosted gameplay, exact note
     save/restoration (character revision 11 to 13), and primary/original-account
     warm rejoins pass with zero transferred private image bodies. The run is
-    ongoing; this remains **not a completed four-hour result**.
+    not a completed four-hour result. At **2,664.697 seconds**, one member's
+    presence ACK returned 404/`campaign-not-found`, ending that client's world
+    authority while the owner and eight other members remained current at
+    generation 219. Diagnostic token claims are verified/current, and fresh
+    access with the original seat/generation plus a fresh participant snapshot
+    both succeed. No UID, seat or permission was reset. The failure is isolated
+    to presence renewal rather than actual campaign removal. A focused
+    regression/fix is in progress before another full-duration attempt.
+    All 83 accepted commands are retained with no pending mutation or 503.
+    The private game is now paused, all nine member observations and three
+    latency workers/control channels are closed, and complete final backup is
+    saved at generation 219, error null.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.

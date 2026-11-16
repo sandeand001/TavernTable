@@ -5692,3 +5692,34 @@ Syntax, refusal without that evidence, and read-only live preflight pass.
 No image, Hosting, infrastructure, IAM, production or source-of-truth change is
 performed. Actual owner restore-as-copy, live compatibility/rollback and
 incompatible-client drain proofs remain outstanding.
+
+### Real presence-renewal denial isolated; rehearsal remains incomplete (2026-11-16)
+
+The third attempt stops after **2,664.6971 seconds** at client UTC
+**2026-11-16T20:32:34.892Z**. It is not a four-hour pass. The primary member
+entered terminal `denied`/`campaign-not-found`; the owner and eight other members
+remain current at generation **219** (scene revision 213, character revision
+13). There are **83 accepted world commands**, no pending mutation and no 503.
+
+The failed 404 is specifically the existing `/live/presence/ack` request.
+The downstream SSE abort is not mistaken for the original failure. The fixture
+still has the same UID, verified token claims and an unexpired credential.
+Fresh access with the original seat/access generation succeeds, and a fresh
+participant snapshot also succeeds at generation 219 for the original observer.
+No account, UID, seat or permission is reset to obtain those proofs.
+
+Source inspection identifies the relevant distinction: presence acknowledgement
+and renewal first validate current campaign eligibility/access, then currently
+report a missing/foreign channel as campaign-not-found. The managed live client
+treats that as terminal campaign denial, whereas it already retries the typed
+client-presence-expired outcome. A focused regression will verify the stale
+channel path and preserve uniform foreign/missing-channel privacy plus genuine
+membership-revocation denials before any fix is accepted.
+
+All nine member observations are now closed. Normal owner Pause is verified,
+with zero owner streams/pending operations and complete final backup **saved at
+generation 219**, error null. Transports are restored; all three precision
+workers and private control channels are closed. All accepted data/timings and
+diagnostic captures are retained. The original hosts/keys and real owner Auth
+are unchanged. Recovery packages remain local/read-only preparation; no rollback,
+production deployment or cutover occurred.
