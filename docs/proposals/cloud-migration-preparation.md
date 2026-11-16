@@ -5846,3 +5846,35 @@ tracking documents, not the tested application code. This is the new fixed-sourc
 result, not a relabeling of the preceding source103 baseline. The actual
 real-clock ten-client rehearsal and real-owner recovery drill remain separate,
 unfinished gates; the owner-deferred manual animation check remains unobserved.
+
+### Fixed-release run surpasses the old failure window (2026-11-16)
+
+The actual 45m30.319s checkpoint is beyond the prior 44m24.697s failure and finds
+all ten scopes current at generation307 with 83 accepted member commands. A
+subsequent **53m42.636s** checkpoint finds all ten ready/current at
+**generation317 / scene309 / character17**, with the same nine identities,
+**93 accepted commands** (29 primary, 64 other members), one correct off-turn
+refusal and no pending mutation, permanent access error or 503.
+
+The retained network evidence includes actual **presence ACK409** responses on
+primary5 and member4; both are currently ready with their original identities.
+Four aborted ACK transports are also retained (one primary, two member2, one
+member8). These are not erased or misreported as ordinary world-command
+failures. Every ordinary accepted command in this partial dataset has one
+observed finite successful attempt; no failed first attempt is hidden.
+
+A separate read-only observation exporter whitelists timing/network fields and
+never exports identity, credentials or command bodies. Its focused checks prove
+that a future retry's elapsed time is measured from the first observed attempt,
+not just the later successful attempt; incomplete evidence and a wrong source
+fail explicitly. It does not modify the active driver or API transport.
+All three sanitized role datasets and a combined summary are saved privately,
+with exact decompressed browser-to-file SHA-256 verification. The local browser
+download event was unavailable, so no download success was claimed; the normal
+tool-output export was verified instead.
+
+For these **93 mixed ordinary commands**, durable receipt p95 is **3,911.9 ms**,
+maximum **6,060.9 ms**, SDK-ready p95 **6,010.3 ms**, maximum **6,379.7 ms**.
+**56/93** exceed the original two-second benchmark. Cold/backup/reconnect tails
+remain in the dataset, which is partial and is not a new numeric acceptance,
+native rendered-animation measurement or a completed four-hour result.

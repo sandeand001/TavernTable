@@ -70,6 +70,12 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
+- **Latest actual checkpoint:** **53m42.636s**, all ten scopes current at
+  generation **317**, **93 accepted member commands**, no pending mutation,
+  permanent access error or 503. Two real expired-channel ACK responses are
+  retained as retryable 409s and both affected members are current without a
+  reset. Partial durable p95 is **3,911.9 ms**, maximum **6,060.9 ms**; **56/93**
+  exceed the original two-second benchmark. No new numeric pass is claimed.
 - **Recovery preparation:** the older compatible implementation now has the
   same presence fix backported on isolated source `681c5f0...`. Its image
   `288625ba...` passes 13 lifecycle cases and the exact 38-hash Linux runtime
@@ -1554,10 +1560,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     note save/restoration (character revision 15 to 17), and warm image-cache
     rejoins pass. The game is now live for this new run, not left paused; no
     earlier aborted/setup time counts toward its duration.
-    At **20m7.051s**, all ten scopes are ready/current at generation **266**,
-    with **42 accepted member world commands**, the correct off-turn refusal,
-    no pending operation, permanent access error or 503. Ordinary SSE renewals
-    and two earlier aborted observer fetches are retained, not erased.
+    At **53m42.636s**, all ten scopes are ready/current at generation **317**,
+    with **93 accepted member world commands**, the correct off-turn refusal,
+    no pending operation, permanent access error or 503. Real presence ACK409s
+    on primary5 and member4 recover without UID/seat resets; four aborted ACK
+    transports and ordinary SSE renewals remain recorded. Sanitized exact
+    observations and network entries are now saved privately with browser-to-file
+    SHA-256 verification. Partial mixed-command durable p95 is **3,911.9 ms**,
+    maximum **6,060.9 ms**, with **56/93** above the original two-second target;
+    SDK-ready p95 is **6,010.3 ms**. These are not animation timings or a new pass.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
