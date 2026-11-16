@@ -55,7 +55,9 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   reproduced and fixed locally as a channel-liveness/access-classification bug:
   **13 coupled lifecycle cases and 87 client/SSE unit tests pass**. The fixed
   image is now privately published and its live stale-ACK/reopen probe passes
-  without any account or seat reset. A fresh fixed-release full-duration run is
+  without any account or seat reset. The fixed-source complete stable gate
+  passes **307 suites / 4,067 tests** with open-handle detection in
+  **1,668.276 seconds**. A fresh fixed-release full-duration run is
   **running from 2026-11-16T21:08:32.666Z**; it is not yet a four-hour pass.
   All **83 accepted world
   commands** and the earlier helper failures are retained; no aborted time is
@@ -1494,7 +1496,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     and no replacement numeric latency threshold has been approved.
     Before the presence fix, source `103ac90...` also passed the complete stable
     gate: **307 suites / 4,067 tests** with open-handle detection in
-    **1,820.696 seconds**. The fixed-source complete gate remains in progress.
+    **1,820.696 seconds**. The complete stable gate on fixed source `f5d0d10...`
+    now also passes **307 suites / 4,067 tests** with open-handle detection in
+    **1,668.276 seconds**.
     The owner subsequently instructed continuing on an assumed-success basis
     and will perform the manual animation check after the remaining work.
     That check is **deferred, not passed**, and does not block continued private

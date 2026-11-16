@@ -5836,3 +5836,13 @@ The same nine member identities retain **42 accepted world commands** (18
 primary, 24 other members), one correct off-turn refusal, no pending operation,
 permanent access error or 503. Normal SSE reconnections and the two earlier
 observer fetch aborts remain recorded. This is progress, not the four-hour gate.
+
+### Fixed-source complete stable gate passes (2026-11-16)
+
+The full `test:stable` command (`jest --detectOpenHandles --runInBand`) on the
+presence-corrected implementation **`f5d0d10...`** finishes successfully:
+**307 suites / 4,067 tests / 1,668.276 seconds**. Subsequent commits change only
+tracking documents, not the tested application code. This is the new fixed-source
+result, not a relabeling of the preceding source103 baseline. The actual
+real-clock ten-client rehearsal and real-owner recovery drill remain separate,
+unfinished gates; the owner-deferred manual animation check remains unobserved.
