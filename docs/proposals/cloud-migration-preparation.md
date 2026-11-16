@@ -5381,3 +5381,63 @@ projection cases pass, and **seven** directly related legacy authorization/Undo
 tests pass in two suites (**2.246 seconds**). The generated 51-map projection is
 **591.423/121.056/116.581 ms**. The twenty-sample hosted distribution and complete
 four-to-five-hour rehearsal remain open.
+
+### Same-transaction authorization metadata reuse: candidate
+
+The shared-motion backend is privately published as `00023-rz7`, source
+`0ba906c...`, with unchanged matching frontend `57cb5484...`. Its exact image
+passes the existing 38-hash/native/isolation/exit gate. Two actual out/back
+five-foot moves are accepted at generations 26/27. The primary and all eight
+other member observations remain ready at generation 27 without stream errors
+or 503 responses, and the native owner remains current. Free Play accepts both
+moves while retaining zero turn-restricted movement debit. Durable receipts
+still take **3,420.8/3,494.9 ms**, with SDK readiness **4,822/5,793.3 ms**;
+those valid tails remain failures, not a twenty-sample or full-session pass.
+All nine observations are closed again, normal owner Pause is verified, and
+transports/precision workers are restored/stopped.
+
+Further local stage timing attributes **380-457 ms** to whole-checkpoint quota
+reservation and roughly **130 ms** to each repeated renewal, with full immutable
+reads below 20 ms. A bounded multi-object staging/batched-renewal experiment
+passes its new lease-ordering and revocation tests plus all 30 storage/quota
+cases, but does not establish a latency improvement. Its uncommitted changes
+are therefore completely reversed rather than published or retained as extra
+complexity. The private patch and observations remain outside Git. Existing
+immutable-object preflight lookups, delayed-lookup renewal and full-byte
+verification remain unchanged, including protection against the pinned
+emulator's missing create-only enforcement.
+
+The next candidate removes duplicate campaign-head/seat reads from the same
+Firestore authorization transaction. Internal access/live contexts retain those
+already validated values; public grant/live projections still return their
+original explicit fields. Snapshot preparation, current-head verification,
+assigned backup/history work and native world authorization use the current
+transaction's head instead of fetching the same document again. No context is
+shared across requests or final checks: quota, publication, pause, pilot,
+membership, access-generation and epoch validation still execute in their
+original fresh transactions. Native world publication reuses only a head
+returned by its own fresh authorizer, never the older preparation capture.
+
+The complete local managed-client feedback loop now passes its unchanged
+1.5-second finite-receipt diagnostic margin for every retained command:
+**1,355.938 ms** without observers; **1,401.078/1,435.026 ms** for facing with
+all ten clients; and **1,379.930/1,379.300 ms** for real out/back movement.
+SDK readiness is separately **2,242.434/2,174.593/2,575.427/2,396.750 ms**,
+and all-client convergence **2,325.429/2,264.946/2,905.200/2,710.070 ms**.
+Movement still constructs only two native worlds. These are local candidate
+measurements, not hosted acceptance; directly coupled authority/lifecycle
+regressions and another exact-image/private-pilot gate remain required.
+
+The coupled access/store/lifecycle/world gate completes **151 cases** in
+**615.467 seconds**, initially **150 passing / one failing**. Its sole failure,
+the paused-image due-backup fixture, reproduces unchanged against the exact
+committed store as well as this candidate. The fixture starts its injected
+clock at a fixed midnight while campaign creation uses the domain's actual
+creation timestamp, so its original first backup was not yet due. The test now
+advances explicitly to campaign creation plus five minutes and asserts that
+the first due read completed a backup before testing subsequent private image
+edits. The full original privacy/complete-backup/billing checks then pass on
+both current (**8.906 seconds**) and committed (**9.164 seconds**) code.
+No production backup interval or real/provider clock is changed. The other
+150 coupled cases remain passed; this corrected isolated rerun is not claimed
+as a new whole-repository stable result.

@@ -745,10 +745,25 @@ class CloudCampaignStore {
   }
 
   async requireLiveSession(transaction, principal, id, sessionId, expectedAccess = null) {
+    const { session, participant } = await this._liveContext(
+      transaction,
+      principal,
+      id,
+      sessionId,
+      expectedAccess
+    );
+    return { version: 1, session, participant };
+  }
+
+  async _liveContext(transaction, principal, id, sessionId, expectedAccess = null) {
     const uid = principalUid(principal);
     if (!(sessionId === null || isCloudUUID(sessionId)))
       throw new CloudError(400, 'invalid-live-command', 'Choose the current live-game session');
-    const participant = await this._participantGrant(transaction, uid, id, expectedAccess);
+    const {
+      grant: participant,
+      head,
+      seat,
+    } = await this._participantContext(transaction, uid, id, expectedAccess);
     const current = await this._liveSession(transaction, id);
     const presence = await this._livePresence(transaction, current);
     const now = Math.max(
@@ -761,7 +776,7 @@ class CloudCampaignStore {
       this._presenceDisconnectedAt(current, presence, now)
     );
     this._assertLiveSession(session, sessionId);
-    return { version: 1, session, participant };
+    return { session, participant, head, seat };
   }
 
   _assertLiveSession(session, sessionId) {
@@ -3380,13 +3395,20 @@ class CloudCampaignStore {
     const reference = this.firestore.collection('campaigns').doc(id);
     const { FieldValue } = require('firebase-admin/firestore');
     return this._transaction(async (transaction) => {
-      if (scope === null) await this.access.assertEligibility(uid, transaction);
-      else {
-        const grant = await this._participantGrant(transaction, uid, id, scope);
+      let head;
+      if (scope === null) {
+        await this.access.assertEligibility(uid, transaction);
+        head = await this._metadata(await transaction.get(reference), uid);
+      } else {
+        const { grant, head: captured } = await this._participantContext(
+          transaction,
+          uid,
+          id,
+          scope
+        );
         if (grant.access.role !== 'member') throw unavailableCampaign();
+        head = captured;
       }
-      const saved = await transaction.get(reference);
-      const head = await this._metadata(saved, scope === null ? uid : saved.data().ownerUid);
       const floorReference = this._changeHistoryReference(id);
       const floorSnapshot = await transaction.get(floorReference);
       const floor = this._changeHistoryFloor(floorSnapshot, id, head);
@@ -4383,6 +4405,10 @@ class CloudCampaignStore {
   }
 
   async _accessGrant(transaction, uid, id, expected = null) {
+    return (await this._accessContext(transaction, uid, id, expected)).grant;
+  }
+
+  async _accessContext(transaction, uid, id, expected = null) {
     if (!isCloudUUID(id)) throw unavailableCampaign();
     const reference = this.firestore.collection('campaigns').doc(id);
     const membershipReference = this._memberships(uid).doc(id);
@@ -4396,8 +4422,10 @@ class CloudCampaignStore {
       : [await transaction.get(reference), null, null];
     if (!snapshot.exists) throw unavailableCampaign();
     const ownerUid = snapshot.data()?.ownerUid;
-    if (ownerUid === uid)
-      return participantSummary(uid, accessSummary(await this._metadata(snapshot, uid), 'owner'));
+    if (ownerUid === uid) {
+      const head = await this._metadata(snapshot, uid);
+      return { head, seat: null, grant: participantSummary(uid, accessSummary(head, 'owner')) };
+    }
     const membership = savedMembership ?? (await transaction.get(membershipReference));
     if (!membership.exists) throw unavailableCampaign();
     const record = membership.data();
@@ -4428,11 +4456,12 @@ class CloudCampaignStore {
     )
       throw invalidMembership();
     if (!validUid(ownerUid)) throw invalidMembership();
-    return participantSummary(
-      uid,
-      accessSummary(await this._metadata(snapshot, ownerUid), 'member', record.seatId),
-      player
-    );
+    const head = await this._metadata(snapshot, ownerUid);
+    return {
+      head,
+      seat: player,
+      grant: participantSummary(uid, accessSummary(head, 'member', record.seatId), player),
+    };
   }
 
   async _accessSummary(transaction, uid, id) {
@@ -4476,8 +4505,13 @@ class CloudCampaignStore {
   }
 
   async _participantGrant(transaction, uid, id, expected) {
+    return (await this._participantContext(transaction, uid, id, expected)).grant;
+  }
+
+  async _participantContext(transaction, uid, id, expected) {
     await this.access.assertEligibility(uid, transaction);
-    const grant = await this._accessGrant(transaction, uid, id, expected);
+    const context = await this._accessContext(transaction, uid, id, expected);
+    const { grant } = context;
     if (
       expected !== null &&
       (expected.seatId !== grant.access.seatId ||
@@ -4488,7 +4522,7 @@ class CloudCampaignStore {
         'campaign-access-changed',
         'Campaign access changed. Refresh before continuing.'
       );
-    return grant;
+    return context;
   }
 
   async getParticipantAccess(principal, id, expected = null) {
@@ -4602,7 +4636,7 @@ class CloudCampaignStore {
     const reference = this.firestore.collection('campaigns').doc(id);
     const captured = await this._transaction(
       async (transaction) => {
-        const admission = await this.requireLiveSession(
+        const admission = await this._liveContext(
           transaction,
           principal,
           id,
@@ -4610,12 +4644,7 @@ class CloudCampaignStore {
           scope
         );
         if (admission.participant.access.role !== 'member') throw unavailableCampaign();
-        const snapshot = await transaction.get(reference);
-        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
-        const seat = this._seat(
-          await transaction.get(reference.collection('seats').doc(scope.seatId)),
-          id
-        );
+        const { head, seat } = admission;
         return {
           head,
           participant: admission.participant,
@@ -4848,23 +4877,26 @@ class CloudCampaignStore {
   async _verifyParticipantRead(principal, id, sessionId, scope, expected) {
     await this._transaction(
       async (transaction) => {
-        const current = await this.requireLiveSession(transaction, principal, id, sessionId, scope);
+        const current = await this._liveContext(transaction, principal, id, sessionId, scope);
         if (
           current.participant.access.role !== 'member' ||
           stableStringify(current.participant.characterIds) !==
             stableStringify(expected.characterIds)
         )
           throw new CloudError(409, 'campaign-access-changed', 'Refresh current assigned access');
-        const head = await transaction.get(this.firestore.collection('campaigns').doc(id));
-        if (head.data()?.generation !== expected.generation)
+        if (current.head.generation !== expected.generation)
           throw new CloudError(
             409,
             'participant-state-changed',
             'The authorized world changed while preparing participant data'
           );
         if (expected.recordVisits) {
-          const reference = head.ref.collection('seats').doc(scope.seatId);
-          const seat = this._seat(await transaction.get(reference), id);
+          const reference = this.firestore
+            .collection('campaigns')
+            .doc(id)
+            .collection('seats')
+            .doc(scope.seatId);
+          const seat = current.seat;
           const visitedRoomIds = [
             ...new Set([...(seat.visitedRoomIds || []), ...expected.recordVisits]),
           ].sort();
@@ -6047,29 +6079,14 @@ class CloudCampaignStore {
       .collection('receipts')
       .doc(command.commandId);
     const intent = { uid, reference, fingerprint, kind: 'world.command', campaignId: id };
-    const headReference = this.firestore.collection('campaigns').doc(id);
     const captured = await this._transaction(
       async (transaction) => {
         await this.access.assertEligibility(uid, transaction);
         const replay = await this._previousCommand(transaction, intent);
         if (replay !== null) return { replay };
-        const admitted = await this.requireLiveSession(
-          transaction,
-          principal,
-          id,
-          sessionId,
-          scope
-        );
+        const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
         if (admitted.participant.access.role !== 'member') throw unavailableCampaign();
-        const snapshot = await transaction.get(headReference);
-        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
-        const seat =
-          command.kind === 'place'
-            ? this._seat(
-                await transaction.get(headReference.collection('seats').doc(scope.seatId)),
-                id
-              )
-            : null;
+        const { head, seat } = admitted;
         return {
           replay: null,
           head,
@@ -6117,13 +6134,7 @@ class CloudCampaignStore {
         captured.placementGrants
       );
       const authorize = async (transaction) => {
-        const admitted = await this.requireLiveSession(
-          transaction,
-          principal,
-          id,
-          sessionId,
-          scope
-        );
+        const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
         if (
           admitted.participant.access.role !== 'member' ||
           stableStringify(admitted.participant.characterIds) !==
@@ -6134,8 +6145,8 @@ class CloudCampaignStore {
             'campaign-access-changed',
             'Refresh current assigned world access'
           );
-        const head = await transaction.get(headReference);
-        if (head.data()?.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+        if (admitted.head.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+        return admitted;
       };
       const result = {
         version: 1,
@@ -6254,10 +6265,8 @@ class CloudCampaignStore {
     const uid = principalUid(principal);
     return this._transaction(
       async (transaction) => {
-        const grant = await this._participantGrant(transaction, uid, id, scope);
+        const { grant, head } = await this._participantContext(transaction, uid, id, scope);
         if (scope !== null && grant.access.role !== 'member') throw unavailableCampaign();
-        const snapshot = await transaction.get(this.firestore.collection('campaigns').doc(id));
-        const head = await this._metadata(snapshot, snapshot.data().ownerUid);
         return head.ownerUid;
       },
       { readOnly: true }
@@ -6549,8 +6558,9 @@ class CloudCampaignStore {
       await this.access.assertEligibility(uid, transaction);
       const replay = await this._previousCommand(transaction, intent);
       if (replay !== null) return { result: replay, duplicate: true };
-      if (authorize !== null) await authorize(transaction);
-      const current = await this._metadata(await transaction.get(headReference), ownerUid);
+      const admission = authorize === null ? null : await authorize(transaction);
+      const current =
+        admission?.head ?? (await this._metadata(await transaction.get(headReference), ownerUid));
       if (
         current.generation !== captured.head.generation ||
         current.campaign.sceneRevision !== captured.head.campaign.sceneRevision ||

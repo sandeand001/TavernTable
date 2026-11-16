@@ -212,6 +212,11 @@
   map snapshots instead of rebuilding a private world for every recipient.
   Current per-view route visibility and final access/head checks still run
   separately; this reuse never publishes old movement on a rejoin.
+  Authorization helpers may retain the head and seat already read within that
+  same Firestore transaction. Public grant/live-admission projections exclude
+  this private context. Every later authorization transaction and retry reads
+  current eligibility, membership, epoch and head again; this is not a
+  cross-request permission cache.
   This is measured CPU reuse, not an
   offline authority, historical-animation cache or relaxed admission limit.
 - **Private cloud images (M2 development slice verified)**: preserve canonical

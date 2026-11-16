@@ -2713,8 +2713,10 @@ test(
       accessGeneration: 0,
     });
     const grant = await memberClient.getParticipantAccess(campaign.id);
+    now = Date.parse(campaign.createdAt) + 5 * 60 * 1000;
     const state = await memberClient.readAssignedCharacters(campaign.id, grant.access);
     const before = await f.store.backupStatus(owner.principal, campaign.id);
+    assert.ok(before.latest, 'The first due sheet read must finish its complete backup');
     const usage = f.runtime.firestore.collection('accountUsage').doc(pilotAccountKey(owner.uid));
     const originalBytes = (await usage.get()).data().storageBytes;
     const sheets = new CampaignCharacters({
