@@ -485,7 +485,9 @@ test('the real cloud picker separates Owned and Joined access without opening a 
   const access = launcher.list.querySelector('[data-view-campaign-access]');
   access.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(launcher.status.textContent).toContain('Cloud player gameplay is not enabled yet');
+  expect(launcher.status.textContent).toContain(
+    'Use Join live game when the owner has started gameplay.'
+  );
   expect(launcher.status.textContent).toContain('0 assigned saved characters');
   expect(apiRequests).toContain(`/api/cloud/campaigns/${joinedId}/participant-access`);
   expect(apiRequests.some((path) => /\/(scene|characters)$/.test(path))).toBe(false);

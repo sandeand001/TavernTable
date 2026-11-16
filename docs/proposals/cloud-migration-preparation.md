@@ -4922,3 +4922,26 @@ These are local artifacts, not publication or activation. The existing private
 API/website and both user-facing gameplay gates remain unchanged. The next
 hosted step must deliberately lift those gates for the approved private rehearsal,
 without implying production deployment, source-data cutover or M5-06 completion.
+
+### Approved private-pilot gameplay activation
+
+After the preceding exact local gates, the owner explicitly selected
+**pilot_only**: enable the existing private pilot's multiplayer/room launch
+switches, publish matching verified website/API packages, and continue the
+approved four-to-five-hour ten-client rehearsal. This does not authorize
+production, selected-source cutover, IAM/runtime/billing-setting changes,
+real-account credential/provider changes or changes to either original host.
+
+The client launch capabilities are now enabled in the migration branch.
+They are not authorization: verified managed identity, the existing private
+pilot enrollment gate and current per-campaign/seat/epoch checks remain required.
+The existing picker already displays its enabled live-game workflow without
+opening a Joined player as an owner. Its independent disabled-store/cache
+settings path remains supported.
+
+The directly affected client/picker/scoped-player gate passes **77 tests /
+three suites**, **6.809 seconds**, with open-handle detection; affected formatting
+and ESLint pass. Fresh activation packages and their existing-service-only
+publication still need completion. The earlier `87fd2c5` local artifacts retain
+their exact recorded meaning; they are not relabeled as containing this launch
+switch change.

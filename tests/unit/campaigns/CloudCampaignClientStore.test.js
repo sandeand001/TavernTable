@@ -1351,8 +1351,8 @@ test('the browser high-level cloud store uses UID-bound HTTP creation and consis
       scene: null,
     });
     expect(setup.store.storageInfo.kind).toBe('cloud');
-    expect(setup.store.capabilities.sharedSessions).toBe(false);
-    expect(setup.store.capabilities.roomVisits).toBe(false);
+    expect(setup.store.capabilities.sharedSessions).toBe(true);
+    expect(setup.store.capabilities.roomVisits).toBe(true);
     const request = JSON.parse(setup.fetch.mock.calls[0][1].body);
     expect(request.commandId).toBe(commandId);
     expect(request.options).toEqual({ name: 'Cloud fixture', ruleset: '2014', packIds: [] });

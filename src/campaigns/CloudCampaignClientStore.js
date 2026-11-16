@@ -169,8 +169,8 @@ export default class CloudCampaignClientStore {
       memberships: true,
       placementGrants: true,
       browserImport: false,
-      sharedSessions: false,
-      roomVisits: false,
+      sharedSessions: true,
+      roomVisits: true,
       nativeMotion: true,
     });
   }
