@@ -194,7 +194,15 @@
   checkpoints keep their existing behavior. Query-world forks retain compiled
   immutable terrain only for byte-identical maps while rebuilding fresh actors,
   combat and permission-filtered views; edits and transforms invalidate reuse,
-  and mutable geometry operations remain independent. Receipt budgets use native
+  and mutable geometry operations remain independent. Unpublished geometry edits
+  never enter a new canonical query fork. Immutable location obstacles are
+  revision-checked; explicit preview geometry bypasses their snapshot cache.
+  Public artwork reuse is bounded to eight graphs/eight MiB and requires exact
+  map, connection and location content plus the current visible-map selection.
+  Actor poses and access still refresh independently. Only fully validated,
+  deeply frozen public asset graphs receive structural-validation certification;
+  a merely frozen or previously valid mutable input never skips validation.
+  Certification is not authorization. Receipt budgets use native
   combat/location state without rebuilding geometry merely to format a receipt;
   intermediate physical route conversions still use the native world.
   This is measured CPU reuse, not an

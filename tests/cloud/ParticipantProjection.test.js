@@ -11,8 +11,15 @@ const { TerrainEngine } = require('../../src/terrain/TerrainEngine.js');
 const { reconcileBuildingScene } = require('../../src/campaigns/BuildingAssembly.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { HostResources } = require('../../tools/host-resources.js');
-const { participantState } = require('../../tools/cloud/participant-state.js');
+const {
+  participantState,
+  reuseParticipantGeometry,
+} = require('../../tools/cloud/participant-state.js');
 const { sceneState } = require('../helpers/sceneState.js');
+const {
+  sealPlayerAssets,
+  validatePlayerAssets,
+} = require('../../src/campaigns/PlayerPublicProtocol.js');
 
 async function fixture(t) {
   const root = path.resolve(__dirname, '..', '..');
@@ -146,6 +153,75 @@ test('a reused capture refreshes native geometry and sheets when its canonical c
   assert.notEqual(changed.state.publicScene.assets, null);
   assert.ok(JSON.stringify(changed.state.records).includes('UPDATED PRIVATE SHEET'));
   assert.ok(!JSON.stringify(changed.state.records).includes('FIRST PRIVATE SHEET'));
+});
+
+test('successive actor checkpoints reuse immutable artwork without hiding current poses or location metadata', async (t) => {
+  const f = await fixture(t);
+  const scene = JSON.parse(f.state.scene);
+  scene.locations = [{ id: 'location-main', name: 'Initial region' }];
+  for (const map of scene.maps) map.locationId = 'location-main';
+  const initialState = {
+    ...f.state,
+    scene: encodeScene(scene, { ruleset: '2014', library: f.library }),
+  };
+  const project = (state, assetKey = null) =>
+    participantState({
+      state,
+      catalog: f.catalog,
+      campaign: state.campaign,
+      characterIds: [f.first],
+      options: { observerTokenId: 'token-1', mapId: 'map-main', assetKey },
+      images: [],
+    });
+  const initial = await project(initialState);
+  scene.creatures[0].pose.world.x += 0.1;
+  const movedState = {
+    ...initialState,
+    sceneRevision: initialState.sceneRevision + 1,
+    scene: encodeScene(scene, { ruleset: '2014', library: f.library }),
+  };
+  reuseParticipantGeometry(movedState, initialState);
+  const moved = await project(movedState, initial.state.publicScene.assetKey);
+  assert.equal(moved.assets, initial.assets);
+  assert.equal(moved.state.publicScene.assets, null);
+  assert.notDeepEqual(moved.state.publicScene.actors, initial.state.publicScene.actors);
+  assert.ok(!JSON.stringify(moved).includes('SECOND PRIVATE SHEET'));
+  scene.locations[0].name = 'Updated region';
+  const renamedState = {
+    ...movedState,
+    sceneRevision: movedState.sceneRevision + 1,
+    scene: encodeScene(scene, { ruleset: '2014', library: f.library }),
+  };
+  reuseParticipantGeometry(renamedState, movedState);
+  const renamed = await project(renamedState, moved.state.publicScene.assetKey);
+  assert.equal(renamed.assets.location.name, 'Updated region');
+  assert.notEqual(renamed.state.publicScene.assetKey, moved.state.publicScene.assetKey);
+  assert.notEqual(renamed.state.publicScene.assets, null);
+});
+
+test('certified public terrain is deeply immutable without trusting merely frozen or previously valid inputs', async (t) => {
+  const f = await fixture(t);
+  const projected = await f.project([f.first], 'token-1');
+  const source = structuredClone(projected.assets);
+  const sealed = sealPlayerAssets(Object.freeze(source));
+  assert.throws(
+    () => Object.defineProperty(sealed.maps[0].terrain.heights[0], '0', { value: 999 }),
+    TypeError
+  );
+  assert.equal(validatePlayerAssets(sealed), sealed);
+  const mutable = structuredClone(projected.assets);
+  validatePlayerAssets(mutable);
+  mutable.maps[0].terrain.geometry.privateBlueprints = [];
+  assert.throws(
+    () => validatePlayerAssets(mutable),
+    (error) => error.code === 'invalid-player-state'
+  );
+  assert.throws(
+    () => sealPlayerAssets(mutable),
+    (error) => error.code === 'invalid-player-state'
+  );
+  delete mutable.maps[0].terrain.geometry.privateBlueprints;
+  assert.equal(validatePlayerAssets(sealPlayerAssets(mutable)), mutable);
 });
 
 test('a generated multi-floor castle with eight actors stays within the native projection CPU gate', async (t) => {

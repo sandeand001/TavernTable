@@ -1,4 +1,4 @@
-import { validateMapBoard } from './CampaignScene.js';
+import { validateMapBoard, freezeSceneData } from './CampaignScene.js';
 import { validateConnections } from './CampaignConnections.js';
 import { validateSavedPlacement, samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
@@ -20,8 +20,18 @@ const point = (value) =>
 const invalid = (message = 'The host returned an invalid public player snapshot') => {
   throw Object.assign(new Error(message), { code: 'invalid-player-state' });
 };
+const sealedAssets = new WeakSet();
+
+export function sealPlayerAssets(assets) {
+  if (sealedAssets.has(assets)) return assets;
+  validatePlayerAssets(assets);
+  freezeSceneData(assets);
+  sealedAssets.add(assets);
+  return assets;
+}
 
 export function validatePlayerAssets(assets) {
+  if (sealedAssets.has(assets)) return assets;
   if (
     !only(assets, ['location', 'maps', 'connections', 'doorPanels']) ||
     !only(assets.location, ['id', 'name']) ||

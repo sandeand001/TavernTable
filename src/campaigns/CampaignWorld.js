@@ -1,4 +1,4 @@
-import { validateScene, validateMapBoard } from './CampaignScene.js';
+import { validateScene, validateMapBoard, freezeSceneData } from './CampaignScene.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 import {
   pointInsideSolid,
@@ -24,11 +24,6 @@ import {
 } from './PhysicalMapQueries.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
-const freezeSnapshot = (value) => {
-  for (const nested of Object.values(value))
-    if (nested !== null && typeof nested === 'object') freezeSnapshot(nested);
-  return Object.freeze(value);
-};
 const finitePoint = (value) =>
   value !== null &&
   typeof value === 'object' &&
@@ -43,8 +38,10 @@ export default class CampaignWorld {
     validateScene(scene, context);
     this._context = context;
     this._geometries = new Map();
+    this._loadedGeometryRevisions = new WeakMap();
     this._mapSnapshots = new WeakMap();
     this._obstacleCache = new Map();
+    this._locationObstacles = new Map();
     this._mapRevision = 0;
     if (scene.version === 3) {
       this._scene = copy(scene);
@@ -120,19 +117,49 @@ export default class CampaignWorld {
     return copy(this._map(id));
   }
 
+  hasSameMapData(world) {
+    return ['maps', 'connections', 'locations'].every(
+      (key) => JSON.stringify(this._scene[key]) === JSON.stringify(world._scene[key])
+    );
+  }
+
   forkQuery(scene, context) {
     const world = CampaignWorld.fromScene(scene, context);
     for (const [id, map] of world._mapsById) {
       const geometry = this._geometries.get(id);
-      if (geometry && JSON.stringify(this._mapsById.get(id)) === JSON.stringify(map))
-        world._geometries.set(id, geometry.cloneQuery());
+      if (
+        geometry &&
+        this._loadedGeometryRevisions.get(geometry) === geometry.revision &&
+        JSON.stringify(this._mapsById.get(id)) === JSON.stringify(map)
+      ) {
+        const compiled = geometry.cloneQuery();
+        world._geometries.set(id, compiled);
+        world._loadedGeometryRevisions.set(compiled, compiled.revision);
+      }
     }
+    if (this.hasSameMapData(world))
+      for (const [locationId, cached] of this._locationObstacles) {
+        if (
+          !this._validObstacleSnapshot(cached) ||
+          cached.sources.some(
+            ({ geometry }) => this._loadedGeometryRevisions.get(geometry) !== geometry.revision
+          )
+        )
+          continue;
+        world._locationObstacles.set(locationId, {
+          obstacles: cached.obstacles,
+          sources: cached.sources.map(({ id }) => {
+            const geometry = world._geometry(id);
+            return { id, geometry, revision: geometry.revision };
+          }),
+        });
+      }
     return world;
   }
 
   getMapSnapshot(id) {
     const map = this._map(id);
-    if (!this._mapSnapshots.has(map)) this._mapSnapshots.set(map, freezeSnapshot(copy(map)));
+    if (!this._mapSnapshots.has(map)) this._mapSnapshots.set(map, freezeSceneData(copy(map)));
     return this._mapSnapshots.get(map);
   }
 
@@ -200,7 +227,10 @@ export default class CampaignWorld {
     this._scene = next;
     this._mapsById = new Map(next.maps.map((map) => [map.id, map]));
     this._geometries = kept;
-    if (!sameMaps || !sameConnections) this._mapRevision++;
+    if (!sameMaps || !sameConnections) {
+      this._mapRevision++;
+      this._locationObstacles.clear();
+    }
     this._obstacleCache.clear();
   }
 
@@ -354,11 +384,19 @@ export default class CampaignWorld {
           board.feetPerWorld,
       });
     this._geometries.set(mapId, geometry);
+    this._loadedGeometryRevisions.set(geometry, geometry.revision);
     return geometry;
   }
 
   _campaignSolid(map, cell) {
     return mapSolidToCampaign(map, cell);
+  }
+
+  _validObstacleSnapshot(cached) {
+    return cached.sources.every(
+      ({ id, geometry, revision }) =>
+        this._geometries.get(id) === geometry && geometry.revision === revision
+    );
   }
 
   getObstacles({
@@ -369,6 +407,12 @@ export default class CampaignWorld {
   } = {}) {
     if (mapId !== null) this._map(mapId);
     if (excludeMapId !== null) this._map(excludeMapId);
+    const locationId = this.getLocationId(mapId ?? excludeMapId ?? this._scene.view.mapId);
+    const reusable = activeGeometry === null && coverBounds === null && excludeMapId === null;
+    if (reusable) {
+      const cached = this._locationObstacles.get(locationId);
+      if (cached && this._validObstacleSnapshot(cached)) return [...cached.obstacles];
+    }
     const obstacles = [];
     for (const map of this._scene.maps) {
       if (!this.sharesLocation(map.id, mapId ?? excludeMapId ?? this._scene.view.mapId)) continue;
@@ -391,6 +435,18 @@ export default class CampaignWorld {
       const owner = this._map(connection.feature.mapId);
       for (const cell of doorLeafCells(this, connection, { mapId, geometry: activeGeometry }))
         obstacles.push(this._campaignSolid(owner, cell));
+    }
+    if (reusable) {
+      this._locationObstacles.set(locationId, {
+        obstacles: freezeSceneData(obstacles),
+        sources: this._scene.maps
+          .filter((map) => this.getLocationId(map.id) === locationId)
+          .map(({ id }) => {
+            const geometry = this._geometry(id);
+            return { id, geometry, revision: geometry.revision };
+          }),
+      });
+      return [...obstacles];
     }
     return obstacles;
   }

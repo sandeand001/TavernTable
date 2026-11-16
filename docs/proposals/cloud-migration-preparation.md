@@ -5219,3 +5219,59 @@ request. It opens no inspector network port and records no locals, arguments,
 identities or payloads. Stage/CPU observations from this instrumented revision
 are diagnostic, not latency acceptance; all temporary profiling code still
 requires removal before the final release.
+
+### Immutable public assets and location obstacles: private candidate
+
+The bounded revision-20 control retains its **11,096.8-ms** durable receipt.
+Its diagnostic handler takes **10,713.552 ms**, with **10,360 ms** process CPU
+and **1,896.786 ms** sampled garbage collection. Static obstacle construction,
+surface sight and native geometry allocation are hot. Elapsed backup spans
+include concurrent observer work; they do not prove backup computation alone
+uses the whole span. The nine member observations and raw owner observation
+are now closed, and the actual owner session is verified **paused**, with zero
+owner streams and no pending live control.
+
+The candidate reuses deeply immutable, revision-checked location obstacle
+snapshots; explicit preview geometry bypasses them. Query forks never inherit
+unpublished geometry mutations, including a regression reproduced red before
+the fix. Public asset graphs are fully validated before deep freezing and
+structural certification. Mutable previously valid inputs, merely frozen
+roots and failed certification cannot acquire that shortcut. Bounded static
+artwork reuse requires exact map/connection/location contents and the current
+visible-map selection. Fresh poses, sheets, image slots, gameplay, Undo and
+authorization are not cached as authority. Location renames and physical edits
+invalidate artwork reuse.
+
+All temporary request-stage/inspector code, its store/HTTP hooks and its image
+allowlist/checksum entry are removed from candidate source. The HTTP handler
+still awaits canonical commit, applicable automatic backup work and change
+maintenance before sending the receipt. Exact-image coverage now includes
+the shared scene-data freezing module.
+
+Local feedback remains explicitly distinct from hosted acceptance:
+
+- The first unprofiled demo HTTP loop retains **1,927.355/1,723.747 ms** with
+  ten observers, versus **1,657.986 ms** without observers. Its conservative
+  **1,500-ms** local diagnostic margin fails; those observations are retained.
+- A later isolated CPU-profiled loop records **769.157/804.460 ms** with ten
+  observers, versus **660.321 ms** without. Combined local server/client CPU
+  is **594/672 ms**, and event-loop stalls are **255.984/223.085 ms**.
+  Environmental I/O variation and diagnostic sampling preclude treating these
+  local values as the hosted receipt gate.
+- Read-only, networkless Linux Node **24.22.3**, UID **1000**, CPU **1**/GiB **1**
+  feedback uses the exact private 42-map/eight-actor source. Cold projection is
+  **1,254.008 ms**; nine-view rounds are **823.614/134.834/95.565/89.473 ms**.
+  RSS is **208,293,888 bytes**, maximum **217,260,032 bytes**. The committed
+  public-result hash matches exactly, canonical input is unchanged, and there
+  are zero historical updates, unchanged warm artwork bodies or authority writes.
+- **252 native tests / 19 suites** pass with open-handle detection in
+  **234.589 seconds**; all **31** real managed HTTP/SSE cases pass in
+  **428.994 seconds**. All **five** focused projection cases pass, including
+  fresh cross-generation poses/location metadata and certification trust.
+  The generated 51-map/134-connection/eight-actor case projects in
+  **757.033/233.296/228.329 ms**. Changed-source lint and layering pass.
+
+These are candidate gates, not a new whole-repository stable result or a
+completed M5-06. A matching existing-pilot image/frontend release, actual
+200-ms-RTT ordinary receipt distribution and the complete real four-to-five-hour
+session remain required. Production and selected-data cutover remain unapproved.

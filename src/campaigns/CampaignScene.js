@@ -160,6 +160,13 @@ function validateBoard(grid, terrain, version, base = 'ground') {
 
 export { validateBoard as validateMapBoard };
 
+export function freezeSceneData(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) freezeSceneData(child, seen);
+  return Object.freeze(value);
+}
+
 export function validateScene(scene, { ruleset, library }) {
   if (!record(scene) || ![1, 2, 3].includes(scene.version) || scene.ruleset !== ruleset)
     failure('version or ruleset');

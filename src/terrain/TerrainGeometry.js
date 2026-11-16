@@ -93,6 +93,7 @@ export class TerrainGeometry {
     this.depthFeet = depthFeet;
     this._terrainThicknessFeet = terrainThicknessFeet;
     this._getTerrainHeightFeet = getTerrainHeightFeet;
+    this._revision = 0;
     this._operations = new Map();
     this._structures = new Map();
     this._cells = new Map();
@@ -440,7 +441,12 @@ export class TerrainGeometry {
     this.invalidate();
   }
 
+  get revision() {
+    return this._revision;
+  }
+
   invalidate() {
+    this._revision++;
     this._solidCells = null;
     this._navigationPoints = null;
     this._volumeIndex = null;
@@ -577,7 +583,8 @@ export class TerrainGeometry {
     });
     geometry.load(this.save());
     // Query forks retain immutable checkpoint heights and cells, but not editable operations.
-    geometry._solidCells = this._solidCells ? Object.freeze([...this._solidCells]) : null;
+    geometry._solidCells = this._solidCells;
+    geometry._revision = this._revision;
     return geometry;
   }
 

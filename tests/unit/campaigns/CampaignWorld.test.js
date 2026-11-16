@@ -109,6 +109,9 @@ test('query forks preserve fresh actors and independent geometry while changed m
   });
   expect(fork.hasLineOfSight(origin, target)).toBe(false);
   expect(world.hasLineOfSight(origin, target)).toBe(true);
+  const clean = fork.forkQuery(fork.save(), validation);
+  expect(clean.hasLineOfSight(origin, target)).toBe(true);
+  expect(fork.hasLineOfSight(origin, target)).toBe(false);
   const changed = world.save();
   changed.maps[0].originFeet.y = 5;
   changed.maps[0].terrain.heights[0][0] = 1;
@@ -119,6 +122,35 @@ test('query forks preserve fresh actors and independent geometry while changed m
   expect(
     world.findSupportBelow({ x: 2.5, y: 100, z: 2.5 }, { mapId: 'map-main' }).positionFeet.y
   ).toBe(0);
+});
+
+test('location obstacle snapshots resist caller mutation while edits and preview geometry keep fresh physical sight', () => {
+  const scene = sceneState();
+  scene.terrain.heights = scene.terrain.heights.map((row) => row.map(() => 0));
+  const world = CampaignWorld.fromScene(scene, context());
+  const origin = { x: 7.5, y: 0, z: 7.5 };
+  const target = { x: 17.5, y: 0, z: 7.5 };
+  const first = world.getObstacles({ mapId: 'map-main' });
+  expect(() => {
+    first[0].min.x = 999;
+  }).toThrow(TypeError);
+  first.push({
+    min: { x: 12, y: 0, z: 0 },
+    max: { x: 13, y: 15, z: 25 },
+  });
+  expect(world.hasLineOfSight(origin, target)).toBe(true);
+  world.getMapGeometry('map-main').addSolid({
+    id: 'later-wall',
+    bounds: { min: { x: 12, y: 0, z: 0 }, max: { x: 13, y: 15, z: 25 } },
+  });
+  expect(world.hasLineOfSight(origin, target)).toBe(false);
+  const preview = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    getTerrainHeightFeet: () => 0,
+  });
+  expect(world.hasLineOfSight(origin, target, { mapId: 'map-main', geometry: preview })).toBe(true);
+  expect(world.hasLineOfSight(origin, target)).toBe(false);
 });
 
 function floorMap(id, originFeet, quarterTurns = 0) {

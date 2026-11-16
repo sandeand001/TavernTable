@@ -4,9 +4,10 @@ const { createHash } = require('node:crypto');
 const three = require('three');
 
 class PublishedMaps {
-  constructor(root, snapshotWorld = null) {
+  constructor(root, snapshotWorld = null, graphics = new Map()) {
     this.root = root;
     this.snapshotWorld = snapshotWorld;
+    this.graphics = graphics;
     this.cache = new Map();
   }
 
@@ -28,11 +29,34 @@ class PublishedMaps {
   }
 
   async presentation(world, mapId, assetKey, visibleMapIds = new Set([mapId])) {
-    const { playerRenderAssets } = await import(
-      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPresentation.js')).href
-    );
-    const assets = playerRenderAssets(world, mapId, { visibleMapIds });
-    const publicKey = createHash('sha256').update(JSON.stringify(assets)).digest('hex');
+    const key = JSON.stringify([mapId, [...visibleMapIds].sort()]);
+    let graphic = this.snapshotWorld ? this.graphics.get(key) : null;
+    if (graphic)
+      return {
+        version: 1,
+        assetKey: graphic.assetKey,
+        assets: graphic.assetKey === assetKey ? null : graphic.assets,
+      };
+    const [{ playerRenderAssets }, { sealPlayerAssets }] = await Promise.all([
+      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPresentation.js')).href),
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+      ),
+    ]);
+    const assets = sealPlayerAssets(playerRenderAssets(world, mapId, { visibleMapIds }));
+    const text = JSON.stringify(assets);
+    const publicKey = createHash('sha256').update(text).digest('hex');
+    const bytes = Buffer.byteLength(text);
+    if (this.snapshotWorld && bytes <= 8 * 1024 ** 2) {
+      while (
+        this.graphics.size >= 8 ||
+        [...this.graphics.values()].reduce((total, entry) => total + entry.bytes, 0) + bytes >
+          8 * 1024 ** 2
+      )
+        this.graphics.delete(this.graphics.keys().next().value);
+      graphic = { assetKey: publicKey, assets, bytes };
+      this.graphics.set(key, graphic);
+    }
     return { version: 1, assetKey: publicKey, assets: publicKey === assetKey ? null : assets };
   }
 

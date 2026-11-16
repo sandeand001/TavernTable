@@ -32,6 +32,7 @@ function reuseParticipantGeometry(state, previous) {
       campaignId: source.campaignId,
       ruleset: source.ruleset,
       world: source.world,
+      graphics: source.graphics,
     });
 }
 
@@ -57,6 +58,14 @@ function projectionSource(state, catalog, campaign) {
       ? previous.world.forkQuery(scene, context)
       : CampaignWorld.fromScene(scene, context)
     : null;
+  const graphics =
+    world &&
+    previous?.world &&
+    previous.campaignId === state.campaign.id &&
+    previous.ruleset === campaign.ruleset &&
+    previous.world.hasSameMapData(world)
+      ? previous.graphics
+      : new Map();
   const source = {
     fingerprint,
     catalog,
@@ -65,7 +74,8 @@ function projectionSource(state, catalog, campaign) {
     library,
     scene,
     world,
-    published: new PublishedMaps(path.resolve(__dirname, '..', '..'), world),
+    graphics,
+    published: new PublishedMaps(path.resolve(__dirname, '..', '..'), world, graphics),
     views: new Map(),
   };
   predecessors.delete(state);
