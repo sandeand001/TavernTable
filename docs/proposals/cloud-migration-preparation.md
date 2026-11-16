@@ -1,5 +1,9 @@
 # Cloud migration: preparation and verification
 
+**Implementation branch:** `feat/cloud-accounts-multiplayer`. This evidence
+describes that branch; mirroring this document into another checkout does not
+merge its implementation or authorize production.
+
 ## Workspace evidence
 
 `M0-02` completed November 10, 2026:
@@ -5581,6 +5585,38 @@ IAM. A broad provider window including preparation and the aborted attempt has
 42 nonempty memory samples, maximum **sample mean 409,264,128 bytes** against
 1 GiB; this is not an instantaneous peak. Its coarse counters are 2,210 HTTP
 requests, 53,498 Firestore reads, 2,228 writes and 971 Storage requests. They are
-not attributed per command or falsely equated across provider windows. The
-current complete stable suite is running separately; its result is not yet
-claimed.
+not attributed per command or falsely equated across provider windows.
+
+The current complete stable gate now passes **307 suites / 4,067 tests** in
+**1,820.696 seconds**, using `--detectOpenHandles --runInBand`, exit 0. This is a
+fresh whole-suite result for the current implementation, unlike the earlier
+focused gates or older 4,017-test baseline. It does not complete the ongoing
+real-clock hosted rehearsal or the owner-deferred manual animation check.
+
+### Extended attempt stopped; visible tracker corrected (2026-11-16)
+
+The second extended attempt stopped after **1,173.8126 seconds** at client UTC
+**2026-11-16T19:11:53.889Z**. The private helper's instantaneous readiness check
+reported "The native owner is not ready" during a stream reconnect. The new
+owner-events request began 992.6 ms before the assertion, and its successful
+headers arrived 270.8 ms afterward. The owner recovered without a pending
+mutation or 503, and all scopes reached generation **131**. This is not a
+four-hour pass. A helper correction that waits for bounded normal reconciliation
+is prepared separately; it has not yet been used for a completed run.
+
+The game is now verified paused. All nine member observations are closed; owner
+streams and pending save/live/world operations are zero. Test transports are
+restored, all three latency workers and the private control channels are closed,
+and the complete final backup is **saved at generation 131**, error null. Named
+fixture sign-ins, real owner Auth, original campaigns/keys and cloud deployment
+settings remain unchanged.
+
+The owner identified that the working-checkout checklist still showed its
+initial **5/65** state while progress had been recorded only in the isolated
+migration worktree. This was a tracking workflow error. The checklist now has
+a dated current-status summary, accurate **59/65** count, current milestone
+states, explicit remaining/deferred checks and the fresh 4,067-test evidence.
+Its working-checkout copy and this supporting evidence log are synchronized;
+the unrelated edited proposal and the checkout's branch/code are not changed.
+Future status updates must reach the working-checkout tracker as well as the
+implementation worktree.

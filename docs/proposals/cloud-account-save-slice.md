@@ -1,9 +1,10 @@
 # First cloud slice: account access and durable campaign saves
 
-**Status:** verified development account/owned-campaign and atomic save backend,
+**M1 exit record (historical):** verified development account/owned-campaign and atomic save backend,
 managed browser login, save feedback and rendered/replacement acceptance.
 The corrected final M1 gate passed 295 Jest suites / 3,791 tests plus 52 native
-SDK/HTTP cases; nothing is deployed.
+SDK/HTTP cases; nothing was deployed at that checkpoint. For the current rollout
+state, see the [execution checklist](./cloud-accounts-and-multiplayer-checklist.md).
 See [browser/restart evidence](./cloud-migration-preparation.md#m1-browser-and-restart-acceptance).
 
 **Scope:** the first pair of Modules selected in the

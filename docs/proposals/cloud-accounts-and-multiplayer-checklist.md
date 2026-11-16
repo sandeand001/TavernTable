@@ -2,6 +2,11 @@
 
 **Created:** November 10, 2026
 
+**Last updated:** November 16, 2026
+
+**Implementation branch:** `feat/cloud-accounts-multiplayer`. Completion below
+refers to that migration branch, not to an older checkout displaying this file.
+
 **Design reference:** [Approved proposal](./cloud-accounts-and-multiplayer.md)
 
 **Implementation baseline:** [PR #28](https://github.com/sandeand001/TavernTable/pull/28),
@@ -19,6 +24,11 @@ data, or grant production approval.
 - `[x]` means all success criteria are met and completion evidence is recorded.
   Add `Completed: <date>; Evidence: <PR/tests/report and measured result>`.
 - Keep task IDs stable. Add follow-up IDs rather than renumbering completed work.
+- Update the progress count, milestone table and current status whenever a task,
+  verification result, approval or blocker changes.
+- When implementation uses a separate worktree, synchronize this checklist and
+  its preparation/evidence log to the user's working checkout. Do not leave
+  progress updates visible only in the implementation worktree.
 - Dependencies are actual prerequisites, not a requirement to finish every
   earlier phase. In particular, `M4-01` can be implemented before M3 streaming.
 - Before marking implementation complete, run the smallest relevant existing
@@ -30,68 +40,40 @@ data, or grant production approval.
 - Approval tasks require an explicit recorded owner decision. Completing nearby
   engineering tasks does not satisfy an approval task.
 
-**Initial status:** existing setup and the integration baseline are recorded
-below. Cloud application implementation has not started. Email/password enablement
-and the existing billing budget were reported, not end-to-end verified.
-No new cloud verification or infrastructure changes were performed to create
-this checklist.
+## Current status
 
-**Current work:** the isolated SDK loop, account gate, private owned metadata and
-atomic canonical scene/character backend are verified in
-`feat/cloud-accounts-multiplayer`. Managed browser sign-in/recovery, returning
-identity, truthful save feedback and rendered cloud reopening (`M1-04`, `M1-05`,
-`M1-08`, `M1-09`) are verified in the demo environment. Actual process-kill tests
-pass before and after publication. The corrected full stable regression gate
-(`M1-10`) passed 295 suites / 3,791 tests; full frontend rollout and real campaign
-migration retain their separate approval gates.
-Campaign-local access/invitations/member lifecycle (`M2-01` through `M2-03`) and
-canonical campaign/settings persistence (`M2-05`) pass their demo acceptance
-gates, along with private image upload/delivery (`M2-06`) and private-pilot usage
-controls (`M2-08`), complete campaign portability (`M2-07`), independent
-rolling complete backups (`M2-09`), and verified restore-as-copy (`M2-10`).
-Same-UID Google/password linking (`M2-04`) passed owner-approved live acceptance
-on the existing account; the separate emulator defect remains documented.
-Fenced cleanup (`M2-11`), the API-runtime package (`M4-06`), and durable live
-authority/inactivity/presence (`M4-01`/`M4-02`/`M4-03`) are verified.
-Online assigned sheets while paused (`M2-12`) now pass local and real API gates.
-The owner approved one bounded API test deployment in the existing personal
-project; its three disposable account/two synthetic campaign fixtures and live
-object generations were verified cleaned up. The real account and campaigns
-were untouched. That early API-only gate was not a frontend rollout or source-of-truth cutover.
-Complete M2 implemented-operation coverage (`M2-13`) passes the full native
-catalog and stable regression suite. Initial participant snapshot/manifest/delta privacy (`M3-01`) now passes local
-and bounded real API acceptance. Ordered durable changes/shared backend
-observation (`M3-02`), direct authenticated Fetch SSE (`M3-03`) and managed
-reconciliation/gap recovery (`M3-04`) pass local and bounded real API gates.
-Native world authority/bidirectional motion (`M3-05`), progressive private cache,
-authoritative warm rejoin and session-loss safety (`M3-06` through `M3-09`)
-are verified. Ten concurrent managed clients now pass convergence/privacy/
-receipt/replay acceptance (`M3-10`), with **307 suites / 4,006 tests** passing
-the full stable gate. Safe lifecycle drain and captured final-source backups
-(`M4-04`) and actual forced-container restart/overlap (`M4-05`) are verified.
-Complete cloud gameplay activation and selected real-data/production cutover remain gated.
-Versioned, allowlisted frontend packaging (`M4-07`) is verified locally, including
-actual Hosting HTTP and native-browser gates. The owner authorizes continuing
-local packaging with the tropical pack's formal license record still missing;
-that gap is recorded, not declared resolved. The separately approved bounded
-existing-project hosted pilot (`M4-08`) is now published and accepted (`M4-09`).
-Hosted privacy/observability and the ACK-inclusive lifecycle, performance and
-cost/readiness report (`M4-10` through `M4-13`) now pass their verified pilot
-gates. Ten managed clients pass 105 ordinary receipts at **1,789.49 ms p95**,
-healthy idle stays below **600 B/min/person**, warm unchanged asset bodies are
-zero, and actual 55/60/15-minute, token-rotation, zero-instance and cold-sheet
-read/save/re-sleep checks pass. The measured cold read is **5.22 seconds**;
-the conservative thirty-shared-hour forecast is **USD 15.57/month**, not a
-spending cap. The new full stable gate passes **307 suites / 4,017 tests**.
-The owner subsequently delegated selecting one original test campaign for
-private rehearsal. Independent source exports, an authenticated private import,
-an exact export/import round trip and returning account-bound player seats pass
-`M5-01` through `M5-05`. These are rehearsal copies, not production authority;
-originals remain untouched and gameplay capabilities stay gated. Complete
-gameplay and the four-to-five-hour rehearsal are in progress before the separate
-production and selected-data approvals.
-**59 of 65** tasks are complete,
-including the four setup tasks and excluding the deferred routine-save UX task.
+**59 of 65 tasks complete.** This includes the four setup tasks and excludes
+the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
+`M5-05` are complete; the six remaining migration tasks are `M5-06` through
+`M5-11`.
+
+- **Current task:** `M5-06`, the representative ten-client, four-to-five-hour
+  rehearsal. It is not complete. The latest extended attempt stopped after
+  **19 minutes 33.813 seconds** when the test helper sampled owner readiness
+  during stream reconnection. The owner subsequently recovered; all scopes
+  reached generation 131. The helper's bounded-reconciliation correction and
+  a fresh full-duration run still need verification.
+- **Latest complete regression gate:** **307 suites / 4,067 tests passed** in
+  **1,820.696 seconds**, with open-handle detection. The focused native movement
+  gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
+- **Private pilot:** API `00024-2ps`, implementation `103ac90...`, frontend
+  `57cb5484...`. Gameplay is enabled only in the approved private pilot.
+  The game is now verified paused, all nine member observations are closed,
+  no operation is pending, and the complete final backup is saved at generation
+  **131**. Test transports/workers are restored/stopped.
+- **Owner-deferred check:** manual DM/player animation verification will be done
+  by the owner after the remaining work. This is deferred, not an observed pass.
+  A short delay is acceptable; disjointed live movement remains the concern.
+  The original two-second benchmark failure is retained, not relabeled.
+- **Next:** finish `M5-06`, then perform the actual private backup restore and
+  compatible rollback/drain drill (`M5-07`). Separate production approval,
+  deployment, selected-data cutover approval and first production-session
+  verification remain (`M5-08` through `M5-11`).
+- **Still deferred:** `UX-01`, disruptive save flashing/centered feedback, until
+  after `M5-11`. Originals, host keys and the real owner account remain untouched.
+
+Detailed completion evidence and historical measurements are recorded under each
+task and in [the preparation log](./cloud-migration-preparation.md).
 
 ## Approved requirements: do not reopen by accident
 
@@ -108,11 +90,9 @@ including the four setup tasks and excluding the deferred routine-save UX task.
 | Migration    | Explicitly selected, non-destructive copies; verified data, restore drill, rehearsal, and separate production/cutover approvals.                                                                                                |
 | Architecture | Start with Account and Campaign Access plus a minimal Durable Campaign Commit slice. Preserve the local Adapter and [ADR-0001](../adr/ADR-0001-terrain-engine-event-seam.md); no second terrain owner or speculative framework. |
 
-Remaining starting parameters still need an implementation record and measured
-validation: a reconnect journal bounded to 1,000
-changes and 24 hours; Cloud Run resource/concurrency settings; upload, request,
-cache, log, and retention limits. These are not new approvals or guaranteed
-performance results.
+Starting parameters and their measured validation are recorded in the completed
+task evidence and preparation log. Defaults alone are not verification, new
+approvals or guaranteed performance results.
 
 ## Recorded completed setup
 
@@ -148,14 +128,14 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 ## Milestones and exit gates
 
-| Milestone                                | Initial state      | Exit requirement                                                                                                                      |
+| Milestone                                | Current status     | Exit requirement                                                                                                                      |
 | ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| M0 - Baseline and preparation            | Partially complete | Verified baseline, isolated migration workspace, measured inventory, and verification/decision record.                                |
-| M1 - Account/cloud vertical slice        | Not started        | Both login methods; one privately owned campaign saved/reopened durably; restart, failure, and second-UID denial proofs.              |
-| M2 - Ownership and complete persistence  | Not started        | Owned/Joined access, invitations, all storage paths, backups/restoration, and permission/atomicity coverage.                          |
-| M3 - Synchronization and cache           | Not started        | Authorized incremental updates and replay; safe reconnect/cache reuse; ten-client convergence.                                        |
-| M4 - Lifecycle and isolated hosted pilot | Not started        | Approved sleeping behavior; restricted deployment; hosted correctness, performance, monitoring, and measured cost evidence.           |
-| M5 - Migration and production cutover    | Not started        | Selected-source copy/verification, account-bound seats, rehearsal, restore/rollback drill, and explicit production/cutover approvals. |
+| M0 - Baseline and preparation            | Complete: 4/4      | Verified baseline, isolated migration workspace, measured inventory, and verification/decision record.                                |
+| M1 - Account/cloud vertical slice        | Complete: 10/10    | Both login methods; one privately owned campaign saved/reopened durably; restart, failure, and second-UID denial proofs.              |
+| M2 - Ownership and complete persistence  | Complete: 13/13    | Owned/Joined access, invitations, all storage paths, backups/restoration, and permission/atomicity coverage.                          |
+| M3 - Synchronization and cache           | Complete: 10/10    | Authorized incremental updates and replay; safe reconnect/cache reuse; ten-client convergence.                                        |
+| M4 - Lifecycle and isolated hosted pilot | Complete: 13/13    | Approved sleeping behavior; restricted deployment; hosted correctness, performance, monitoring, and measured cost evidence.           |
+| M5 - Migration and production cutover    | In progress: 5/11  | Selected-source copy/verification, account-bound seats, rehearsal, restore/rollback drill, and explicit production/cutover approvals. |
 
 ### M0 - Baseline and preparation
 
@@ -1496,19 +1476,29 @@ Revalidation in the intended environment remains part of M1 and M4.
     The focused native movement gate passes **32 tests / four suites** in
     **120.261 seconds**. This is not a completed foreground hosted visual check,
     and no replacement numeric latency threshold has been approved.
+    The current complete stable gate also passes **307 suites / 4,067 tests**
+    with open-handle detection in **1,820.696 seconds**.
     The owner subsequently instructed continuing on an assumed-success basis
     and will perform the manual animation check after the remaining work.
     That check is **deferred, not passed**, and does not block continued private
     rehearsal/recovery work. The original timing observations remain recorded;
     no new numeric pass or production/cutover approval is implied.
-    A fresh extended real-clock rehearsal is now **running**, from client UTC
-    **2026-11-16 18:52:20.077**, on the same private release and existing nine
-    fixture identities plus the native owner. Setup and an earlier 67.0555-second
-    aborted harness attempt are excluded. Initial hosted checks cover a correct
+    The latest extended real-clock attempt started at client UTC
+    **2026-11-16 18:52:20.077** on the same private release and existing nine
+    fixture identities plus the native owner. It stopped after **1,173.813
+    seconds**, not four hours, when an instantaneous helper assertion sampled
+    the native owner during stream reconnection. The replacement stream's
+    headers arrived 270.8 ms after that assertion; the owner then recovered.
+    Setup and an earlier 67.0555-second aborted harness attempt are excluded.
+    Hosted checks cover a correct
     off-turn refusal, off-turn dice, Dash/Undo, turn end, Free Play walk/run with
     no restricted debit, an emote, exact assigned-note save/restoration and warm
-    rejoins. All ten scopes are current at the last recorded generation 111;
-    this is progress, **not a completed four-hour result**.
+    rejoins. All ten scopes subsequently reached generation 131 with no 503 or
+    pending command. The private game is now verified paused, the nine members
+    are closed, transports/workers are restored/stopped, and the complete final
+    backup is saved at generation 131. A bounded-reconciliation helper correction
+    is prepared but has not yet passed a new full-duration run. This remains
+    **not a completed four-hour result**.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
