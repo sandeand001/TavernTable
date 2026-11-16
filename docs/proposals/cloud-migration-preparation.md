@@ -4893,3 +4893,32 @@ fractional flight as well as native Cover for both rulesets without sprite
 assets/GPU. That gate still requires a fresh exact image build. No new hosted
 release or full-session acceptance is implied; both gameplay flags, the R8
 service and the **59/65** canonical completion count remain unchanged.
+
+The exact committed source `87fd2c54bbbbb4795261abf615084fec98927c07`
+(tree `79bc6aeaf7119058ae97e9d8240182b45038422d`) now passes fresh local
+runtime and frontend packaging:
+
+- Image tag `taverntable-cloud:m5-native-controls-87fd2c5`.
+  OCI index `sha256:a21f1c75e1e888a3f719387e3696a9bdbda4664edbc556487619aa58087de678`;
+  runnable manifest `sha256:89a02305b16199b6c3fada97cbcf438173be3e4364b656e812aea7a29978c8b8`.
+- **31 exact hashes** match source. Linux Node **24.22.3**, UID **1000**,
+  read-only root, no network/mounts/GPU, **1 CPU / 1 GiB**. Actual Cover and
+  fractional-elevation flight execute for **both rulesets** without sprite files.
+  Sixteen pinned packs, **501 real d20 frames**, the 16-MP native-image guard,
+  authentication/private-file denials and graceful exit zero pass.
+  Check RSS is **251,576,320 bytes**, not a hosted peak-memory measurement.
+- The exact isolated check container is stopped/removed; the image stays local.
+- Verified frontend output is
+  `build/cloud-frontend/m5-native-controls-87fd2c5`, release
+  `e133f097293c362521fc4dc3127fd0505671da08806b037f9466dcb8731ef391`.
+  It retains the currently published `4217765d8a3ae47bc9b73da679e71a40ead90616e008df963040439ec9a13c42`
+  static tree: **1,215 files / 578,487,102 bytes** across two releases.
+  The compiler verifies every allowlisted body/import and existing runtime;
+  `deploymentApproved:false` and truthful unrecorded tropical-license provenance
+  remain unchanged. Retaining assets is not certification of backend/data
+  rollback compatibility; M5-07 still owns that proof.
+
+These are local artifacts, not publication or activation. The existing private
+API/website and both user-facing gameplay gates remain unchanged. The next
+hosted step must deliberately lift those gates for the approved private rehearsal,
+without implying production deployment, source-data cutover or M5-06 completion.

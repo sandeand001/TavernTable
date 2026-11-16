@@ -1471,9 +1471,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     Actual player controls now have a **434-test / 25-suite** native regression
     gate. The complete **29-case** cloud HTTP/SSE gate, including ten managed SDK
     participants, is supplemented by **three** current flight/denial HTTP/SSE
-    cases after native entrance-approach parity. Remaining complete-world
-    acceptance and matching exact
-    packaging are still development gates, not a completed full-session rehearsal.
+    cases after native entrance-approach parity. Matching exact runtime/frontend
+    packages pass their local gates. Hosted gameplay activation and complete-world
+    acceptance remain gated, not a completed full-session rehearsal.
     The selected private campaign and returning seats are ready; a short
     technical pilot is not substituted for the required four-to-five-hour run.
   - **Depends:** `M5-05`, `M4-12`.
