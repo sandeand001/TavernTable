@@ -48,19 +48,20 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
 `M5-11`.
 
 - **Current task:** `M5-06`, the representative ten-client, four-to-five-hour
-  rehearsal. It is not complete. The latest extended attempt stopped after
-  **19 minutes 33.813 seconds** when the test helper sampled owner readiness
-  during stream reconnection. The owner subsequently recovered; all scopes
-  reached generation 131. The helper's bounded-reconciliation correction and
-  a fresh full-duration run still need verification.
+  rehearsal. It is not complete. The earlier **19-minute 33.813-second** attempt
+  stopped on an instantaneous helper assertion during owner reconnection; its
+  data is retained. The corrected helper now passes a real reconnection check,
+  waiting **2,496.6 ms** for all ten scopes to recover. A fresh full-duration
+  attempt is **running from 2026-11-16T19:48:10.195Z**. No setup or aborted
+  attempt time is credited.
 - **Latest complete regression gate:** **307 suites / 4,067 tests passed** in
   **1,820.696 seconds**, with open-handle detection. The focused native movement
   gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
 - **Private pilot:** API `00024-2ps`, implementation `103ac90...`, frontend
   `57cb5484...`. Gameplay is enabled only in the approved private pilot.
-  The game is now verified paused, all nine member observations are closed,
-  no operation is pending, and the complete final backup is saved at generation
-  **131**. Test transports/workers are restored/stopped.
+  The game is live only for this bounded private rehearsal, using the same nine
+  fixture identities and native owner. The prior attempt ended with a verified
+  pause, closed observations and complete saved backup at generation **131**.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
@@ -1494,11 +1495,19 @@ Revalidation in the intended environment remains part of M1 and M4.
     off-turn refusal, off-turn dice, Dash/Undo, turn end, Free Play walk/run with
     no restricted debit, an emote, exact assigned-note save/restoration and warm
     rejoins. All ten scopes subsequently reached generation 131 with no 503 or
-    pending command. The private game is now verified paused, the nine members
-    are closed, transports/workers are restored/stopped, and the complete final
-    backup is saved at generation 131. A bounded-reconciliation helper correction
-    is prepared but has not yet passed a new full-duration run. This remains
-    **not a completed four-hour result**.
+    pending command. After that attempt the game was verified paused, the nine
+    members were closed, transports/workers restored/stopped and complete final
+    backup saved at generation 131.
+    The version-3 private helper now waits for bounded normal reconciliation.
+    An actual owner reconnect check passes in **2,496.6 ms**, with all nine
+    members current and no pending write. Fresh pre-run calibration p95 is
+    **204.3/204.0/204.3 ms** for owner/primary/other members. All nine original
+    fixture identities are freshly admitted; returning observer assignments
+    remain **4 + 2**. The new actual run starts at
+    **2026-11-16T19:48:10.195Z**. Its initial hosted gameplay, exact note
+    save/restoration (character revision 11 to 13), and primary/original-account
+    warm rejoins pass with zero transferred private image bodies. The run is
+    ongoing; this remains **not a completed four-hour result**.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.

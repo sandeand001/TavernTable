@@ -5620,3 +5620,32 @@ Its working-checkout copy and this supporting evidence log are synchronized;
 the unrelated edited proposal and the checkout's branch/code are not changed.
 Future status updates must reach the working-checkout tracker as well as the
 implementation worktree.
+
+### Reconnection-aware extended rehearsal resumed (2026-11-16)
+
+The private helper's correction is now exercised through an actual owner stream
+reconnection, not only a syntax check. The bounded health check waits
+**2,496.6 ms** and returns with the native owner and all nine managed member
+scopes current at generation 131, with no pending mutation. The helper does not
+change server clocks, authoritative permissions or the application release.
+
+All prior attempts and valid observations are retained. The same nine named
+fixture identities are freshly authorized/admitted, preserving the original
+returning **4 + 2** observer assignments. Pre-run added-RTT calibration p95 is
+**204.3 ms** for the owner, **204.0 ms** for the primary and **204.3 ms** for the
+other eight. Native owner startup is **2,820.6 ms**; managed member admission is
+**1,733.1-5,572.8 ms**. Setup is excluded from session duration.
+
+The fresh actual run begins at client UTC **2026-11-16T19:48:10.195Z**. Initial
+hosted turn/Free Play checks, Dash/Undo, an emote, the exact assigned-note
+save/read/restoration (character revision 11 to 13), and two warm rejoins pass.
+Transferred private image bodies are zero on those rejoins; inline graphic
+bodies are not inferred from that image-only counter. The run remains in
+progress and no four-hour completion is claimed. A bounded local checkpoint
+timer only prompts inspection of real browser state; elapsed timer completion
+is never acceptance evidence.
+
+The actual implementation remains source `103ac90...`, API `00024-2ps`,
+frontend `57cb5484...`, with unchanged private-only approval and runtime/IAM.
+The owner's manual native animation check remains explicitly deferred. Updates
+to this evidence and the checklist are mirrored into the working checkout.
