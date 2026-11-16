@@ -52,11 +52,13 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   24.697 seconds**: one player's presence ACK returned `campaign-not-found`
   during renewal and the client latched a denial. The same verified UID still
   passes fresh original-seat access and participant-snapshot checks. This is
-  being fixed as a channel-liveness/access-classification bug, not bypassed by
-  resetting accounts or marking the rehearsal passed. All **83 accepted world
+  reproduced and fixed locally as a channel-liveness/access-classification bug:
+  **13 coupled lifecycle cases and 87 client/SSE unit tests pass**. The fixed
+  private image and a fresh full-duration run are still pending; no account
+  reset or claimed rehearsal pass substitutes for them. All **83 accepted world
   commands** and the earlier helper failures are retained; no aborted time is
   credited to the required full-duration run.
-- **Latest complete regression gate:** **307 suites / 4,067 tests passed** in
+- **Latest complete regression baseline (`103ac90...`):** **307 suites / 4,067 tests passed** in
   **1,820.696 seconds**, with open-handle detection. The focused native movement
   gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
 - **Private pilot:** API `00024-2ps`, implementation `103ac90...`, frontend
@@ -1515,8 +1517,14 @@ Revalidation in the intended environment remains part of M1 and M4.
     generation 219. Diagnostic token claims are verified/current, and fresh
     access with the original seat/generation plus a fresh participant snapshot
     both succeed. No UID, seat or permission was reset. The failure is isolated
-    to presence renewal rather than actual campaign removal. A focused
-    regression/fix is in progress before another full-duration attempt.
+    to presence renewal rather than actual campaign removal. Both new focused
+    regressions first fail against the deployed behavior: the stale channel is
+    misreported as 404, and a real managed HTTP observer becomes denied.
+    The local fix preserves fresh campaign authorization and classifies missing
+    and foreign channels uniformly as retryable client-presence-expired.
+    **13 coupled lifecycle cases / 106.622 seconds** and **87 client/SSE unit
+    cases** pass, including genuine revocation denial. The fixed image has not
+    yet been privately published or accepted in a new full-duration run.
     All 83 accepted commands are retained with no pending mutation or 503.
     The private game is now paused, all nine member observations and three
     latency workers/control channels are closed, and complete final backup is

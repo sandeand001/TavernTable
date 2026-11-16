@@ -386,7 +386,8 @@ test(
         new Date(now).toISOString()
       );
       const stale = await fetch(resource + 'ack', { method: 'POST', headers, body: command });
-      assert.equal(stale.status, 404);
+      assert.equal(stale.status, 409);
+      assert.equal((await stale.json()).code, 'client-presence-expired');
       const repeated = await fetch(resource + 'close', { method: 'POST', headers, body: command });
       assert.deepEqual((await repeated.json()).result, {
         version: 1,
@@ -3492,6 +3493,191 @@ test(
     assert.equal(disconnected.activity.disconnectedAt, new Date(now).toISOString());
     assert.equal(disconnected.session.lastMeaningfulAt, active.lastMeaningfulAt);
     await f.store.disconnectLivePresence(member.principal, campaign.id, command, scope);
+  }
+);
+
+test(
+  'ended or foreign presence channels expire without revoking a current campaign member',
+  { timeout: 30000 },
+  async (t) => {
+    let now = Date.now();
+    const f = await fixture(t, { now: () => now, cleanup: true });
+    const owner = await f.account();
+    const member = await f.account();
+    const campaign = await f.create(owner.principal, 'Ended presence is not campaign removal');
+    await f.join(campaign.id, member.uid);
+    const grant = await f.store.getParticipantAccess(member.principal, campaign.id);
+    const scope = {
+      seatId: grant.access.seatId,
+      accessGeneration: grant.access.accessGeneration,
+    };
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    const keeper = await f.store.connectLivePresence(
+      owner.principal,
+      campaign.id,
+      { sessionId: active.sessionId },
+      { clientAcknowledgements: true }
+    );
+    const connection = await f.store.connectLivePresence(
+      member.principal,
+      campaign.id,
+      { sessionId: active.sessionId },
+      { clientAcknowledgements: true }
+    );
+    const head = f.runtime.firestore.collection('campaigns').doc(campaign.id);
+    const before = (await head.get()).data();
+    const keeperReference = head.collection('livePresenceConnections').doc(keeper.id);
+    const keeperBefore = (await keeperReference.get()).data();
+    await f.store.disconnectLivePresence(
+      member.principal,
+      campaign.id,
+      { sessionId: active.sessionId, connectionId: connection.id },
+      scope
+    );
+    for (const connectionId of [connection.id, randomUUID(), keeper.id]) {
+      const command = { sessionId: active.sessionId, connectionId };
+      await assert.rejects(
+        f.store.acknowledgeLivePresence(member.principal, campaign.id, command, scope),
+        { status: 409, code: 'client-presence-expired' }
+      );
+      await assert.rejects(f.store.renewLivePresence(member.principal, campaign.id, command), {
+        status: 409,
+        code: 'client-presence-expired',
+      });
+    }
+    assert.deepEqual((await keeperReference.get()).data(), keeperBefore);
+    assert.deepEqual(
+      (await f.store.getParticipantAccess(member.principal, campaign.id)).access,
+      grant.access
+    );
+    const reopened = await f.store.connectLivePresence(
+      member.principal,
+      campaign.id,
+      { sessionId: active.sessionId },
+      { clientAcknowledgements: true }
+    );
+    now += 75000;
+    const command = { sessionId: active.sessionId, connectionId: reopened.id };
+    const acknowledged = await f.store.acknowledgeLivePresence(
+      member.principal,
+      campaign.id,
+      command,
+      scope
+    );
+    assert.equal(acknowledged.expiresAt, now + 90000);
+    assert.equal(
+      (await f.store.getLiveSession(member.principal, campaign.id)).lastMeaningfulAt,
+      active.lastMeaningfulAt
+    );
+    assert.deepEqual((await head.get()).data(), before);
+    await f.store.disconnectLivePresence(member.principal, campaign.id, command, scope);
+    await f.store.disconnectLivePresence(owner.principal, campaign.id, {
+      sessionId: active.sessionId,
+      connectionId: keeper.id,
+    });
+  }
+);
+
+test(
+  'a managed HTTP observer reconnects an ended presence channel without losing valid campaign access',
+  { timeout: 90000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true });
+    const owner = await f.account();
+    const campaign = await f.create(owner.principal, 'Presence renewal recovery');
+    const grant = await f.store.getParticipantAccess(owner.principal, campaign.id);
+    const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+    const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+      commandId: randomUUID(),
+      action: 'start',
+      generation: paused.generation,
+      sessionId: paused.sessionId,
+    });
+    const keeper = await f.store.connectLivePresence(owner.principal, campaign.id, {
+      sessionId: active.sessionId,
+    });
+    const api = await cloudApi({ access: f.access, store: f.store });
+    const client = f.client(owner, api);
+    const reconnected = Promise.withResolvers();
+    const statuses = [];
+    let observation;
+    let recovering = false;
+    let received = 0;
+    let deadline;
+    try {
+      observation = client.observeEvents(
+        campaign.id,
+        {
+          sessionId: active.sessionId,
+          observerTokenId: null,
+          mapId: null,
+          assetKey: null,
+        },
+        grant.access,
+        {
+          onState(value) {
+            received++;
+            if (recovering && received > 1) reconnected.resolve(value);
+          },
+          onStatus(status) {
+            statuses.push(status);
+            if (recovering && ['denied', 'error'].includes(status.phase))
+              reconnected.reject(new Error('Current campaign access was ended: ' + status.reason));
+          },
+        }
+      );
+      await observation.ready;
+      const connections = await f.runtime.firestore
+        .collection('campaigns')
+        .doc(campaign.id)
+        .collection('livePresenceConnections')
+        .get();
+      const transport = connections.docs.filter(
+        (value) => value.data().uid === owner.uid && value.data().version === 2
+      );
+      assert.equal(transport.length, 1);
+      recovering = true;
+      await f.store.disconnectLivePresence(owner.principal, campaign.id, {
+        sessionId: active.sessionId,
+        connectionId: transport[0].id,
+      });
+      const restored = await Promise.race([
+        reconnected.promise,
+        new Promise((_, reject) => {
+          deadline = setTimeout(
+            () => reject(new Error('The valid managed observer did not reconnect')),
+            45000
+          );
+        }),
+      ]);
+      assert.equal(restored.access.uid, owner.uid);
+      assert.equal(observation.status.phase, 'ready');
+      assert.ok(statuses.some((status) => status.phase === 'reconnecting'));
+      assert.ok(!statuses.some((status) => status.phase === 'denied'));
+      assert.deepEqual(
+        (await f.store.getParticipantAccess(owner.principal, campaign.id)).access,
+        grant.access
+      );
+      assert.equal(
+        (await f.store.getLiveSession(owner.principal, campaign.id)).lastMeaningfulAt,
+        active.lastMeaningfulAt
+      );
+    } finally {
+      clearTimeout(deadline);
+      await observation?.close();
+      await client.close();
+      await api.close();
+      await f.store.disconnectLivePresence(owner.principal, campaign.id, {
+        sessionId: active.sessionId,
+        connectionId: keeper.id,
+      });
+    }
   }
 );
 

@@ -5723,3 +5723,36 @@ workers and private control channels are closed. All accepted data/timings and
 diagnostic captures are retained. The original hosts/keys and real owner Auth
 are unchanged. Recovery packages remain local/read-only preparation; no rollback,
 production deployment or cutover occurred.
+
+### Expired-channel classification reproduced and fixed locally (2026-11-16)
+
+Two focused regressions reproduce the hosted failure without a 44-minute wait.
+The first closes a member channel while campaign access stays current, then
+checks stale, unknown and foreign channel acknowledgements/renewals without
+changing another channel or canonical data. The second uses actual emulator
+Auth/HTTP/SSE and the managed observer: removing its transport channel must
+reconcile a fresh stream without ending valid campaign access.
+
+Both fail against the deployed implementation in **32.368 seconds**:
+404/campaign-not-found instead of retryable expiry, and a managed observer
+incorrectly entering denied. Only the server's missing/foreign channel outcome
+changes to the already supported **409/client-presence-expired** after fresh
+campaign eligibility/access checks. Uniform missing/foreign responses preserve
+channel-existence privacy. Genuine membership removal still returns a denial;
+accepted proof retains its UID, original access generation and live epoch.
+No database format, client authority, quota, clock, resource or IAM change is
+introduced.
+
+The initial four-case regression/adjacent gate passes in **43.238 seconds**.
+The expanded presence/lifecycle gate identifies one existing assertion expecting
+404 after an authenticated owner explicitly closed its own channel; that tightly
+coupled assertion now requires retryable expiry. All **13 coupled cases** then
+pass in **106.622 seconds**, including coalescing, actual managed reconnection,
+scope/revocation checks, replacement generations, inactivity and frozen final
+backup sources. The **87 client/SSE unit cases / three suites** also pass with
+open-handle detection. Targeted formatting, lint and layering pass.
+
+This is a local fix, not a deployed or four-hour acceptance result. The private
+game remains safely paused with complete generation-219 backup and no pending
+operation. The exact runtime image still needs its normal source/hash/native
+gate and private-only image update before the next real-clock attempt.

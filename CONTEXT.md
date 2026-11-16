@@ -401,7 +401,11 @@
   proof or revive it after expiry. Its actual deadline, without subtracting UID
   headroom, bounds the physical stream; legacy internal presence retains its
   original expiry-aware schedule. ACKs never poll scene state or renew meaningful
-  activity. Hosted client-proof and hard-loss acceptance is verified. Mandatory
+  activity. After fresh campaign eligibility/access checks, missing and foreign
+  channels share the retryable client-presence-expired denial, not campaign
+  removal; neither can renew another account's channel. Genuine membership
+  revocation remains a denial, and accepted proof still requires its original
+  access and live epoch. Hosted client-proof and hard-loss acceptance is verified. Mandatory
   channel/ACK support is a paired client/backend contract; retaining old static
   asset URLs is not permission to treat an old live client as current authority.
   A bounded explicit close uses its captured UID/campaign/seat/generation/epoch.
