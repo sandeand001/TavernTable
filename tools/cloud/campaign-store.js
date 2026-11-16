@@ -340,6 +340,7 @@ class CloudCampaignStore {
     this.livePresenceInstanceId = randomUUID();
     this.worldUndoSessions = new Map();
     this.worldOperations = new Map();
+    require('./world-request-profile.js').instrumentWorldStore(this);
   }
 
   _worldUndoProfile(principal, id, sessionId, grant) {

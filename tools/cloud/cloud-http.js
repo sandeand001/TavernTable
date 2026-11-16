@@ -3,6 +3,7 @@ const { createHash } = require('node:crypto');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { CloudError } = require('./cloud-error.js');
+const { profileWorldRequest } = require('./world-request-profile.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
@@ -519,16 +520,19 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
           await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
         } else if (snapshot === 'world-commands') {
-          result = await store.commitWorldCommand(
-            principal,
-            campaign[1],
-            await requestJSON(request),
-            expectedAccess
-          );
-          if (result.outcome === 'applied') {
-            await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
-            await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
-          }
+          result = await profileWorldRequest(async () => {
+            const committed = await store.commitWorldCommand(
+              principal,
+              campaign[1],
+              await requestJSON(request),
+              expectedAccess
+            );
+            if (committed.outcome === 'applied') {
+              await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
+              await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
+            }
+            return committed;
+          });
         } else if (snapshot === 'owner-state') {
           result = await store.readOwnerWorldSnapshot(
             principal,

@@ -1479,9 +1479,18 @@ Revalidation in the intended environment remains part of M1 and M4.
     **51-map / 134-connection / eight-actor** regression fails before the fix
     and passes its two-second CPU gate. Current coupled gates pass **227 native
     tests / 16 suites**, **31 real cloud HTTP/SSE cases**, and three focused
-    projection tests. Exact packaging and private hosted admission recheck
-    remain required. A short technical pilot is not substituted for the required
-    four-to-five-hour run, production approval or selected-source cutover.
+    projection tests. The exact CPU1/GiB1 image, 36 source hashes and matching
+    two-tree frontend are now published and checked in the private pilot.
+    All ten managed clients reached the same current authority with zero busy
+    responses. The first actual rehearsal started on November 16 but was stopped
+    after a valid **11,347 ms** durable facing receipt; that slow result is
+    retained, not counted as a pass. The game is safely paused. An unshaped
+    zero-observer control command still takes **8,250 ms**, so observer CPU is not
+    the only issue. Bounded payload-free timing of the existing private API is
+    being used to distinguish publication, storage, transaction and follow-up
+    work; temporary diagnostics must be removed after the fix. No completed
+    four-to-five-hour run, production approval or selected-source cutover is
+    claimed.
   - **Depends:** `M5-05`, `M4-12`.
   - **Success:** exercise a representative four-to-five-hour session: Free Play,
     combat, doors/rooms, assets, sheets, animation, reconnects, backup work and

@@ -5089,3 +5089,61 @@ The existing private runtime/frontend must still be packaged, checked,
 published and exercised with the retained real owner before admission can be
 declared resolved. No work-slot, concurrency, timeout, resource, IAM, production,
 source-cutover or deferred routine-save presentation change is part of this fix.
+
+### Published admission success and retained slow real receipt
+
+The private-only exact release is now published: API source
+`727c74468b121ab8795833a16ff1584e2880a249`, revision
+`taverntable-api-test-00017-m5r`, OCI index
+`sha256:51aa807f3b81160235bb1fee64b9121ffe68f2a3f1ba573e76a753059d2f41ff`
+and runnable manifest
+`sha256:7819f4708fc6fad9fbefdb0e80df2df311dee1c43ab9f715bbc2316225d3c251`.
+All **36 exact source checks** and the existing native/authentication/container
+gate pass at CPU1/GiB1, with no network/GPU, non-root/read-only execution and exit
+zero. The actual approved source in that image takes **1,188.148 ms** cold;
+nine exact fixture scopes take **1,211.471 ms**, then **252-288 ms** warm,
+with identical committed/host public output, unchanged canonical input, zero
+unchanged warm artwork bodies and no historical updates. Local RSS is
+**237,707,264 bytes**, max RSS **249,008,128 bytes**, not hosted peak memory.
+
+The matching static application is
+`ece3f79fe69fa8d9bd792736b883fa847cfe3e7806458c4c289208d35b02f1af`,
+retaining `0055d54f...` and three exact retired-entry bridges. Actual live
+entry/code hashes, health 200, identity denial 401, allowed-origin preflight
+204, runtime settings and IAM are rechecked. The actual normal returning root
+and picker preserve the real owner's authentication and all 42 maps/eight
+actors/eight records; no source host is changed.
+
+Nine existing disposable seats are reauthenticated, not reinvited/recreated;
+original returning assignments remain **4 + 2**. The calibrated game-API-only
+link measures **202.2 ms median / 206.2 ms p95**, 200-206.5 ms range, with a
+two-MiB body in **202.4 ms**, real upstream cancellation and zero leftover
+timers. Provider/product clocks and provider transport are unchanged.
+All **ten actual authenticated streams** become ready at the same canonical
+generation. Member cold SDK readiness is **3,559-6,521 ms**; no
+`cloud-requests-busy` response occurs. Every current assigned-record scope,
+canonical placement and visible-owned budget is verified. Consumed fixture
+password files are deleted; no real owner authentication setting changes.
+
+The real rehearsal begins **2026-11-16 03:27:36.739 UTC**. Its first facing
+command commits exactly one scene generation and reaches the actual native
+owner and all nine members, but the finite durable HTTP receipt takes
+**11,347.400 ms**, SDK readiness **11,349.200 ms**, all-member convergence
+**11,351.600 ms**. This observation is retained, not dropped as warm-up.
+The attempt is stopped, all nine member observations close with zero close
+failures, transport wrappers are removed, the owner end action is confirmed
+paused and no pending command is discarded. The owner UI also later reports
+an invalid shared update after a presence acknowledgement times out.
+
+A separate unshaped control with **zero live observers** still takes
+**8,249.800 ms**, restores the original facing once, and finishes paused.
+Thus local observer CPU improvements alone cannot establish the required
+durable receipt performance. Local emulator profiling distinguishes a
+roughly 1.1-second canonical commit from later observer/event-loop work, but
+does not identify the dominant hosted wait. The next private-only diagnostic
+records bounded stage durations, transaction attempts/read RPCs and process
+CPU time, never identities, command bodies, sheets, tokens or passwords.
+It preserves the exact request work order, quotas, live authorization,
+durability and follow-up work. Its `[DEBUG-m5-receipt]` instrumentation is
+temporary and must be removed after diagnosis. The completed full-session
+gate remains open; this short aborted attempt is not four-hour acceptance.

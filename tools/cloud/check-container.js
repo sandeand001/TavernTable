@@ -218,6 +218,7 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'tools/assigned-character-change.js',
     'tools/published-maps.js', 'tools/cloud/participant-state.js',
     'tools/cloud/participant-changes.js',
+    'tools/cloud/world-request-profile.js',
     'tools/cloud/event-stream.js',
     'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
