@@ -5756,3 +5756,37 @@ This is a local fix, not a deployed or four-hour acceptance result. The private
 game remains safely paused with complete generation-219 backup and no pending
 operation. The exact runtime image still needs its normal source/hash/native
 gate and private-only image update before the next real-clock attempt.
+
+### Fixed private image and real stale-ACK probe pass (2026-11-16)
+
+The presence correction is committed as **`f5d0d10...`**, validated tree
+`c573566c...`; normal hooks leave that tested tree unchanged. The local pinned
+image index is **`792fcc39...`**, runnable manifest `9cf2afa1...`.
+The isolated exact runtime gate passes **38 source hashes**, Linux Node24.22.3,
+nonroot/read-only/no-network/CPU1/GiB1, both-edition native Cover/flight, 501 d20
+frames, the 16MP guard, auth/private-file denials and graceful exit 0.
+Its **250,200,064-byte RSS** is a local check observation, not a hosted peak.
+
+Only the approved existing private service receives the newly pinned image.
+API **`00025-vt4`** serves the same URI, min0/max1, CPU1/GiB1, request-based CPU,
+concurrency 40, timeout 3600, origins and unchanged IAM. This is a backend-only
+fix; browser application bytes and frontend **`57cb5484...`** are unchanged.
+No new resources, production release or selected-data cutover is approved.
+
+An actual authenticated private probe opens its assigned stream, explicitly
+closes that exact transport, then submits ACKs for the closed and an unknown
+channel. Both now return **409/client-presence-expired**. The original verified
+member retains the same seat/generation; fresh grant succeeds and the normal
+managed player reopens ready at generation 219 without account or seat reset.
+The probe then closes and normal owner Pause confirms saved backup219. This is
+a scoped behavior check, not a calibrated latency or native-animation pass.
+
+The next actual fixed-release rehearsal begins at client UTC
+**2026-11-16T21:08:32.666Z**, excluding all setup and earlier attempts. The same
+nine fixture identities are freshly admitted, with returning observer counts
+4 + 2. Added-RTT calibration p95 is **205.6/205.6/205.8 ms** for owner/primary/
+other members. Native owner startup is **2,690.1 ms**, and member admission
+**2,003.6-5,571.1 ms**. Its initial hosted gameplay, exact note roundtrip
+(character revision 15 to 17) and two warm private-image rejoins pass. The run
+remains in progress; no full-duration success is claimed. A new complete stable
+gate is running independently on the fixed source.

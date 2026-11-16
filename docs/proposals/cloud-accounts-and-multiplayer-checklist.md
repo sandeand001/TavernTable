@@ -54,18 +54,20 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   passes fresh original-seat access and participant-snapshot checks. This is
   reproduced and fixed locally as a channel-liveness/access-classification bug:
   **13 coupled lifecycle cases and 87 client/SSE unit tests pass**. The fixed
-  private image and a fresh full-duration run are still pending; no account
-  reset or claimed rehearsal pass substitutes for them. All **83 accepted world
+  image is now privately published and its live stale-ACK/reopen probe passes
+  without any account or seat reset. A fresh fixed-release full-duration run is
+  **running from 2026-11-16T21:08:32.666Z**; it is not yet a four-hour pass.
+  All **83 accepted world
   commands** and the earlier helper failures are retained; no aborted time is
   credited to the required full-duration run.
 - **Latest complete regression baseline (`103ac90...`):** **307 suites / 4,067 tests passed** in
   **1,820.696 seconds**, with open-handle detection. The focused native movement
   gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
-- **Private pilot:** API `00024-2ps`, implementation `103ac90...`, frontend
-  `57cb5484...`. Gameplay is enabled only in the approved private pilot.
-  The game is now verified paused. All nine member observations are closed,
-  owner streams and pending operations are zero, transports/workers are
-  restored/stopped and the complete final backup is saved at generation **219**.
+- **Private pilot:** API `00025-vt4`, implementation `f5d0d10...`, exact image
+  `792fcc39...`, unchanged frontend `57cb5484...`. Gameplay is live only for the
+  approved bounded private rehearsal. The previous run/probe ended safely with
+  complete saved backup at generation **219**; the new run excludes that setup
+  and every aborted attempt.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
@@ -1460,7 +1462,10 @@ Revalidation in the intended environment remains part of M1 and M4.
     metadata fixes are committed and privately published through API
     `00024-2ps`, source `103ac90...`, with matching frontend `57cb5484...`.
     The CPU1/GiB1 image passes 38 exact runtime hashes and native/isolation
-    gates; temporary request/CPU diagnostics are removed.
+    gates; temporary request/CPU diagnostics are removed. The subsequent
+    backend-only presence fix is now privately deployed as API `00025-vt4`,
+    source `f5d0d10...`, image `792fcc39...`; the unchanged frontend remains
+    matching. Its exact 38-hash/native/isolation gate passes.
     A fixed **40-command** actual managed-client preflight includes **20 moves
     and 20 facing controls** across all nine member identities plus the native
     owner, under recalibrated 200-ms RTT. All ten scopes remain current through
@@ -1523,12 +1528,21 @@ Revalidation in the intended environment remains part of M1 and M4.
     The local fix preserves fresh campaign authorization and classifies missing
     and foreign channels uniformly as retryable client-presence-expired.
     **13 coupled lifecycle cases / 106.622 seconds** and **87 client/SSE unit
-    cases** pass, including genuine revocation denial. The fixed image has not
-    yet been privately published or accepted in a new full-duration run.
+    cases** pass, including genuine revocation denial. The fixed private API
+    now returns the retryable denial for actual closed/unknown channel ACKs;
+    the original member grant remains current and the normal managed player
+    reopens at generation 219. This diagnostic is not a latency or animation
+    acceptance test.
     All 83 accepted commands are retained with no pending mutation or 503.
-    The private game is now paused, all nine member observations and three
-    latency workers/control channels are closed, and complete final backup is
-    saved at generation 219, error null.
+    That failed attempt ended with the private game paused, all nine member
+    observations and three latency workers/control channels closed, and complete
+    final backup saved at generation 219, error null.
+    A fresh fixed-release run starts at **2026-11-16T21:08:32.666Z**. New added-RTT
+    calibration p95 is **205.6/205.6/205.8 ms** for owner/primary/other members;
+    returning observer assignments remain 4 + 2. Initial hosted commands, exact
+    note save/restoration (character revision 15 to 17), and warm image-cache
+    rejoins pass. The game is now live for this new run, not left paused; no
+    earlier aborted/setup time counts toward its duration.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
@@ -1559,6 +1573,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     rehearsal evidence; only its read-only preflight and negative guard ran.
     Incompatible package metadata is rejected before deployment. None of these
     preparation checks substitutes for the actual restore/rollback/client drain.
+    Earlier backend recovery fences predate the presence fix and must be
+    refreshed before use; an image with the confirmed denial bug is not silently
+    accepted as a production fallback.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of
