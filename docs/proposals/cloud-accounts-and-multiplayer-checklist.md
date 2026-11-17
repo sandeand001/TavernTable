@@ -70,13 +70,14 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** the real **135-minute activity phase is complete**.
-  At **137m42.881s**, all ten scopes are current at generation **440**, with
-  **216 accepted member commands**, original identities and no pending mutation,
-  permanent access error or 503. The run is now genuinely quiet, awaiting its
-  actual warning/Keep Active/pause sequence. The exported 175-command partial
-  set retains durable p95 **4,175.3 ms**, maximum **6,407.7 ms** and **119/175**
-  above the original two-second benchmark; no new numeric pass is claimed.
+- **Latest actual checkpoint:** **196m9.173s**, all ten scopes current at
+  generation **440**, with **216 accepted member commands**, original identities
+  and no pending mutation, permanent access error or 503. The actual first
+  **55-minute warning, owner Keep Active and real token rotation for all ten
+  identities pass**. Renewed 60-minute inactivity and separate 15-minute grace
+  remain ahead. The exported 216-command set retains durable p95 **4,358.5 ms**,
+  maximum **6,616.6 ms** and **149/216** above the original two-second benchmark;
+  no new numeric pass is claimed.
 - **Newly reproduced issue:** background-timer ACK cadence can cause avoidable
   roughly four-minute reconnects despite successful recent ACKs. Two exact
   regressions fail first; isolated correction `dcb1bde...` preserves the
@@ -1599,6 +1600,13 @@ Revalidation in the intended environment remains part of M1 and M4.
     **15 lifecycle / 54 client tests** plus its exact Linux runtime gate.
     It is not deployed into this ongoing sourcef5 run; no source or acceptance
     result is silently relabeled.
+    The actual first warning is observed at client UTC **00:18:58.482Z** on
+    November17, and normal native owner Keep Active completes at
+    **00:19:00.415Z**. All ten identities have genuinely newer issued token times
+    without changing their UIDs. The renewed provider clock is warning
+    **01:13:40.609Z**, pause **01:18:40.609Z**; these future boundaries are not yet
+    claimed as passed. At **196m9.173s**, the next exact saved checkpoint keeps all
+    ten current at generation440 and all 216 commands retained.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.

@@ -5980,3 +5980,28 @@ inspection verifies both exact registry indexes, API25, unchanged runtime/
 origins/IAM and the original settings fingerprint. No rollback occurs.
 The sourceDCB/image99 candidate remains local and undeployed; its full stable
 gate is still running, while the actual sourcef5 rehearsal continues unchanged.
+
+### Actual warning, owner renewal and ten-identity token rotation pass (2026-11-17 UTC)
+
+The sourcef5 run observes its actual first 55-minute warning at client UTC
+**00:18:58.482Z**; provider observedAt is **00:18:39.685Z**, with the original
+warningAt **00:18:37.106Z**. Normal native owner Keep Active finishes at client
+**00:19:00.415Z** and advances provider lastMeaningfulAt to
+**00:18:40.609Z**. The resulting warning/pause are **01:13:40.609Z /
+01:18:40.609Z**, not the original pause deadline. These distinct wall clocks
+are not subtracted to claim command latency.
+
+Actual token issued times have advanced for the native owner and all nine
+original member identities; UID continuity remains verified. No forced sign-in,
+new identity or seat reset is used. At **196m9.173s**, all ten scopes remain
+ready/current at **generation440 / scene432 / character17**, no pending
+mutation or permanent error, and **216 ordinary member commands** remain
+retained with one correct off-turn refusal. There are no 503 responses.
+
+Checkpoint4 persists all three sanitized role datasets, raw permitted lifecycle
+events and initial/renewed token issuance times with exact browser SHA-256
+verification. Its combined durable p95 is **4,358.5 ms**, maximum **6,616.6 ms**,
+SDK-ready p95 **6,379.7 ms**, maximum **7,452.0 ms**; **149/216** exceed the
+original two-second benchmark. No ordinary command retry is hidden.
+The renewed real inactivity pause and separate disconnected grace are still
+pending; this is not yet a completed four-hour result or sourceDCB acceptance.
