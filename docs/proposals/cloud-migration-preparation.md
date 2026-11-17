@@ -6012,3 +6012,11 @@ the normal open-handle detection and serial runner. This is separate from the
 earlier sourcef5 stable gate and its ongoing real-clock run. The sourceDCB
 candidate/image99 remains local, unmerged and undeployed; no current-release
 or four-hour acceptance is inferred from this additional local validation.
+
+At the actual **226m9.099s** sourcef5 checkpoint, all ten scopes remain
+ready/current at generation440, scene432, character17 with the same identities,
+216 unchanged accepted commands and no pending mutation, permanent access error
+or 503. The run is still in the renewed quiet window. The actual future warning
+and pause remain at provider **01:13:40.609Z / 01:18:40.609Z**; neither the
+four-hour minimum by itself nor the checkpoint timer substitutes for those
+boundaries and the subsequent fifteen-minute disconnected grace.

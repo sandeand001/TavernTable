@@ -70,7 +70,7 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** **196m9.173s**, all ten scopes current at
+- **Latest actual checkpoint:** **226m9.099s**, all ten scopes current at
   generation **440**, with **216 accepted member commands**, original identities
   and no pending mutation, permanent access error or 503. The actual first
   **55-minute warning, owner Keep Active and real token rotation for all ten
