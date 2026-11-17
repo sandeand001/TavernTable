@@ -6268,3 +6268,25 @@ player live-authority and sign-out guards. Targeted Prettier, ESLint, Stylelint
 and layering pass. No dependencies, backend settings, accounts or source data
 change. Matching static private frontend publication is pending. This removes
 the routine save interruption, not the separate measured command/state delay.
+
+The validated change is committed as **`9c4a5b9...`**, tree `a6a2c888...`;
+normal commit hooks leave the tested tree unchanged. The static-only package
+verifies **1,216 application files / 578,533,368 B**, activates **`9a5cb0c5...`**,
+retains complete57 and preserves seven retired-entry bridges. Runtime digest
+`5bd3b614...`, compatibility versions and truthful asset provenance are unchanged.
+
+The owner-approved existing private Hosting site now serves that exact release.
+Actual entry/retired redirects are no-store, retained57 is200/no-store and an
+unknown retired asset remains404/no-store. Deployed feedback JavaScript and CSS
+hashes match the verified package exactly. The shared owner page is first checked
+for an empty, settled lobby before refresh; the new build's feedback is hidden,
+computed display none and non-modal. No campaign, game session or additional
+rehearsal is started. Backend API28/image99, IAM, billing and all account/source
+bindings remain unchanged. The separate pending-command/state-delivery
+responsiveness issue remains the next work item.
+
+A matching static recovery package is prepared and independently verified with
+complete57 active and complete9a retained, the same 1,216 application hashes,
+unchanged runtime/provenance and all seven retired-entry bridges. It is not
+published or exercised as another rollback/rehearsal. This keeps future rollback
+preparation compatible with clients already loading the new private UI.

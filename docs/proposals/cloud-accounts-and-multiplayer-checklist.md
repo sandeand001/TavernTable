@@ -63,7 +63,9 @@ and `M5-08` through `M5-11`.
   and three closed latency workers. This does not claim a sourceDCB four-hour run.
 - **Current private deployment:** final candidate API **`00028-7cj`**,
   source **`dcb1bde...`**, exact image **`99c6090f...`**, frontend **`57cb5484...`**
-  with complete retained0a99. Its correction is integrated as `3ed7992...` with
+  for the recorded server rehearsal. The current static release is now
+  **`9a5cb0c5...`**, retaining complete57, with the approved background-save fix
+  committed as `9c4a5b9...`. The server correction is integrated as `3ed7992...` with
   application files identical to the tested image source. Runtime/origins/IAM
   remain unchanged; no production release or selected-source cutover is implied.
 - **Actual recovery results:** final sourcef5 backup440 restores to a distinct
@@ -123,10 +125,11 @@ and `M5-08` through `M5-11`.
   verification remain (`M5-08` through `M5-11`).
 - **Save-interruption fix:** the owner explicitly brings `UX-01` forward into
   the private pilot, then requests continued command-responsiveness work.
-  The local correction keeps routine saves/checkpoints/success feedback hidden
+  The published correction keeps routine saves/checkpoints/success feedback hidden
   and nonblocking while preserving recovery errors and safe exit guards.
   **77 focused tests / four suites** plus targeted formatting/lint/layering pass;
-  matching private frontend publication is next. Originals, host keys and the
+  exact private JS/CSS hashes, retained entry policies and hidden/non-modal lobby
+  smoke pass without starting a game or another rehearsal. Originals, host keys and the
   real owner account remain untouched.
 
 Detailed completion evidence and historical measurements are recorded under each
@@ -1755,8 +1758,8 @@ Revalidation in the intended environment remains part of M1 and M4.
 
 These are tracked separately from the 65 migration exit tasks.
 
-- [ ] **UX-01 - Remove disruptive routine-save feedback.**
-  - **Status:** brought forward with explicit owner approval for the private
+- [x] **UX-01 - Remove disruptive routine-save feedback.**
+  - **Completed:** brought forward with explicit owner approval for the private
     pilot, as part of the current no-interruption requirement. The earlier
     after-migration deferral is superseded for this specific fix.
   - **Implementation:** routine in-flight saves, scene checkpoints and confirmed
@@ -1766,8 +1769,11 @@ These are tracked separately from the 65 migration exit tasks.
   - **Validation:** the new regression fails before implementation on the
     reproduced input-blocking behavior, then all **77 tests / four suites /
     17.827 seconds** pass. Targeted formatter, JS/CSS lint and layering pass.
-    Private frontend publication is pending; this does not fix or conceal the
-    separate authoritative command-response delay.
+    Private frontend **`9a5cb0c5...`** is published and exact JS/CSS byte hashes
+    verify against the reviewed package. The safe empty lobby is refreshed and
+    feedback is hidden, computed display none and non-modal. No active campaign
+    is discarded or additional live rehearsal started. This does not fix or
+    conceal the separate authoritative command-response delay.
   - **Report:** saving flashes the screen and presents a centered "Saved to cloud"
     box, interrupting play.
   - **Success:** routine saves do not flash, steal focus or display a centered
