@@ -70,12 +70,14 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** **226m9.099s**, all ten scopes current at
-  generation **440**, with **216 accepted member commands**, original identities
-  and no pending mutation, permanent access error or 503. The actual first
-  **55-minute warning, owner Keep Active and real token rotation for all ten
-  identities pass**. Renewed 60-minute inactivity and separate 15-minute grace
-  remain ahead. The exported 216-command set retains durable p95 **4,358.5 ms**,
+- **Latest actual checkpoint:** the continuous **250m29.883s** phase and exact
+  renewed **60-minute automatic inactivity pause pass**. A fresh epoch re-admits
+  all nine original members without historical motion, then intentionally closes
+  all nine and the owner transport for real disconnected grace. At **254m9.638s**,
+  no mutation is pending and that grace is still running until provider
+  **01:34:06.197Z**; final pause/backup/cleanup are not yet claimed. The actual
+  first warning, owner Keep Active and all ten identities' token rotation pass.
+  The retained 216-command set has durable p95 **4,358.5 ms**,
   maximum **6,616.6 ms** and **149/216** above the original two-second benchmark;
   no new numeric pass is claimed.
 - **Newly reproduced issue:** background-timer ACK cadence can cause avoidable
@@ -1608,6 +1610,13 @@ Revalidation in the intended environment remains part of M1 and M4.
     **01:13:40.609Z**, pause **01:18:40.609Z**; these future boundaries are not yet
     claimed as passed. At **196m9.173s**, the next exact saved checkpoint keeps all
     ten current at generation440 and all 216 commands retained.
+    The renewed automatic pause now actually passes at provider
+    **01:18:40.609Z**, after **250m29.883s** of continuous official rehearsal.
+    All nine re-admit in a fresh epoch without historical motion, then close
+    with the owner transport. Real disconnected grace begins at provider
+    **01:19:06.197Z**, with exact deadline **01:34:06.197Z**; it remains in
+    progress at the **254m9.638s** checkpoint. No final cleanup/backup or complete
+    technical-rehearsal claim is made before that separate boundary.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.

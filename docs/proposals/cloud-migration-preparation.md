@@ -6020,3 +6020,17 @@ or 503. The run is still in the renewed quiet window. The actual future warning
 and pause remain at provider **01:13:40.609Z / 01:18:40.609Z**; neither the
 four-hour minimum by itself nor the checkpoint timer substitutes for those
 boundaries and the subsequent fifteen-minute disconnected grace.
+
+The real renewed inactivity pause is now observed at client
+**2026-11-17T01:19:02.549Z**, with exact provider pausedAt
+**01:18:40.609Z** and reason **inactivity**. Continuous official rehearsal
+duration is **15,029,882.6 ms** (**250m29.883s**), excluding all prior attempts
+and setup. This exceeds four hours without substituting a local timer.
+
+A fresh live epoch then re-admits all nine original identities without
+historical presentations, followed by explicit closure of all nine and the
+owner transport. Provider disconnectedAt is **01:19:06.197Z**, with exact
+**15-minute graceUntil 01:34:06.197Z**. At the **254m9.638s** actual checkpoint,
+all nine observations are closed, owner stream count is zero, pending mutations
+are zero and the game is intentionally still live in grace. The driver remains
+running; no premature normal Pause or completed final-backup claim is used.
