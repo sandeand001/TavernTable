@@ -5902,3 +5902,56 @@ maximum **6,407.7 ms**, SDK-ready p95 **6,228.2 ms**, maximum **7,452.0 ms**;
 **119/175** exceed the original two-second target. This is not a new numeric
 pass or rendered-animation timing. The active phase is still running; the
 actual quiet warning/keep-active/pause/grace sequence remains ahead.
+
+### Real activity completes; quiet transfer exposes ACK-cadence expiry (2026-11-16)
+
+The actual 135-minute gameplay phase finishes. At **137m42.881s**, all ten
+scopes are ready/current at **generation440 / scene432 / character17**, with
+**216 accepted commands** (56 primary, 160 other members), one correct off-turn
+refusal, original identities and no pending mutation, permanent access error or
+503. The first actual quiet clock has provider lastMeaningfulAt
+**23:23:37.106Z**, warningAt **2026-11-17T00:18:37.106Z** and initial pauseAt
+**00:23:37.106Z**; the latter is expected to change only after owner Keep Active.
+
+A real **358,660.5-358,661.2-ms** unchanged quiet measurement retains all
+ACK/stream/backup-status payloads. Total API body traffic averages
+**12,855.86 B/min/person**, with owner **110,695.16 B/min**; one owner stream
+renewal alone carries **659,039 bytes**. Member totals range
+**1,589.08-2,908.66 B/min**. This includes fresh reconnect checkpoints and
+backup-status responses, not just heartbeat/control bytes. The original
+**2 KiB/min/person heartbeat/presence** target excludes TLS/token renewal;
+it must not be silently redefined as either this total or heartbeat-only data.
+Zero warm image downloads alone is not proof that no inline scene data is resent.
+
+A passive public subscription (subsequently removed) identifies the reconnect
+reason as **client-presence-expired**, not the normal 50-52-minute client
+rotation or 55-minute server stream deadline. Three retained stream lifetimes
+are **244,995-245,001 ms**. They have successful ACKs around 25/50/75/100/125/150
+seconds, then 184/189/194 seconds. That last successful ACK falls inside the
+60-second durable coalescing window; the stored 150-second proof therefore
+expires at 240 seconds before the next background-clamped ACK.
+
+Two focused emulator regressions replay the observed cadence and near-minute
+ACKs. Both fail before implementation in **11.057 seconds** with the same typed
+expiry. Work is isolated from the running candidate. An initial global batching
+change correctly fails the legacy write-batching case, so the final correction
+is scoped: authenticated ACK proof and its summary use a separate **30-second**
+coalescing interval; legacy internal/server-only presence keeps **60 seconds**.
+The crash-proof lease stays exactly **90 seconds**, and ordinary 25-second ACKs
+still coalesce. No account/seat/epoch authority or meaningful-activity clock is
+relaxed.
+
+On isolated committed source **`dcb1bde...`** (tree `4e071b0a...`), all **15
+coupled presence/lifecycle cases pass in 123.442 seconds**, **54 client/SSE unit
+tests pass in 2.631 seconds**, and normal formatting/lint/layering hooks pass.
+The local pinned image **`99c6090f...`** passes the exact **38-source-hash** Linux
+Node24.22.3/nonroot/read-only/no-network/CPU1/GiB1 gate, both-edition native
+Cover/flight, 501 d20 frames, 16MP limit, denials and graceful exit0. Its
+**267,235,328-byte RSS** is local runtime evidence, not hosted peak memory.
+A complete stable gate is running separately on this new source.
+
+This correction is **not published, deployed or merged into the active source**.
+The current sourcef5/API25 rehearsal remains unchanged and continues its actual
+quiet-clock verification. Its elapsed time is not claimed as testing sourceDCB.
+The prepared source681 recovery artifact also predates this separate cadence
+correction; future current/recovery fences must preserve that distinction.

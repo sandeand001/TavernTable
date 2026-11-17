@@ -70,13 +70,21 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   approved bounded private rehearsal. The previous run/probe ended safely with
   complete saved backup at generation **219**; the new run excludes that setup
   and every aborted attempt.
-- **Latest actual checkpoint:** **109m46.747s**, all ten scopes current at
-  generation **399**, **175 accepted member commands**, original identities,
-  no pending mutation, permanent access error or 503. Four natural presence
-  ACK409s have recovered; ordinary aborted ACKs remain recorded. Exact
-  observations are saved privately. Partial durable p95 is **4,175.3 ms**,
-  maximum **6,407.7 ms**; **119/175** exceed the original two-second benchmark.
-  No new numeric pass is claimed.
+- **Latest actual checkpoint:** the real **135-minute activity phase is complete**.
+  At **137m42.881s**, all ten scopes are current at generation **440**, with
+  **216 accepted member commands**, original identities and no pending mutation,
+  permanent access error or 503. The run is now genuinely quiet, awaiting its
+  actual warning/Keep Active/pause sequence. The exported 175-command partial
+  set retains durable p95 **4,175.3 ms**, maximum **6,407.7 ms** and **119/175**
+  above the original two-second benchmark; no new numeric pass is claimed.
+- **Newly reproduced issue:** background-timer ACK cadence can cause avoidable
+  roughly four-minute reconnects despite successful recent ACKs. Two exact
+  regressions fail first; isolated correction `dcb1bde...` preserves the
+  90-second crash expiry and legacy 60-second batching while giving authenticated
+  ACK proof 30-second batching. **15 lifecycle cases / 54 client tests / 38
+  exact Linux runtime hashes pass**. Its local image `99c6090f...` is not
+  published/deployed; its complete stable gate is running. The current real-clock
+  run remains unmodified on sourcef5/API25.
 - **Recovery preparation:** the older compatible implementation now has the
   same presence fix backported on isolated source `681c5f0...`. Its image
   `288625ba...` passes 13 lifecycle cases and the exact 38-hash Linux runtime
@@ -1580,6 +1588,17 @@ Revalidation in the intended environment remains part of M1 and M4.
     Partial durable p95 is **4,175.3 ms**, maximum **6,407.7 ms**; SDK-ready p95
     is **6,228.2 ms**, maximum **7,452.0 ms**. All **119/175** above the original
     two-second benchmark remain included; no ordinary command retry is hidden.
+    The real active phase completes and the **137m42.881s** checkpoint has all
+    ten current at generation440, scene432, character17 with **216 commands**.
+    Its actual quiet clock records warning at provider UTC
+    **2026-11-17T00:18:37.106Z**, before the planned Keep Active renewal.
+    A separate quiet transfer measurement and passive status tap expose a
+    further ACK-cadence issue: recent HTTP200 proof can be coalesced away before
+    the next background-clamped ACK, triggering an unnecessary reconnect.
+    Both new regressions first fail, and the isolated scoped fix passes
+    **15 lifecycle / 54 client tests** plus its exact Linux runtime gate.
+    It is not deployed into this ongoing sourcef5 run; no source or acceptance
+    result is silently relabeled.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
@@ -1619,6 +1638,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     Refreshed current/recovery fences pass read-only registry/service inspection
     and refuse both mutations without real completed rehearsal evidence.
     Neither the actual rollback nor the actual backup restore has been performed.
+    The prepared source681 fallback still has the newly reproduced ACK-cadence
+    behavior. It is not relabeled as having that separate correction; recovery
+    fences/artifacts must remain explicit when the next candidate is evaluated.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of
