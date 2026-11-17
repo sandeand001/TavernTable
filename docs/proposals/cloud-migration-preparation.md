@@ -6215,3 +6215,30 @@ evidence, not a newly invoiced or guaranteed cost for this candidate. No billing
 IAM, runtime or budget settings are changed. Final-source performance/release
 acceptance still needs the owner; manual animation remains explicitly deferred
 and the old sourcef5 four-hour result is not relabeled as a sourceDCB run.
+
+### Owner criterion clarified; existing evidence reviewed without another rehearsal
+
+The owner accepts delayed confirmation only if there is no user-visible visual
+or performance indication. Testing is considered sufficient at this point; any
+additional rehearsal must be proposed first. This does not impose a new numeric
+threshold or certify the deferred native visual check.
+
+No commands, requests or rehearsals are rerun for this review. The retained
+same-page command-start and state-event timestamps for all forty commands give
+first authorized-state delivery **median 5,474.8 ms / p95 7,450.1 ms /
+range 3,435.9-8,356.9 ms**. Movement-only first-state p95 is **6,721.4 ms**.
+Only one of forty state deliveries precedes its finite HTTP receipt. These
+are SDK state-delivery observations, not painted-frame measurements.
+
+The current command adapter keeps `pending` set through the managed result and
+receipt handling, rejects a second command while pending, and publishes that
+state to the actual controls. The controls show a waiting message and disable
+several interactions. SSE state presentation is independent of receipt
+completion, so confirmation duration alone must not be equated to animation
+duration; nevertheless the present evidence does not support describing the
+delay as invisible or purely background work.
+
+This identifies a concrete user-facing responsiveness issue without another
+long-session run. It remains a release-readiness blocker under the clarified
+criterion. No new rehearsal, production operation, code change or manual
+visual acceptance is performed as part of this evidence review.

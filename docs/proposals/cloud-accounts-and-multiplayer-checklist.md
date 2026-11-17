@@ -98,11 +98,23 @@ and `M5-08` through `M5-11`.
   maximum **6,145.5 ms**, SDK-ready p95 **7,450.7 ms**, **40/40 above two seconds**.
   All 20 moves and 20 facing commands converge at generation482 with no excluded
   tails. No replacement numeric target or pass is invented.
+- **Owner clarification and evidence review:** confirmation delay is acceptable
+  only if it produces no user-visible visual/performance impact. Testing is
+  considered sufficient for now; any additional rehearsal must first be proposed.
+  Reviewing the existing forty commands and current control path finds a real
+  readiness issue: commands stay pending, a second command is blocked and
+  multiple controls show waiting/disabled state until receipt handling finishes.
+  Recorded first authorized-state delivery is **3,435.9-8,356.9 ms**, p95
+  **7,450.1 ms**; these are not rendered-frame timings. The delay cannot currently
+  be certified as invisible. The original two-second measurement is historical
+  evidence, not the owner's newly imposed requirement.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
   The original two-second benchmark failure is retained, not relabeled.
-- **Next:** obtain the owner's explicit performance/release decision.
+- **Next:** address the user-visible pending/input-response issue before
+  production readiness. No additional long rehearsal is needed to identify it;
+  propose any further rehearsal before executing it.
   Final verification and safe
   cleanup are now complete: game paused, nine closed members, zero owner streams
   or pending operations, backup **482 / 658,746 B** saved, three latency workers
