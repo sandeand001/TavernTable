@@ -47,64 +47,58 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
 `M5-05` are complete; the six remaining migration tasks are `M5-06` through
 `M5-11`.
 
-- **Current task:** `M5-06`, the representative ten-client, four-to-five-hour
-  rehearsal. It is not complete. The latest attempt stopped after **44 minutes
-  24.697 seconds**: one player's presence ACK returned `campaign-not-found`
-  during renewal and the client latched a denial. The same verified UID still
-  passes fresh original-seat access and participant-snapshot checks. This is
-  reproduced and fixed locally as a channel-liveness/access-classification bug:
-  **13 coupled lifecycle cases and 87 client/SSE unit tests pass**. The fixed
-  image is now privately published and its live stale-ACK/reopen probe passes
-  without any account or seat reset. The fixed-source complete stable gate
-  passes **307 suites / 4,067 tests** with open-handle detection in
-  **1,668.276 seconds**. A fresh fixed-release full-duration run is
-  **running from 2026-11-16T21:08:32.666Z**; it is not yet a four-hour pass.
-  All **83 accepted world
-  commands** and the earlier helper failures are retained; no aborted time is
-  credited to the required full-duration run.
-- **Latest complete regression baseline (`103ac90...`):** **307 suites / 4,067 tests passed** in
-  **1,820.696 seconds**, with open-handle detection. The focused native movement
-  gate also passes **32 tests**, and three recovery-readiness emulator cases pass.
-- **Private pilot:** API `00025-vt4`, implementation `f5d0d10...`, exact image
-  `792fcc39...`, unchanged frontend `57cb5484...`. Gameplay is live only for the
-  approved bounded private rehearsal. The previous run/probe ended safely with
-  complete saved backup at generation **219**; the new run excludes that setup
-  and every aborted attempt.
-- **Latest actual checkpoint:** the continuous **250m29.883s** phase and exact
-  renewed **60-minute automatic inactivity pause pass**. A fresh epoch re-admits
-  all nine original members without historical motion, then intentionally closes
-  all nine and the owner transport for real disconnected grace. At **254m9.638s**,
-  no mutation is pending. The server subsequently pauses at the exact
-  **01:34:06.197Z** deadline, but the browser harness samples **59.277 seconds
-  after** its planned pre-boundary target and incorrectly reports an early end.
-  That failed probe is retained. A fresh same-identity 15-minute grace follow-up
-  now uses host-clock checks, with deadline **01:59:08.494Z**; final verification/
-  cleanup are not yet claimed. The actual
-  first warning, owner Keep Active and all ten identities' token rotation pass.
-  The retained 216-command set has durable p95 **4,358.5 ms**,
-  maximum **6,616.6 ms** and **149/216** above the original two-second benchmark;
-  no new numeric pass is claimed.
-- **Newly reproduced issue:** background-timer ACK cadence can cause avoidable
-  roughly four-minute reconnects despite successful recent ACKs. Two exact
-  regressions fail first; isolated correction `dcb1bde...` preserves the
-  90-second crash expiry and legacy 60-second batching while giving authenticated
-  ACK proof 30-second batching. **15 lifecycle cases / 54 client tests / 38
-  exact Linux runtime hashes pass**. Its local image `99c6090f...` is not
-  published/deployed. Its complete stable gate now also passes **307 suites /
-  4,067 tests / 1,753.809 seconds**. The current real-clock run remains
-  unmodified on sourcef5/API25.
-- **Recovery preparation:** the older compatible implementation now has the
-  presence and ACK-cadence fixes backported on isolated source `a8d4ef8...`.
-  Its image `a7d9fcbe...` passes 15 lifecycle cases and the exact 38-hash Linux
-  runtime gate, and is privately available without replacing API25 or the candidate.
-  Refreshed recovery guards reject both image changes without real completed
-  rehearsal evidence. This preparation does not complete the actual M5-07 drill.
+- **Current work:** sourcef5's long-session technical verification is complete;
+  `M5-07` actual private recovery/rollback testing is in progress. `M5-06` remains
+  open for final-candidate live validation and the recorded performance/owner
+  acceptance conditions, rather than silently promoting the baseline result.
+- **Completed technical rehearsal:** **250m29.883s** of continuous official
+  sourcef5 activity/quiet lifecycle, with actual 55-minute warning, owner Keep
+  Active, all ten identities' token rotation and exact renewed 60-minute pause.
+  Nine original members rejoin a fresh epoch without historical motion.
+  Original late grace probes are retained as inconclusive, not hidden. The
+  independently repeated grace is actually live **46.336 seconds before** its
+  deadline and pauses exactly at provider **02:16:42.861Z**, fifteen minutes
+  after disconnect. Final normal Pause confirms saved backup **440 / 658,746 B**,
+  nine closed members, zero owner streams/pending operations, restored transports
+  and three closed latency workers. This does not claim a sourceDCB four-hour run.
+- **Current private deployment (temporary recovery drill):** API **`00026-fg7`**,
+  compatible source **`a8d4ef8...`**, image **`a7d9fcbe...`**, active frontend
+  **`0a99c475...`** with complete retained **`57cb5484...`**. The actual backend
+  rollback preserves runtime/origins/IAM. The actual frontend rollback passes
+  all 1,216 application hashes, no-store entry/retired bridges and unknown-asset
+  404 checks. No production release or selected-source cutover is implied.
+- **Actual recovery results:** final sourcef5 backup440 restores to a distinct
+  private owner-only copy, preserving all eight records, exact scene and pins;
+  original data/memberships/file are unchanged and zero seats are copied.
+  Normal returning-owner startup on frontend0a99 works without signing in again
+  or automatically starting play. After explicit start, the same nine identities
+  retain **4 + 2** returning assignments and all ten converge on an applied
+  compatible command at generation **442**. A real unsupported-format admission
+  returns HTTP400; its managed client clears state/stops while the original
+  compatible client retains authority. Cadence/idle observation and roll-forward
+  are still in progress.
+- **Cadence correction:** source **`dcb1bde...`** preserves 90-second crash expiry
+  and legacy 60-second batching while using 30-second authenticated ACK batching.
+  **15 lifecycle cases / 54 client tests / 38 Linux source hashes** pass, plus
+  **307 suites / 4,067 tests / 1,753.809 seconds**. Its image **`99c6090f...`**
+  remains local, unmerged and undeployed; only the compatible sourcea8 backport
+  is currently serving the bounded private recovery drill.
+- **Regression evidence:** sourcef5 also passes **307 suites / 4,067 tests /
+  1,668.276 seconds** with open-handle detection. The focused native movement
+  gate passes **32 tests**. These are not a completed owner foreground visual
+  check. All failed/aborted attempts and valid timing rows remain retained.
+- **Performance conditions:** all **216** baseline commands remain included:
+  durable p95 **4,358.5 ms**, maximum **6,616.6 ms**; **149/216** exceed the
+  original two-second benchmark. No replacement numeric target or pass is
+  invented. The separate recovery command is functional proof, not a latency
+  acceptance sample.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
   The original two-second benchmark failure is retained, not relabeled.
-- **Next:** finish `M5-06`, then perform the actual private backup restore and
-  compatible rollback/drain drill (`M5-07`). Separate production approval,
+- **Next:** finish compatible live/cadence checks and roll forward from the
+  recovery drill; integrate and privately verify the final cadence candidate.
+  Separate production approval,
   deployment, selected-data cutover approval and first production-session
   verification remain (`M5-08` through `M5-11`).
 - **Still deferred:** `UX-01`, disruptive save flashing/centered feedback, until
@@ -1646,39 +1640,34 @@ Revalidation in the intended environment remains part of M1 and M4.
     replaying historical movement. Re-run the complete acceptance matrix.
 
 - [ ] **M5-07 - Prove recovery and release rollback, not just backup creation.**
-  - **Preparation:** three fixed-source emulator restore cases pass in
-    **31.549 seconds**: both rulesets preserve exact sheets, private images,
-    topology and resources; an uncertain restore recovers the same copy.
-    The actual real-owner restore-as-copy and hosted rollback/drain drill remain
-    unperformed.
-    Read-only inspection verifies the retained generation-131 complete file
-    (654,129 bytes, eight records/actors, 42 maps, 116 connections), both approved
-    image digests and both retained frontend entries. A local rollback package
-    is fully verified with all **1,216 application file hashes unchanged**,
-    retaining both full frontend trees and all six retired-entry bridges.
-    A separately fenced image helper refuses mutation without real completed
-    rehearsal evidence; only its read-only preflight and negative guard ran.
-    Incompatible package metadata is rejected before deployment. None of these
-    preparation checks substitutes for the actual restore/rollback/client drain.
-    A safe compatible backend candidate is now prepared rather than using an
-    image with the confirmed denial bug: source `681c5f0...` backports the same
-    presence fix to the older `0ba906c...` implementation. Its **13 lifecycle
-    cases** and exact **38-source-hash** isolated Linux runtime gate pass, and
-    image `288625ba...` is privately published as a separate recovery artifact.
-    The active/published current candidate pointers remain API25/image792.
-    Refreshed current/recovery fences pass read-only registry/service inspection
-    and refuse both mutations without real completed rehearsal evidence.
-    Neither the actual rollback nor the actual backup restore has been performed.
-    The prepared source681 fallback still has the newly reproduced ACK-cadence
-    behavior. It is not relabeled as having that separate correction; recovery
-    fences/artifacts must remain explicit when the next candidate is evaluated.
-    That correction is now also backported to the older compatible recovery
-    implementation as **sourcea8 / imagea7d9**. Its **15 lifecycle cases /
-    129.338 seconds**, formatting/lint/layering and exact **38-source-hash**
-    Linux runtime gate pass. Registry-only publication replaces just the three
-    recovery metadata fields; API25 and published current image792 are unchanged.
-    Refreshed recovery fences again pass read-only inspection and both missing-
-    completion-gate refusals. No actual rollback or restore is claimed.
+  - **Status:** in progress, with actual private operations now performed.
+    Final complete backup **440 / 658,746 B** restores to new private campaign
+    **`297809ec-602d-4ca0-ad1a-b159cc0b9836`**. All eight records, exact scene and
+    pinned sources match; original metadata/records/scene/retained file and
+    memberships are unchanged. The new copy is owner-only with zero seats and
+    no copied portable authority claims. It is a real-owner recovery copy,
+    not a synthetic fixture to delete.
+    Actual backend rollback serves **API26 / sourcea8 / imagea7d9** with the same
+    runtime/origins/IAM. Actual Hosting rollback activates **frontend0a99**,
+    retaining complete57 and all six retired-entry bridges. All **1,216** file
+    hashes and actual redirect/no-store/404 policies pass.
+    Normal returning-owner native startup on the rolled-back frontend opens the
+    same eight-character world without re-login or automatic game start.
+    After explicit owner start, all nine original accounts re-admit, returning
+    assignments remain **4 + 2**, and all ten scopes converge on compatible
+    command generation **442**. One actor support-surface ID normalizes during
+    native load; records, pins, geometry and coordinates otherwise match.
+    A real unsupported live request returns **400/invalid-participant-request**;
+    its managed client clears canonical state/stops its transport while the
+    valid original client stays current without UID/seat mutation.
+    The cadence-safe recovery implementation passes **15 lifecycle cases /
+    129.338 seconds** and the exact **38-source-hash** Linux runtime gate.
+    Prior emulator/packaging checks and their versions remain in
+    [the preparation log](./cloud-migration-preparation.md).
+    **Still required:** finish actual unchanged-board/cadence observation,
+    safely close/pause/save, and restore the current compatible frontend/backend
+    with readback. The real sourcef5 completion gate retains its late-probe
+    failures and independently verified before/after grace proof.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of

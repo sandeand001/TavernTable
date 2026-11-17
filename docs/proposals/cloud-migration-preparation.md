@@ -6053,3 +6053,71 @@ owner transport. It records provider disconnectedAt **01:44:08.494Z** and exact
 before-boundary read, followed by an actual after-boundary read and final normal
 Pause/backup/transport cleanup. The browser/app clocks, sourcef5 image and
 membership bindings remain unchanged; no completed-rehearsal gate is invented.
+
+### Sourcef5 technical verification completes with explicit supplemental grace proof
+
+The first host-clock follow-up also samples after its boundary and is preserved
+as inconclusive. A fresh bounded follow-up uses synchronous host waits instead
+of delayed output reads. It is authoritatively **live at 02:15:56.525Z**, with
+**46,336 ms** remaining until provider **02:16:42.861Z**; the later actual read
+is paused for disconnected at exactly that deadline, **900,000 ms** after the
+recorded final disconnect. No browser/application clock is modified.
+
+Normal final Pause confirms complete backup **generation440 / 658,746 B**.
+Fresh all-role checks prove nine closed observations, zero streams and pending
+operations across all stores, all original identities, restored transports and
+three stopped latency workers. Final calibration p95 is **204.4 ms owner /
+204.6 ms primary / 204.6 ms other members**.
+
+All three exact role datasets and a combined summary are saved with browser
+SHA-256 verification. The real completion gate explicitly combines the valid
+**250m29.883s uninterrupted sourcef5 phase** with this independently repeated
+grace proof. The original driver's failed status/error and the missed follow-up
+are retained, not rewritten. Additional operator checks require actual live
+before, paused after, exact fifteen-minute boundary and cleanup evidence.
+This is technical verification, not a sourceDCB full-duration claim, numeric
+latency waiver, manual visual pass or production/cutover approval.
+
+### Actual private restore and compatible rollback begin (2026-11-17 UTC)
+
+The normal owner workspace restores the latest retained backup440 to distinct
+private campaign **`297809ec-602d-4ca0-ad1a-b159cc0b9836`**. Exact eight records,
+scene and ruleset/core/source pins match. The source campaign, retained file and
+memberships remain unchanged; the copy has fresh owner-only access, zero seats
+and no portable authority claims. The original caller and private point text
+remain in owner memory for recovery, not in Git. This is a real-owner copy that
+must not be purged as a synthetic fixture.
+
+Using the real sourcef5 completion gate, the guarded actual image rollback
+deploys **API `00026-fg7` / sourcea8 / imagea7d9**. Runtime, traffic, origins and
+IAM fingerprints remain unchanged. The verified static rollback package is then
+actually published: **frontend0a99 active / complete57 retained**, all six retired
+entry bridges, **1,216 exact application hashes**, 1,217 public files including
+the manifest. Actual stable/retired entries redirect with no-store, retained57
+returns200/no-store and an unknown retired asset returns404/no-store.
+
+A separate normal native page returns through existing managed sign-in and
+opens the same eight-character campaign as owner on frontend0a99. Opening does
+not start gameplay. A normal explicit owner start succeeds against API26.
+One actor support-surface ID normalizes on native restoration, producing
+generation441; records, pinned sources, scene geometry and coordinates otherwise
+match. This is recorded rather than claiming the subsequent UI smoke made no
+canonical change.
+
+Separate recovery cohorts reuse the nine original in-memory Auth identities,
+not the closed sourcef5 observation objects. Returning assignments remain
+**4 + 2**. All ten scopes converge on an actual compatible facing command at
+generation442; its **8,493-ms** receipt is retained as a functional recovery
+sample, not a timing-target pass.
+
+A separate managed client sends an actual unsupported live-request format
+through normal scoped authentication. The server returns **HTTP400 /
+invalid-participant-request**. The client enters error, disables commands,
+clears canonical state and stops its transport with zero streams/pending world
+work. Its original compatible member remains ready at generation442 with the
+same identity. This is actual rejection/client-stop proof, not merely rejection
+of local deployment metadata.
+
+All ten recovery views are now observed unchanged at generation442 with one
+physical stream each. A real idle/cadence byte measurement is running on
+sourcea8; final pause/backup and restoration to current builds remain pending.
