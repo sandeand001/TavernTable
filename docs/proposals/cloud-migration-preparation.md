@@ -6034,3 +6034,22 @@ owner transport. Provider disconnectedAt is **01:19:06.197Z**, with exact
 all nine observations are closed, owner stream count is zero, pending mutations
 are zero and the game is intentionally still live in grace. The driver remains
 running; no premature normal Pause or completed final-backup claim is used.
+
+The original driver's intended pre-boundary GET instead begins
+**59,277.1 ms after its planned target** in the same owner monotonic clock.
+It then fails with "Disconnect grace ended early" at client **01:35:20.631Z**.
+Fresh authoritative state disproves an early server pause: the same epoch is
+paused for **disconnected** at exactly **01:34:06.197Z**, equal to its recorded
+graceUntil. The full backup is saved at generation440 (658,746 bytes), pending
+mutations are zero, all nine remain closed and owner streams are zero.
+This is a missed pre-boundary observation caused by the background browser
+waiter, not evidence that the game ended early. The failed original driver
+status and its valid continuous **250m29.883s** phase are not overwritten.
+
+A separate bounded follow-up uses normal owner Pause/Start, re-admits and closes
+the same nine identities without historical presentations, then closes the
+owner transport. It records provider disconnectedAt **01:44:08.494Z** and exact
+15-minute graceUntil **01:59:08.494Z**. A host-clock timer will drive an actual
+before-boundary read, followed by an actual after-boundary read and final normal
+Pause/backup/transport cleanup. The browser/app clocks, sourcef5 image and
+membership bindings remain unchanged; no completed-rehearsal gate is invented.

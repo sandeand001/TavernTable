@@ -74,8 +74,12 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   renewed **60-minute automatic inactivity pause pass**. A fresh epoch re-admits
   all nine original members without historical motion, then intentionally closes
   all nine and the owner transport for real disconnected grace. At **254m9.638s**,
-  no mutation is pending and that grace is still running until provider
-  **01:34:06.197Z**; final pause/backup/cleanup are not yet claimed. The actual
+  no mutation is pending. The server subsequently pauses at the exact
+  **01:34:06.197Z** deadline, but the browser harness samples **59.277 seconds
+  after** its planned pre-boundary target and incorrectly reports an early end.
+  That failed probe is retained. A fresh same-identity 15-minute grace follow-up
+  now uses host-clock checks, with deadline **01:59:08.494Z**; final verification/
+  cleanup are not yet claimed. The actual
   first warning, owner Keep Active and all ten identities' token rotation pass.
   The retained 216-command set has durable p95 **4,358.5 ms**,
   maximum **6,616.6 ms** and **149/216** above the original two-second benchmark;
@@ -1617,6 +1621,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     **01:19:06.197Z**, with exact deadline **01:34:06.197Z**; it remains in
     progress at the **254m9.638s** checkpoint. No final cleanup/backup or complete
     technical-rehearsal claim is made before that separate boundary.
+    The original driver then stops at a **late pre-boundary sample**, not a
+    proven early server pause: that request begins **59,277.1 ms after** its
+    planned target, while fresh authoritative pausedAt equals the original
+    exact graceUntil and reason is disconnected. The valid continuous
+    250m29.883s phase and original failed probe are both preserved. A separate
+    fresh-epoch grace follow-up re-admits/closes the same nine with no mutation,
+    and uses host-clock before/after checks rather than the throttled browser
+    waiter. Its provider deadline is **01:59:08.494Z**; no completion gate is
+    fabricated before that new observation.
     **The four-to-five-hour rehearsal, production approval and selected-source
     cutover remain incomplete/unapproved.**
   - **Depends:** `M5-05`, `M4-12`.
