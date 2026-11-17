@@ -69,6 +69,7 @@ const {
   CLOUD_LIVE_DISCONNECT_GRACE_MS,
   CLOUD_STREAM_LEASE_MS,
   CLOUD_LIVE_PRESENCE_COALESCE_MS,
+  CLOUD_LIVE_ACK_COALESCE_MS,
   CLOUD_BACKUP_INTERVAL_MS,
   CLOUD_BACKUP_RETAIN,
 } = require('../../src/campaigns/CloudProtocol.js');
@@ -1014,12 +1015,10 @@ class CloudCampaignStore {
           'This client stopped acknowledging its live connection; reconnect'
         );
       const clientSeenAt =
-        now - connection.clientSeenAt >= CLOUD_LIVE_PRESENCE_COALESCE_MS
-          ? now
-          : connection.clientSeenAt;
+        now - connection.clientSeenAt >= CLOUD_LIVE_ACK_COALESCE_MS ? now : connection.clientSeenAt;
       if (clientSeenAt !== connection.clientSeenAt)
         transaction.set(reference, { ...connection, clientSeenAt });
-      if (now - summary.renewedAt >= CLOUD_LIVE_PRESENCE_COALESCE_MS)
+      if (now - summary.renewedAt >= CLOUD_LIVE_ACK_COALESCE_MS)
         transaction.set(summaryReference, {
           ...summary,
           renewedAt: now,
