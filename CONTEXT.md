@@ -397,10 +397,13 @@
   Public streams require versioned client-originated proof: a protected response
   header identifies the ephemeral channel, and authenticated scoped POST
   acknowledgements every 25 seconds refresh its 90-second last-client-seen proof,
-  coalescing durable writes for 60 seconds. Server renewal cannot extend that
-  proof or revive it after expiry. Its actual deadline, without subtracting UID
-  headroom, bounds the physical stream; legacy internal presence retains its
-  original expiry-aware schedule. ACKs never poll scene state or renew meaningful
+  coalescing durable writes for 30 seconds. This leaves proof and campaign-summary
+  headroom when background browser timers clamp ACKs to roughly one minute;
+  ordinary 25-second ACKs still do not each write durable state. Server renewal
+  cannot extend that proof or revive it after expiry. Its actual deadline, without
+  subtracting UID headroom, bounds the physical stream; legacy internal presence
+  retains its original 60-second batching and expiry-aware schedule.
+  ACKs never poll scene state or renew meaningful
   activity. After fresh campaign eligibility/access checks, missing and foreign
   channels share the retryable client-presence-expired denial, not campaign
   removal; neither can renew another account's channel. Genuine membership

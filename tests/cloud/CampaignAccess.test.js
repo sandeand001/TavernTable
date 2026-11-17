@@ -3496,6 +3496,80 @@ test(
   }
 );
 
+for (const { name, acknowledgements } of [
+  {
+    name: 'the observed background ACK cadence',
+    acknowledgements: [25000, 50000, 75000, 100000, 125000, 150000, 194000, 254000, 314000],
+  },
+  {
+    name: 'near-minute background ACKs',
+    acknowledgements: [59900, 119800, 179700, 239600, 299500],
+  },
+])
+  test(
+    `client presence survives ${name} without extending a vanished client`,
+    { timeout: 30000 },
+    async (t) => {
+      let now = Date.now();
+      const f = await fixture(t, { now: () => now, cleanup: true });
+      const owner = await f.account();
+      const member = await f.account();
+      const campaign = await f.create(owner.principal, 'Throttled client proof');
+      await f.join(campaign.id, member.uid);
+      const grant = await f.store.getParticipantAccess(member.principal, campaign.id);
+      const scope = {
+        seatId: grant.access.seatId,
+        accessGeneration: grant.access.accessGeneration,
+      };
+      const paused = await f.store.getLiveSession(owner.principal, campaign.id);
+      const active = await f.store.controlLiveSession(owner.principal, campaign.id, {
+        commandId: randomUUID(),
+        action: 'start',
+        generation: paused.generation,
+        sessionId: paused.sessionId,
+      });
+      const started = now;
+      const connection = await f.store.connectLivePresence(
+        member.principal,
+        campaign.id,
+        { sessionId: active.sessionId },
+        { clientAcknowledgements: true }
+      );
+      const command = { sessionId: active.sessionId, connectionId: connection.id };
+      const events = [
+        ...acknowledgements.map((at) => ({ at, acknowledge: true })),
+        ...[60000, 120000, 180000, 240000, 300000, 360000].map((at) => ({
+          at,
+          acknowledge: false,
+        })),
+      ].sort((left, right) => left.at - right.at);
+      for (const event of events) {
+        now = started + event.at;
+        if (event.acknowledge)
+          await f.store.acknowledgeLivePresence(member.principal, campaign.id, command, scope);
+        else await f.store.renewLivePresence(member.principal, campaign.id, command);
+        const status = await f.store.getLiveStatus(owner.principal, campaign.id);
+        assert.equal(status.session.state, 'live');
+        assert.equal(status.activity.disconnectedAt, null);
+      }
+      now = started + acknowledgements.at(-1) + 89999;
+      await f.store.renewLivePresence(member.principal, campaign.id, command);
+      assert.equal(
+        (await f.store.getLiveStatus(owner.principal, campaign.id)).activity.disconnectedAt,
+        null
+      );
+      now++;
+      await assert.rejects(
+        f.store.renewLivePresence(member.principal, campaign.id, command),
+        (error) => error.code === 'client-presence-expired'
+      );
+      const disconnected = await f.store.getLiveStatus(owner.principal, campaign.id);
+      assert.equal(disconnected.activity.disconnectedAt, new Date(now).toISOString());
+      assert.equal(disconnected.session.lastMeaningfulAt, active.lastMeaningfulAt);
+      await f.store.disconnectLivePresence(member.principal, campaign.id, command, scope);
+    }
+  );
+
 test(
   'ended or foreign presence channels expire without revoking a current campaign member',
   { timeout: 30000 },

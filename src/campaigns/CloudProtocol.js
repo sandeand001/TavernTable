@@ -18,6 +18,8 @@ export const CLOUD_LIVE_INACTIVITY_MS = 60 * 60 * 1000;
 export const CLOUD_LIVE_DISCONNECT_GRACE_MS = 15 * 60 * 1000;
 export const CLOUD_STREAM_LEASE_MS = 90 * 1000;
 export const CLOUD_LIVE_PRESENCE_COALESCE_MS = 60 * 1000;
+// Keep headroom for minute-clamped background ACKs inside the 90-second proof lease.
+export const CLOUD_LIVE_ACK_COALESCE_MS = 30 * 1000;
 export const CLOUD_LIVE_ACK_INTERVAL_MS = 25000;
 export const CLOUD_LIVE_CONNECTION_HEADER = 'X-TavernTable-Live-Connection';
 
