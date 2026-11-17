@@ -86,9 +86,9 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   published/deployed; its complete stable gate is running. The current real-clock
   run remains unmodified on sourcef5/API25.
 - **Recovery preparation:** the older compatible implementation now has the
-  same presence fix backported on isolated source `681c5f0...`. Its image
-  `288625ba...` passes 13 lifecycle cases and the exact 38-hash Linux runtime
-  gate, and is privately available without replacing API25 or the candidate.
+  presence and ACK-cadence fixes backported on isolated source `a8d4ef8...`.
+  Its image `a7d9fcbe...` passes 15 lifecycle cases and the exact 38-hash Linux
+  runtime gate, and is privately available without replacing API25 or the candidate.
   Refreshed recovery guards reject both image changes without real completed
   rehearsal evidence. This preparation does not complete the actual M5-07 drill.
 - **Owner-deferred check:** manual DM/player animation verification will be done
@@ -1641,6 +1641,13 @@ Revalidation in the intended environment remains part of M1 and M4.
     The prepared source681 fallback still has the newly reproduced ACK-cadence
     behavior. It is not relabeled as having that separate correction; recovery
     fences/artifacts must remain explicit when the next candidate is evaluated.
+    That correction is now also backported to the older compatible recovery
+    implementation as **sourcea8 / imagea7d9**. Its **15 lifecycle cases /
+    129.338 seconds**, formatting/lint/layering and exact **38-source-hash**
+    Linux runtime gate pass. Registry-only publication replaces just the three
+    recovery metadata fields; API25 and published current image792 are unchanged.
+    Refreshed recovery fences again pass read-only inspection and both missing-
+    completion-gate refusals. No actual rollback or restore is claimed.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of

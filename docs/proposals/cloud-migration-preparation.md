@@ -5955,3 +5955,28 @@ The current sourcef5/API25 rehearsal remains unchanged and continues its actual
 quiet-clock verification. Its elapsed time is not claimed as testing sourceDCB.
 The prepared source681 recovery artifact also predates this separate cadence
 correction; future current/recovery fences must preserve that distinction.
+
+### Cadence-safe compatible recovery artifact prepared (2026-11-17 UTC)
+
+The four-file correction is cleanly backported onto the older compatible
+recovery implementation, producing **`a8d4ef8...`** (tree `c1bff531...`).
+All **15 presence/lifecycle cases pass in 129.338 seconds**; targeted formatting,
+lint and layering pass without changing the existing metadata implementation.
+Its exact local image **`a7d9fcbe...`** passes the **38-source-hash** isolated
+Linux runtime gate with both-edition native behavior, 501 d20 frames, 16MP limit,
+identity/private-file denials and graceful exit0. Local check RSS is
+**249,982,976 bytes**, not hosted peak memory.
+
+The existing private registry receives only this separate recovery artifact.
+A full private-state comparison verifies that only its three recovery metadata
+fields change; the live service, current candidate and published-current
+pointers remain **API25 / sourcef5 / image792**. The previous source681/image288
+artifact remains retained, not retroactively called cadence-corrected.
+
+The recovery operator is now explicitly fenced to current f5/image792 and
+compatible cadence-safe a8/imagea7d9. Both image-changing actions still refuse
+missing real completed-rehearsal evidence before network mutation. Read-only
+inspection verifies both exact registry indexes, API25, unchanged runtime/
+origins/IAM and the original settings fingerprint. No rollback occurs.
+The sourceDCB/image99 candidate remains local and undeployed; its full stable
+gate is still running, while the actual sourcef5 rehearsal continues unchanged.
