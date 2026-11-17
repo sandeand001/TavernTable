@@ -1531,6 +1531,17 @@ Revalidation in the intended environment remains part of M1 and M4.
     never grants another seat's access.
 
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
+  - **Owner's two-window Chrome check (November 17):** the DM view showed the
+    player's movement nearly simultaneously once it began, but the player
+    reported a multi-second click-to-movement delay and out-of-sequence
+    facing. Moving a DM creature while the player creature was moving led to
+    a DM reload. This is failed native responsiveness/overlap acceptance,
+    not a new latency measurement. A local regression reproduced one false
+    conflict: camera zoom or selecting a creature marked the DM scene dirty
+    just before a player checkpoint arrived. Those view-only interactions no
+    longer schedule saves in the local candidate; real edits, including
+    creature facing, still save. Player start delay, facing order, and
+    simultaneous world actions still require separate verification.
   - **Latest:** the separate observer-delivery correction is privately published
     as API29/source7cb/image136 with matching frontend9a. All24 focused native/
     emulator cases and the exact38-hash Linux runtime gate pass. The subsequently
@@ -1538,8 +1549,7 @@ Revalidation in the intended environment remains part of M1 and M4.
     movement or valid frame-timing sample. Normal Pause, saved backup483 and
     zero presence/streams/pending work are verified. The historical sourcef5
     long session/sourceDCB forty timings are not relabelled as source7cb results.
-    User-visible pending/response acceptance remains open; manual animation
-    remains owner-deferred outside this blocked short-check attempt.
+    This setup-only attempt is distinct from the subsequent owner Chrome check.
   - **Status:** in progress. The owner approved gameplay activation and matching
     publication only to the existing private pilot; both gameplay capabilities
     are deliberately enabled there. Normal returning-owner startup, ten-client

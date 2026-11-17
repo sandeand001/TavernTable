@@ -490,20 +490,20 @@ test('explicit flush bypasses the routine quiet period', async () => {
   expect(writes).toHaveBeenCalledTimes(1);
 });
 
-test('selection and facing changes notify autosave without relying on unrelated UI events', async () => {
+test('selection alone does not save, but an actor facing change still saves', async () => {
   const { autosave, adapter, actor, library, enqueues } = await fixture({ timers: true });
   jest.spyOn(adapter, '_refreshVisualState').mockResolvedValue(undefined);
   await adapter.setSelectedToken(actor);
-  expect(autosave.dirty).toBe(true);
+  expect(autosave.dirty).toBe(false);
   await jest.advanceTimersByTimeAsync(2000);
   await library.flush();
-  expect(enqueues).toHaveBeenCalledTimes(1);
+  expect(enqueues).not.toHaveBeenCalled();
   actor.facingAngle = 1.2;
   adapter.updateTokenOrientation(actor);
   expect(autosave.dirty).toBe(true);
   await jest.advanceTimersByTimeAsync(2000);
   await library.flush();
-  expect(enqueues).toHaveBeenCalledTimes(2);
+  expect(enqueues).toHaveBeenCalledTimes(1);
 });
 
 test('tab hiding flushes pending edits without waiting for the routine timer', async () => {

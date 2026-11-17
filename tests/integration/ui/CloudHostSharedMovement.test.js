@@ -6,6 +6,7 @@ import CampaignAutosave from '../../../src/campaigns/CampaignAutosave.js';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { encodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { connectCharacterServices } from '../../../src/ui/characters/characterServices.js';
+import { installCameraMethods } from '../../../src/scene/camera/CameraSystem.js';
 import { sceneActorPlacement } from '../../../src/scene/token-adapter/SavedPlacements.js';
 import {
   executePlayerCommand,
@@ -205,6 +206,49 @@ test('a cloud owner receiving consecutive native routes preserves the first step
     expect(f.gm.characterServices.combat.status(token).movement.spent).toBe(0);
     expect(f.autosave.dirty).toBe(false);
     expect(f.cloud.readCharacters).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+});
+
+test('DM zoom and token selection do not start a save or conflict with an incoming player move', async () => {
+  const f = await fixture();
+  try {
+    const token = f.gm.placedTokens[0];
+    const before = await f.store.readCharacters(f.campaign.id);
+    const scene = JSON.parse(before.scene);
+    const actor = scene.creatures[0];
+    actor.gridX = 2;
+    actor.pose.world.x = 2.5;
+    await f.store.commitScene(f.campaign.id, {
+      ruleset: '2014',
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(scene, { ruleset: '2014', library: f.library }),
+    });
+    const state = await f.store.readCharacters(f.campaign.id);
+    const camera = { gameManager: f.gm, _minZoom: 0.5, _maxZoom: 2, _zoom: 1 };
+    installCameraMethods(camera);
+    camera.setZoom(1.1);
+    await f.gm.token3DAdapter.setSelectedToken(token);
+    const origin = {
+      uid: 'member-a',
+      commandId: '22222222-2222-4222-8222-222222222222',
+      kind: 'world.command',
+      generation: 2,
+    };
+    f.notify.onState(
+      { version: 1, access: f.access, sessionId: f.sessionId, generation: 2, origin, state },
+      { reconcile: false, origin, presentations: [] }
+    );
+    for (let frame = 0; frame < 60 && f.library.sceneRevision < state.sceneRevision; frame++)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(f.autosave.sharedConflict).toBeFalsy();
+    expect(f.autosave.dirty).toBe(false);
+    expect(f.library.sceneRevision).toBe(state.sceneRevision);
+    expect(token.world.x).toBe(2.5);
+    await f.autosave.flush();
+    expect((await f.store.readCharacters(f.campaign.id)).sceneRevision).toBe(state.sceneRevision);
   } finally {
     await f.close();
   }

@@ -119,7 +119,6 @@ async function setSelectedToken(tokenEntry) {
     );
   }
   if (previous === this._selectedToken) return;
-  this.gameManager.sceneAutosave?.changed('selection');
   if (previous) {
     await this._refreshVisualState(previous);
   }
