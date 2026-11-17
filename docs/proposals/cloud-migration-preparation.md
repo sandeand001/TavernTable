@@ -6121,3 +6121,55 @@ of local deployment metadata.
 All ten recovery views are now observed unchanged at generation442 with one
 physical stream each. A real idle/cadence byte measurement is running on
 sourcea8; final pause/backup and restoration to current builds remain pending.
+
+### Actual recovery cadence, safe cleanup and roll-forward pass
+
+The sourcea8 unchanged-board measurement lasts **339.421 seconds**. All ten
+authorized clients remain ready/current at generation442 with the same single
+physical stream each, beyond the former four-minute failure window. Full API
+request/response body traffic (not just heartbeats) averages **315.06
+B/min/person**, maximum **968.89 B/min** including owner backup-status polls;
+every client is below **2 KiB/min**. No repeated owner checkpoint body is sent.
+
+All nine observations close, normal owner Pause saves complete backup
+**generation442 / 658,772 B**, and all three latency workers/transports clean up.
+Actual image roll-forward restores **API `00027-fcw` / sourcef5 / image792**,
+preserving settings/IAM fingerprints. Actual Hosting roll-forward restores
+**frontend57 active / complete0a99 retained**, with verified 1,216 file hashes
+and actual no-store redirect/readback behavior. A normal new current frontend
+page returns as owner, reads the same eight-character campaign and remains
+paused with zero streams/pending work. Three sanitized recovery-role datasets
+are saved with exact browser SHA-256 verification.
+
+A latest complete portable API export is generated and validated at **658,772 B**
+with SHA-256
+`27720c4b950bbdc2c16f237616d0111ec46ac8c5eea0add8cb153dd58cfbdb31`.
+Its automatic browser download is not observed at the exact requested path;
+no local-copy success is claimed or permission workaround used. No local play
+is requested/performed. The separate real-owner cloud restore copy remains
+retained, and preserved local originals are not represented as containing later
+cloud changes.
+
+### Final cadence candidate integrated and privately deployed
+
+The four-file correction is cleanly integrated as **`3ed7992...`**. A selected
+application/source comparison verifies exact equality to tested **sourceDCB**
+before publication. The existing private service receives only pinned image
+**`99c6090f...`**, producing **API `00028-7cj`**, with frontend57 unchanged.
+Read-only inspection verifies the original settings/IAM/origins and both current
+and compatible sourcea8/imagea7d9 registry indexes. The old sourcef5 completion
+gate is explicitly rejected for sourceDCB before mutation; the baseline
+four-hour result is not relabeled.
+
+The final candidate admits the same nine identities with original **4 + 2**
+assignments under newly calibrated added RTT p95 **205.6/204.2/204.3 ms**.
+All **40 fixed ordinary commands** (**20 moves / 20 facing**) apply and converge
+across all ten scopes, moving generation442 to482 exactly. No ordinary command
+is omitted to improve the result. Durable median is **3,816.7 ms**, p95
+**5,682.1 ms**, maximum **6,145.5 ms**, SDK-ready p95 **7,450.7 ms**;
+**40/40 exceed the original two-second benchmark**. This is a functional
+convergence pass, explicitly not a numeric latency pass.
+
+A final unchanged-board/cadence observation is now running on sourceDCB before
+normal final Pause/backup and transport cleanup. Production/cutover remain
+unapproved, and the manual native motion check remains owner-deferred.

@@ -42,13 +42,13 @@ data, or grant production approval.
 
 ## Current status
 
-**59 of 65 tasks complete.** This includes the four setup tasks and excludes
+**60 of 65 tasks complete.** This includes the four setup tasks and excludes
 the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
-`M5-05` are complete; the six remaining migration tasks are `M5-06` through
-`M5-11`.
+`M5-05` and `M5-07` are complete. Remaining are `M5-06` final-candidate acceptance
+and `M5-08` through `M5-11`.
 
-- **Current work:** sourcef5's long-session technical verification is complete;
-  `M5-07` actual private recovery/rollback testing is in progress. `M5-06` remains
+- **Current work:** sourcef5's long-session technical verification and `M5-07`
+  actual private recovery/rollback testing are complete. `M5-06` remains
   open for final-candidate live validation and the recorded performance/owner
   acceptance conditions, rather than silently promoting the baseline result.
 - **Completed technical rehearsal:** **250m29.883s** of continuous official
@@ -61,12 +61,11 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   after disconnect. Final normal Pause confirms saved backup **440 / 658,746 B**,
   nine closed members, zero owner streams/pending operations, restored transports
   and three closed latency workers. This does not claim a sourceDCB four-hour run.
-- **Current private deployment (temporary recovery drill):** API **`00026-fg7`**,
-  compatible source **`a8d4ef8...`**, image **`a7d9fcbe...`**, active frontend
-  **`0a99c475...`** with complete retained **`57cb5484...`**. The actual backend
-  rollback preserves runtime/origins/IAM. The actual frontend rollback passes
-  all 1,216 application hashes, no-store entry/retired bridges and unknown-asset
-  404 checks. No production release or selected-source cutover is implied.
+- **Current private deployment:** final candidate API **`00028-7cj`**,
+  source **`dcb1bde...`**, exact image **`99c6090f...`**, frontend **`57cb5484...`**
+  with complete retained0a99. Its correction is integrated as `3ed7992...` with
+  application files identical to the tested image source. Runtime/origins/IAM
+  remain unchanged; no production release or selected-source cutover is implied.
 - **Actual recovery results:** final sourcef5 backup440 restores to a distinct
   private owner-only copy, preserving all eight records, exact scene and pins;
   original data/memberships/file are unchanged and zero seats are copied.
@@ -75,30 +74,34 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   retain **4 + 2** returning assignments and all ten converge on an applied
   compatible command at generation **442**. A real unsupported-format admission
   returns HTTP400; its managed client clears state/stops while the original
-  compatible client retains authority. Cadence/idle observation and roll-forward
-  are still in progress.
+  compatible client retains authority. The recovery cadence test preserves all
+  ten physical streams and measures **315.06 B/min/person mean / 968.89 maximum**,
+  including all API body traffic, below 2 KiB. Nine close safely, normal Pause
+  saves backup442, and actual backend/frontend roll-forward plus native readback
+  pass. The real-owner recovery copy remains retained.
 - **Cadence correction:** source **`dcb1bde...`** preserves 90-second crash expiry
   and legacy 60-second batching while using 30-second authenticated ACK batching.
   **15 lifecycle cases / 54 client tests / 38 Linux source hashes** pass, plus
-  **307 suites / 4,067 tests / 1,753.809 seconds**. Its image **`99c6090f...`**
-  remains local, unmerged and undeployed; only the compatible sourcea8 backport
-  is currently serving the bounded private recovery drill.
+  **307 suites / 4,067 tests / 1,753.809 seconds**. Its exact image99 is now
+  privately deployed after the completed recovery drill. Actual final-candidate
+  fixed commands converge across all ten; a final idle observation is running.
 - **Regression evidence:** sourcef5 also passes **307 suites / 4,067 tests /
   1,668.276 seconds** with open-handle detection. The focused native movement
   gate passes **32 tests**. These are not a completed owner foreground visual
   check. All failed/aborted attempts and valid timing rows remain retained.
 - **Performance conditions:** all **216** baseline commands remain included:
   durable p95 **4,358.5 ms**, maximum **6,616.6 ms**; **149/216** exceed the
-  original two-second benchmark. No replacement numeric target or pass is
-  invented. The separate recovery command is functional proof, not a latency
-  acceptance sample.
+  original two-second benchmark. The new final-candidate fixed **40-command**
+  test also fails that target: durable median **3,816.7 ms**, p95 **5,682.1 ms**,
+  maximum **6,145.5 ms**, SDK-ready p95 **7,450.7 ms**, **40/40 above two seconds**.
+  All 20 moves and 20 facing commands converge at generation482 with no excluded
+  tails. No replacement numeric target or pass is invented.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
   The original two-second benchmark failure is retained, not relabeled.
-- **Next:** finish compatible live/cadence checks and roll forward from the
-  recovery drill; integrate and privately verify the final cadence candidate.
-  Separate production approval,
+- **Next:** finish final-candidate idle verification and safe cleanup, then obtain
+  the owner's explicit performance/release decision. Separate production approval,
   deployment, selected-data cutover approval and first production-session
   verification remain (`M5-08` through `M5-11`).
 - **Still deferred:** `UX-01`, disruptive save flashing/centered feedback, until
@@ -167,7 +170,7 @@ Revalidation in the intended environment remains part of M1 and M4.
 | M2 - Ownership and complete persistence  | Complete: 13/13    | Owned/Joined access, invitations, all storage paths, backups/restoration, and permission/atomicity coverage.                          |
 | M3 - Synchronization and cache           | Complete: 10/10    | Authorized incremental updates and replay; safe reconnect/cache reuse; ten-client convergence.                                        |
 | M4 - Lifecycle and isolated hosted pilot | Complete: 13/13    | Approved sleeping behavior; restricted deployment; hosted correctness, performance, monitoring, and measured cost evidence.           |
-| M5 - Migration and production cutover    | In progress: 5/11  | Selected-source copy/verification, account-bound seats, rehearsal, restore/rollback drill, and explicit production/cutover approvals. |
+| M5 - Migration and production cutover    | In progress: 6/11  | Selected-source copy/verification, account-bound seats, rehearsal, restore/rollback drill, and explicit production/cutover approvals. |
 
 ### M0 - Baseline and preparation
 
@@ -1639,8 +1642,9 @@ Revalidation in the intended environment remains part of M1 and M4.
     delay is acceptable; reconnects still restore current state rather than
     replaying historical movement. Re-run the complete acceptance matrix.
 
-- [ ] **M5-07 - Prove recovery and release rollback, not just backup creation.**
-  - **Status:** in progress, with actual private operations now performed.
+- [x] **M5-07 - Prove recovery and release rollback, not just backup creation.**
+  - **Completed:** actual private restore, compatible rollback and roll-forward,
+    and real unsupported-client admission rejection are verified.
     Final complete backup **440 / 658,746 B** restores to new private campaign
     **`297809ec-602d-4ca0-ad1a-b159cc0b9836`**. All eight records, exact scene and
     pinned sources match; original metadata/records/scene/retained file and
@@ -1664,10 +1668,22 @@ Revalidation in the intended environment remains part of M1 and M4.
     129.338 seconds** and the exact **38-source-hash** Linux runtime gate.
     Prior emulator/packaging checks and their versions remain in
     [the preparation log](./cloud-migration-preparation.md).
-    **Still required:** finish actual unchanged-board/cadence observation,
-    safely close/pause/save, and restore the current compatible frontend/backend
-    with readback. The real sourcef5 completion gate retains its late-probe
-    failures and independently verified before/after grace proof.
+    Actual unchanged-board observation lasts **339.421 seconds** with every
+    physical stream unchanged. Full API payload mean is **315.06 B/min/person**,
+    maximum **968.89**, below 2 KiB even including owner backup-status traffic.
+    Nine close safely, normal owner Pause saves **442 / 658,772 B**, all three
+    latency workers close and transports restore. Actual backend roll-forward
+    **API27 / sourcef5 / image792** preserves settings/IAM; frontend57 is
+    restored with all retained-entry policies and normal returning-owner native
+    readback of the same eight-character paused campaign.
+    The real sourcef5 completion gate retains its late-probe failures and
+    independently verified before/after grace proof; it is correctly refused
+    as a sourceDCB four-hour gate. The final candidate deploys separately after
+    the completed drill.
+    No local play is being performed. A latest portable API export is verified,
+    but an automatic test download was not observed and no local-file success
+    is claimed. If local play is later needed, explicitly export to a separate
+    copy; preserved local originals are not claimed to contain cloud edits.
   - **Depends:** `M5-06`.
   - **Success:** restore a real complete backup to a separate private campaign;
     test compatible frontend/backend rollback and explicit rejection/draining of
