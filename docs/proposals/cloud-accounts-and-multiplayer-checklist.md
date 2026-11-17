@@ -84,7 +84,9 @@ and `M5-08` through `M5-11`.
   **15 lifecycle cases / 54 client tests / 38 Linux source hashes** pass, plus
   **307 suites / 4,067 tests / 1,753.809 seconds**. Its exact image99 is now
   privately deployed after the completed recovery drill. Actual final-candidate
-  fixed commands converge across all ten; a final idle observation is running.
+  fixed commands converge across all ten. Its actual **412.571-second** idle
+  observation retains the same ten physical streams, with full API payload
+  **305.45 B/min/person mean / 957.22 maximum**, below 2 KiB.
 - **Regression evidence:** sourcef5 also passes **307 suites / 4,067 tests /
   1,668.276 seconds** with open-handle detection. The focused native movement
   gate passes **32 tests**. These are not a completed owner foreground visual
@@ -100,8 +102,11 @@ and `M5-08` through `M5-11`.
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
   The original two-second benchmark failure is retained, not relabeled.
-- **Next:** finish final-candidate idle verification and safe cleanup, then obtain
-  the owner's explicit performance/release decision. Separate production approval,
+- **Next:** obtain the owner's explicit performance/release decision.
+  Final verification and safe
+  cleanup are now complete: game paused, nine closed members, zero owner streams
+  or pending operations, backup **482 / 658,746 B** saved, three latency workers
+  closed and transports restored. Separate production approval,
   deployment, selected-data cutover approval and first production-session
   verification remain (`M5-08` through `M5-11`).
 - **Still deferred:** `UX-01`, disruptive save flashing/centered feedback, until

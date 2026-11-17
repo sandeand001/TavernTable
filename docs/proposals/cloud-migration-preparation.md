@@ -6173,3 +6173,45 @@ convergence pass, explicitly not a numeric latency pass.
 A final unchanged-board/cadence observation is now running on sourceDCB before
 normal final Pause/backup and transport cleanup. Production/cutover remain
 unapproved, and the manual native motion check remains owner-deferred.
+
+### Final candidate live cadence and safe final pause pass
+
+The actual sourceDCB unchanged-board interval lasts **412.571 seconds** with
+all ten original identities current at generation482 and the same one physical
+stream each. Full API payload, including owner backup-status requests, averages
+**305.45 B/min/person**, maximum **957.22 B/min**; all are below **2 KiB/min**.
+There are no forced proof-expiry reconnects or repeated owner checkpoint bodies.
+
+All nine observations close, and normal final owner Pause confirms complete
+backup **482 / 658,746 B**, error null. Fresh cleanup verifies zero owner streams
+and pending operations, restored transports and three stopped latency workers.
+Post-calibration p95 is **202.9 / 203.2 / 204.3 ms** for owner/primary/other
+members. The private service remains **API28/sourceDCB/image99**, frontend57,
+paused; no production/cutover action is approved.
+
+Three sanitized final role datasets and a summary are saved with exact browser
+SHA-256 verification. All **40 unique ordinary commands**, including every
+valid tail, are retained. Measuring from the **first observed HTTP attempt**
+preserves durable p95 **5,682.1 ms**, maximum **6,145.5 ms**, SDK-ready p95
+**7,450.7 ms**, maximum **8,357.3 ms**. There are **zero ordinary retries,
+HTTP503 responses or client fetch failures**; nevertheless **40/40 exceed the
+original two-second target**. Functional convergence and the corrected
+liveness/idle-byte behavior pass; that numeric target does not.
+
+Read-only provider observations retain separate window boundaries, not
+per-command cost claims. The broad sourcef5 preparation/rehearsal/follow-up
+window has **313 memory samples**, maximum sample mean **417,337,344 B**,
+11,086 requests, 365,663 Firestore reads, 13,988 writes and 3,277 Storage API
+operations. The sourceDCB admission/fixed-command/idle window has **16 memory
+samples**, maximum sample mean **378,126,336 B**, 631 requests, 22,237 reads,
+1,092 writes and 678 Storage API operations. Metric families have independently
+recorded first/last samples and may lag; their counts are not assumed equal.
+Both memory figures are sample means, **not instantaneous peaks**, against the
+unchanged 1 GiB limit.
+
+The older R8 gross-minute forecast **USD15.5656 for its declared 30-hour
+workload** and USD25 alerts-only budget remain historical measured planning
+evidence, not a newly invoiced or guaranteed cost for this candidate. No billing,
+IAM, runtime or budget settings are changed. Final-source performance/release
+acceptance still needs the owner; manual animation remains explicitly deferred
+and the old sourcef5 four-hour result is not relabeled as a sourceDCB run.
