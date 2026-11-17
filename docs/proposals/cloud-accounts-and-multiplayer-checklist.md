@@ -121,8 +121,13 @@ and `M5-08` through `M5-11`.
   closed and transports restored. Separate production approval,
   deployment, selected-data cutover approval and first production-session
   verification remain (`M5-08` through `M5-11`).
-- **Still deferred:** `UX-01`, disruptive save flashing/centered feedback, until
-  after `M5-11`. Originals, host keys and the real owner account remain untouched.
+- **Save-interruption fix:** the owner explicitly brings `UX-01` forward into
+  the private pilot, then requests continued command-responsiveness work.
+  The local correction keeps routine saves/checkpoints/success feedback hidden
+  and nonblocking while preserving recovery errors and safe exit guards.
+  **77 focused tests / four suites** plus targeted formatting/lint/layering pass;
+  matching private frontend publication is next. Originals, host keys and the
+  real owner account remain untouched.
 
 Detailed completion evidence and historical measurements are recorded under each
 task and in [the preparation log](./cloud-migration-preparation.md).
@@ -1746,20 +1751,29 @@ Revalidation in the intended environment remains part of M1 and M4.
     Failures trigger the tested recovery/revised approval path, not silent local
     fallback or premature completion.
 
-## Post-migration follow-ups
+## User follow-ups outside the core migration count
 
-These are explicitly deferred user requests, not additional migration exit tasks.
+These are tracked separately from the 65 migration exit tasks.
 
 - [ ] **UX-01 - Remove disruptive routine-save feedback.**
-  - **Status:** deferred until the migration is complete, as requested.
-  - **Depends:** `M5-11`.
+  - **Status:** brought forward with explicit owner approval for the private
+    pilot, as part of the current no-interruption requirement. The earlier
+    after-migration deferral is superseded for this specific fix.
+  - **Implementation:** routine in-flight saves, scene checkpoints and confirmed
+    saves are hidden without global input blocking, inert changes or focus
+    transfer. Offline/identity/conflict/uncertain recovery remains explicit;
+    deliberate leave/sign-out keeps its safe final flush.
+  - **Validation:** the new regression fails before implementation on the
+    reproduced input-blocking behavior, then all **77 tests / four suites /
+    17.827 seconds** pass. Targeted formatter, JS/CSS lint and layering pass.
+    Private frontend publication is pending; this does not fix or conceal the
+    separate authoritative command-response delay.
   - **Report:** saving flashes the screen and presents a centered "Saved to cloud"
     box, interrupting play.
   - **Success:** routine saves do not flash, steal focus or display a centered
     notice. Durable, unsaved and error states remain truthful and accessible.
   - **Verify:** exercise repeated scene/character autosaves and confirm gameplay
     stays visually stable; failed or uncertain saves remain explicit.
-  - Do not implement this follow-up during the migration.
 
 ## Acceptance coverage map
 

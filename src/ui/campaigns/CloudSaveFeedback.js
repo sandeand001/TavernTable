@@ -37,6 +37,7 @@ export default class CloudSaveFeedback {
     this.previousInert = new Map();
     this.root = document.createElement('section');
     this.root.className = 'cloud-save-feedback';
+    this.root.hidden = true;
     this.root.setAttribute('role', 'region');
     this.root.setAttribute('aria-label', 'Cloud save feedback');
     this.root.tabIndex = -1;
@@ -238,12 +239,10 @@ export default class CloudSaveFeedback {
       'aria-busy',
       String(['saving', 'checkpoint', 'loading', 'exiting'].includes(phase))
     );
-    this.setBlocked(
-      this.exiting ||
-        offline ||
-        this.recoveryRequired ||
-        ['saving', 'uncertain', 'failed'].includes(phase)
-    );
+    const blocked =
+      this.exiting || offline || this.recoveryRequired || ['uncertain', 'failed'].includes(phase);
+    this.root.hidden = !blocked && phase !== 'loading';
+    this.setBlocked(blocked);
   }
 
   setBlocked(blocked) {

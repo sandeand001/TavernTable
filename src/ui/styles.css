@@ -212,6 +212,10 @@
     sans-serif;
 }
 
+.cloud-save-feedback[hidden] {
+  display: none;
+}
+
 .cloud-save-card {
   box-sizing: border-box;
   max-width: 440px;

@@ -6242,3 +6242,29 @@ This identifies a concrete user-facing responsiveness issue without another
 long-session run. It remains a release-readiness blocker under the clarified
 criterion. No new rehearsal, production operation, code change or manual
 visual acceptance is performed as part of this evidence review.
+
+### Routine save interruption reproduced and corrected locally
+
+The owner reiterates that ordinary cloud saves must happen in the background,
+then explicitly approves bringing this previously deferred fix into the private
+pilot before continuing command-responsiveness work. It remains separate from
+production/cutover approval and does not authorize another rehearsal.
+
+A focused real-client-store regression reproduces ordinary save input blocking:
+the global feedback component routes the normal saving phase through its
+full-page inert/focus/input-capture path. Its feedback card also remains rendered
+on confirmed saves. The regression first fails in **4.857 seconds**.
+
+The correction hides routine idle/in-flight/checkpoint/saved feedback, leaves
+normal game input and focus untouched and gives the hidden root an explicit CSS
+display rule. Save state itself, original command IDs, durability and beforeunload
+warnings are unchanged. Offline, invalidated-account, uncertain and definitive
+conflict recovery still surface; explicit leave/sign-out still waits for the
+confirmed final flush.
+
+All **77 focused tests / four suites / 17.827 seconds** pass, including the
+continued-editing scene checkpoint, same-ID recovery, account/offline isolation,
+player live-authority and sign-out guards. Targeted Prettier, ESLint, Stylelint
+and layering pass. No dependencies, backend settings, accounts or source data
+change. Matching static private frontend publication is pending. This removes
+the routine save interruption, not the separate measured command/state delay.

@@ -116,6 +116,47 @@ test('identity verification failures stay distinct from a UID change and unexpec
   }
 });
 
+test('routine cloud saving and acknowledgement stay hidden without stealing focus or blocking game input', async () => {
+  document.body.innerHTML = '<section id="editor"><button>Continue playing</button></section>';
+  const editor = document.getElementById('editor');
+  const play = editor.querySelector('button');
+  const played = jest.fn();
+  play.addEventListener('click', played);
+  let release;
+  const response = new Promise((resolve) => {
+    release = resolve;
+  });
+  const { store, feedback } = fixture(() => response);
+  expect(feedback.root.hidden).toBe(true);
+  play.focus();
+  const saving = store.create({ name: campaign.name, ruleset: '2014', packIds: [] });
+  try {
+    expect(feedback.blocked).toBe(false);
+    expect(feedback.root.hidden).toBe(true);
+    expect(editor.inert).not.toBe(true);
+    expect(document.activeElement).toBe(play);
+    expect(feedback.root.hasAttribute('aria-modal')).toBe(false);
+    play.click();
+    expect(played).toHaveBeenCalledTimes(1);
+    const pointer = new Event('pointerdown', { bubbles: true, cancelable: true });
+    expect(play.dispatchEvent(pointer)).toBe(true);
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(true);
+    release({ ok: true, status: 200, json: async () => ({ version: 1, result: campaign }) });
+    await saving;
+    expect(feedback.state.phase).toBe('saved');
+    expect(feedback.root.hidden).toBe(true);
+    expect(feedback.blocked).toBe(false);
+    expect(document.activeElement).toBe(play);
+  } finally {
+    release({ ok: true, status: 200, json: async () => ({ version: 1, result: campaign }) });
+    await saving;
+    feedback.dispose();
+    store.close();
+  }
+});
+
 test('uncertain campaign creation blocks new input until the same command is explicitly retried and durably acknowledged', async () => {
   document.body.innerHTML = '<section id="editor"><button>Edit campaign</button></section>';
   const editor = document.getElementById('editor');
@@ -136,14 +177,20 @@ test('uncertain campaign creation blocks new input until the same command is exp
     acknowledged = true;
   });
   expect(status.textContent).toContain('Saving to cloud');
-  expect(root.inert).toBe(false);
-  expect(editor.inert).toBe(true);
+  expect(root.hidden).toBe(true);
+  expect(root.inert).toBe(true);
+  expect(editor.inert).not.toBe(true);
   edit.click();
-  expect(edited).not.toHaveBeenCalled();
+  expect(edited).toHaveBeenCalledTimes(1);
   await settle();
   expect(acknowledged).toBe(false);
   expect(status.textContent).toContain('Unconfirmed');
   expect(status.textContent).not.toContain('PRIVATE LOST RESPONSE DETAIL');
+  expect(root.hidden).toBe(false);
+  expect(root.inert).toBe(false);
+  expect(editor.inert).toBe(true);
+  edit.click();
+  expect(edited).toHaveBeenCalledTimes(1);
   const leaving = new Event('beforeunload', { cancelable: true });
   window.dispatchEvent(leaving);
   expect(leaving.defaultPrevented).toBe(true);
@@ -156,12 +203,13 @@ test('uncertain campaign creation blocks new input until the same command is exp
   await settle();
   expect(acknowledged).toBe(true);
   expect(status.textContent).toBe('Saved to cloud');
+  expect(root.hidden).toBe(true);
   expect(editor.inert).toBe(false);
   expect(root.inert).toBe(true);
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(fetch.mock.calls[0][1].body).toBe(fetch.mock.calls[1][1].body);
   edit.click();
-  expect(edited).toHaveBeenCalledTimes(1);
+  expect(edited).toHaveBeenCalledTimes(2);
   feedback.dispose();
 });
 
@@ -228,11 +276,14 @@ test('scene checkpoint feedback remains truthful through continued editing and t
     expect(status.textContent).toContain('Restoring');
     await autosave.start();
     expect(status.textContent).toBe('Saved to cloud');
+    expect(feedback.root.hidden).toBe(true);
     autosave.changed('camera');
     expect(status.textContent).toContain('Saving to cloud');
-    expect(document.getElementById('editor').inert).toBe(false);
+    expect(feedback.root.hidden).toBe(true);
+    expect(document.getElementById('editor').inert).not.toBe(true);
     await autosave.flush();
     expect(status.textContent).toBe('Saved to cloud');
+    expect(feedback.root.hidden).toBe(true);
     expect(autosave.status.text).toBe('Saved to cloud');
     const workspace = new CampaignWorkspace({ manifest: { packs }, resources: {}, store });
     const services = {
@@ -277,6 +328,7 @@ test('scene checkpoint feedback remains truthful through continued editing and t
       view: { camera: { zoom: 1.75 } },
     });
     expect(document.getElementById('editor').inert).toBe(true);
+    expect(feedback.root.hidden).toBe(false);
     expect(store.connection.account.identity()?.uid).toBe('uid-a');
     releaseSignOut();
     await settle();
@@ -397,12 +449,14 @@ test('safe exit pauses new editing across the final flush and releases the pause
     throw new Error('Sign-out could not complete');
   });
   expect(document.getElementById('editor').inert).toBe(true);
+  expect(feedback.root.hidden).toBe(false);
   expect(document.querySelector('[aria-label="Cloud save status"]').textContent).toContain(
     'Finishing cloud saves'
   );
   release();
   await expect(leaving).rejects.toThrow('Sign-out could not complete');
   expect(document.getElementById('editor').inert).toBe(false);
+  expect(feedback.root.hidden).toBe(true);
   expect(document.querySelector('[aria-label="Cloud save status"]').textContent).toContain(
     'No save pending'
   );
@@ -432,6 +486,7 @@ test('a definitive revision conflict requires reopening instead of blindly resub
   ).rejects.toMatchObject({ code: 'stale-revision' });
   const root = document.querySelector('[aria-label="Cloud save feedback"]');
   expect(root.querySelector('[role="status"]').textContent).toContain('Not saved');
+  expect(root.hidden).toBe(false);
   expect(root.textContent).not.toContain('PRIVATE BACKEND DETAIL');
   expect(document.getElementById('editor').inert).toBe(true);
   expect(
