@@ -6005,3 +6005,10 @@ SDK-ready p95 **6,379.7 ms**, maximum **7,452.0 ms**; **149/216** exceed the
 original two-second benchmark. No ordinary command retry is hidden.
 The renewed real inactivity pause and separate disconnected grace are still
 pending; this is not yet a completed four-hour result or sourceDCB acceptance.
+
+The complete stable gate on isolated cadence-corrected **sourceDCB** now
+finishes successfully: **307 suites / 4,067 tests / 1,753.809 seconds**, with
+the normal open-handle detection and serial runner. This is separate from the
+earlier sourcef5 stable gate and its ongoing real-clock run. The sourceDCB
+candidate/image99 remains local, unmerged and undeployed; no current-release
+or four-hour acceptance is inferred from this additional local validation.

@@ -84,8 +84,9 @@ the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
   90-second crash expiry and legacy 60-second batching while giving authenticated
   ACK proof 30-second batching. **15 lifecycle cases / 54 client tests / 38
   exact Linux runtime hashes pass**. Its local image `99c6090f...` is not
-  published/deployed; its complete stable gate is running. The current real-clock
-  run remains unmodified on sourcef5/API25.
+  published/deployed. Its complete stable gate now also passes **307 suites /
+  4,067 tests / 1,753.809 seconds**. The current real-clock run remains
+  unmodified on sourcef5/API25.
 - **Recovery preparation:** the older compatible implementation now has the
   presence and ACK-cadence fixes backported on isolated source `a8d4ef8...`.
   Its image `a7d9fcbe...` passes 15 lifecycle cases and the exact 38-hash Linux
