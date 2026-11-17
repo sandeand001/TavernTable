@@ -6357,3 +6357,36 @@ preflight passes, with no rollback performed. The sourcef5 completion gate is
 historical, not a source7cb four-hour result; the exact-source mutation guard is
 not waived. No additional live game, rehearsal, visual acceptance, new latency
 pass, production release or selected-source cutover is implied.
+
+## Approved short native check - setup blocked and safely paused
+
+The owner explicitly approves the proposed brief DM/player input-to-render and
+continued-input check. It is not approval for another long rehearsal, new
+identities, Auth changes or infrastructure/runtime changes.
+
+The current native owner opens the selected main copy through its normal
+campaign UI. The original named returning fixture identity is verified unchanged
+without reloading its retained browser document; current9a native modules are
+imported and a manager is constructed. Browser foreground selection alone still
+reports hidden; native editor selection later verifies the intended fixture is
+visible. However, the member's native bootstrap input and a small read-only
+follow-up are dispatched-unverified, with no verified application initialization.
+No blind retry, unsafe identity swap or SDK-readiness-as-render substitute is
+used. The check stops before any movement command or accepted timing sample.
+
+The real owner Start/Pause setup interval is provider **21:28:47.837Z to
+21:34:50.176Z**, **362.339 seconds**, not a completed gameplay rehearsal.
+Normal owner Pause succeeds. Native canonical readback matches the post-open
+baseline scene/records exactly, with no pending operations and zero owner
+streams. Independent provider reads confirm paused state and **zero presence
+records**. Complete backup is **483 / 658,772 B**, scene revision475 and character
+revision17. Comparing the retained482/483 backup bodies finds exactly the normal
+native-open support-surface normalization for one actor plus scene revision/
+saved-time metadata; no coordinates, geometry, camera, records or source pins
+differ. No additional move/turn/resource command is issued.
+
+Owned DevTools windows are closed; no latency worker is started. The owner is
+left safely paused in the normal native campaign, not signed out or reset.
+Sanitized setup/failure/cleanup evidence is retained privately. `M5-06` remains
+open: this is a foreground harness limitation, not a visual/latency acceptance
+pass or an application-motion failure.

@@ -129,13 +129,23 @@ and `M5-08` through `M5-11`.
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
   The original two-second benchmark failure is retained, not relabeled.
+- **Approved short check:** the owner subsequently approves a bounded native
+  DM/player input/render check, not another long rehearsal. Foreground setup
+  cannot reliably deliver member input: native initialization is unverified.
+  The attempt stops before any movement command or valid render-timing sample.
+  Normal owner Pause and independent provider reads confirm no streams/presence
+  or pending work; complete backup **483 / 658,772 B** is saved. Native opening
+  normalized one actor support-surface identifier only, with revision/time
+  metadata; retained482/483 comparison finds no coordinate, geometry, camera,
+  record or source-pin differences. This is a setup limitation, not an
+  application animation failure or a responsiveness pass.
 - **Next:** address the user-visible pending/input-response issue before
   production readiness. No additional long rehearsal is needed to identify it;
   propose any further rehearsal before executing it.
-  Final verification and safe
-  cleanup are now complete: game paused, nine closed members, zero owner streams
-  or pending operations, backup **482 / 658,746 B** saved, three latency workers
-  closed and transports restored. Separate production approval,
+  Prior full-cohort cleanup retains backup **482 / 658,746 B**, nine closed
+  members, three stopped latency workers and restored transports. The later
+  short-check setup is safely paused with backup483, zero presence/streams/
+  pending operations and no movement commands. Separate production approval,
   deployment, selected-data cutover approval and first production-session
   verification remain (`M5-08` through `M5-11`).
 - **Save-interruption fix:** the owner explicitly brings `UX-01` forward into
@@ -1523,10 +1533,13 @@ Revalidation in the intended environment remains part of M1 and M4.
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
   - **Latest:** the separate observer-delivery correction is privately published
     as API29/source7cb/image136 with matching frontend9a. All24 focused native/
-    emulator cases and the exact38-hash Linux runtime gate pass. No additional
-    live rehearsal is run, and the historical sourcef5 long session/sourceDCB
-    forty timings are not relabelled as source7cb results. User-visible pending/
-    response acceptance remains open; manual animation remains owner-deferred.
+    emulator cases and the exact38-hash Linux runtime gate pass. The subsequently
+    approved brief check stops during foreground member-input setup, before any
+    movement or valid frame-timing sample. Normal Pause, saved backup483 and
+    zero presence/streams/pending work are verified. The historical sourcef5
+    long session/sourceDCB forty timings are not relabelled as source7cb results.
+    User-visible pending/response acceptance remains open; manual animation
+    remains owner-deferred outside this blocked short-check attempt.
   - **Status:** in progress. The owner approved gameplay activation and matching
     publication only to the existing private pilot; both gameplay capabilities
     are deliberately enabled there. Normal returning-owner startup, ten-client
