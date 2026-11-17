@@ -1542,6 +1542,15 @@ Revalidation in the intended environment remains part of M1 and M4.
     longer schedule saves in the local candidate; real edits, including
     creature facing, still save. Player start delay, facing order, and
     simultaneous world actions still require separate verification.
+  - **Concurrent-play acceptance:** not a two-user special case. Every user
+    in the supported session can submit an allowed action without waiting for
+    another user's animation to finish. Exercise the full pilot cohort (one
+    DM and nine players) with overlapping valid actions; all clients must
+    converge without a reload, lost actions, duplicate effects, or a stalled
+    observer. Include a truly conflicting pair: reject a command that is no
+    longer valid under the current board or turn rules in place, without
+    kicking anyone out of the session. The two-window check is only a
+    regression check, not completion evidence for this requirement.
   - **Latest:** the separate observer-delivery correction is privately published
     as API29/source7cb/image136 with matching frontend9a. All24 focused native/
     emulator cases and the exact38-hash Linux runtime gate pass. The subsequently
