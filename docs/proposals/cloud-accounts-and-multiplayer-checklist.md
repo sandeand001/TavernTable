@@ -56,8 +56,9 @@ and `M5-08` through `M5-11`.
   same-frame/cursor history sharing preserve current motion instead of letting
   a lagging cursor force peers to resync. **Eight native projection cases and
   sixteen targeted emulator cases** pass, including original scope, motion,
-  Free Play, retention and backwards-head guards. API28 remains published while
-  candidate packaging proceeds; no new hosted latency/visual pass is claimed.
+  Free Play, retention and backwards-head guards. The exact **38-hash Linux**
+  runtime/native/isolation gate passes. This is now privately published as
+  **API29/source7cb/image136**; no new hosted latency/visual pass is claimed.
 - **Completed technical rehearsal:** **250m29.883s** of continuous official
   sourcef5 activity/quiet lifecycle, with actual 55-minute warning, owner Keep
   Active, all ten identities' token rotation and exact renewed 60-minute pause.
@@ -67,13 +68,16 @@ and `M5-08` through `M5-11`.
   deadline and pauses exactly at provider **02:16:42.861Z**, fifteen minutes
   after disconnect. Final normal Pause confirms saved backup **440 / 658,746 B**,
   nine closed members, zero owner streams/pending operations, restored transports
-  and three closed latency workers. This does not claim a sourceDCB four-hour run.
-- **Current private deployment:** final candidate API **`00028-7cj`**,
-  source **`dcb1bde...`**, exact image **`99c6090f...`**, frontend **`57cb5484...`**
-  for the recorded server rehearsal. The current static release is now
-  **`9a5cb0c5...`**, retaining complete57, with the approved background-save fix
-  committed as `9c4a5b9...`. The server correction is integrated as `3ed7992...` with
-  application files identical to the tested image source. Runtime/origins/IAM
+  and three closed latency workers. This does not claim a sourceDCB or
+  source7cb four-hour run.
+- **Current private deployment:** API **`00029-bgt`**, source **`7cb13b4...`**,
+  exact image **`13694b50...`**, frontend **`9a5cb0c5...`**, retaining complete57.
+  The approved background-save fix is committed as `9c4a5b9...`; the server
+  observer correction is the separate `7cb13b4...` commit. The earlier ACK30
+  correction remains included. Deployment checks confirm private campaigns are
+  paused/not started, the owner is in an empty lobby, actual health/auth/origin
+  policy passes and the runtime/settings fingerprint is unchanged. No game or
+  additional rehearsal is started for publication. Runtime/origins/IAM
   remain unchanged; no production release or selected-source cutover is implied.
 - **Actual recovery results:** final sourcef5 backup440 restores to a distinct
   private owner-only copy, preserving all eight records, exact scene and pins;
@@ -91,8 +95,9 @@ and `M5-08` through `M5-11`.
 - **Cadence correction:** source **`dcb1bde...`** preserves 90-second crash expiry
   and legacy 60-second batching while using 30-second authenticated ACK batching.
   **15 lifecycle cases / 54 client tests / 38 Linux source hashes** pass, plus
-  **307 suites / 4,067 tests / 1,753.809 seconds**. Its exact image99 is now
-  privately deployed after the completed recovery drill. Actual final-candidate
+  **307 suites / 4,067 tests / 1,753.809 seconds**. Its exact image99 was
+  privately deployed after the completed recovery drill and remains retained.
+  Actual sourceDCB
   fixed commands converge across all ten. Its actual **412.571-second** idle
   observation retains the same ten physical streams, with full API payload
   **305.45 B/min/person mean / 957.22 maximum**, below 2 KiB.
@@ -102,7 +107,7 @@ and `M5-08` through `M5-11`.
   check. All failed/aborted attempts and valid timing rows remain retained.
 - **Performance conditions:** all **216** baseline commands remain included:
   durable p95 **4,358.5 ms**, maximum **6,616.6 ms**; **149/216** exceed the
-  original two-second benchmark. The new final-candidate fixed **40-command**
+  original two-second benchmark. The preceding sourceDCB fixed **40-command**
   test also fails that target: durable median **3,816.7 ms**, p95 **5,682.1 ms**,
   maximum **6,145.5 ms**, SDK-ready p95 **7,450.7 ms**, **40/40 above two seconds**.
   All 20 moves and 20 facing commands converge at generation482 with no excluded
@@ -110,13 +115,16 @@ and `M5-08` through `M5-11`.
 - **Owner clarification and evidence review:** confirmation delay is acceptable
   only if it produces no user-visible visual/performance impact. Testing is
   considered sufficient for now; any additional rehearsal must first be proposed.
-  Reviewing the existing forty commands and current control path finds a real
+  Reviewing the preceding forty commands and unchanged command Adapter finds a real
   readiness issue: commands stay pending, a second command is blocked and
   multiple controls show waiting/disabled state until receipt handling finishes.
   Recorded first authorized-state delivery is **3,435.9-8,356.9 ms**, p95
   **7,450.1 ms**; these are not rendered-frame timings. The delay cannot currently
   be certified as invisible. The original two-second measurement is historical
   evidence, not the owner's newly imposed requirement.
+  The source7cb observer change addresses an independently reproduced delivery
+  bottleneck; it is not presented as a new hosted latency or foreground-render
+  measurement, nor as proof that all pending-command delay is invisible.
 - **Owner-deferred check:** manual DM/player animation verification will be done
   by the owner after the remaining work. This is deferred, not an observed pass.
   A short delay is acceptable; disjointed live movement remains the concern.
@@ -1513,6 +1521,12 @@ Revalidation in the intended environment remains part of M1 and M4.
     never grants another seat's access.
 
 - [ ] **M5-06 - Run a representative ten-client, full-session rehearsal.**
+  - **Latest:** the separate observer-delivery correction is privately published
+    as API29/source7cb/image136 with matching frontend9a. All24 focused native/
+    emulator cases and the exact38-hash Linux runtime gate pass. No additional
+    live rehearsal is run, and the historical sourcef5 long session/sourceDCB
+    forty timings are not relabelled as source7cb results. User-visible pending/
+    response acceptance remains open; manual animation remains owner-deferred.
   - **Status:** in progress. The owner approved gameplay activation and matching
     publication only to the existing private pilot; both gameplay capabilities
     are deliberately enabled there. Normal returning-owner startup, ten-client

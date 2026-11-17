@@ -6332,3 +6332,28 @@ history, Free Play in both rulesets and backwards-head denial. Targeted
 formatting, JS lint and layering pass before committing. No additional live
 rehearsal, backend publication or production/cutover approval is claimed;
 candidate packaging is next.
+
+The committed candidate is **`7cb13b48cd011d64bcee13089fce8e68c395bb24`**,
+validated tree **`0e3c7fdd...`**, unchanged by normal commit hooks. Its pinned
+Linux Node24.22.3 image passes all **38 exact source hashes**, UID1000,
+read-only/network-isolated CPU1/GiB1, anonymous/forged denial, native dice
+501 frames, Cover/flight in both rulesets, image bounds and graceful exit0.
+Exact OCI image is **`13694b509019630c0c4c6436e81a9917f1b586bb15f3847e905b66e889dfc99f`**.
+
+The source/digest/tag/previous-image-fenced publisher pushes only that private
+image. Fresh read-only checks confirm the selected main copy is paused and the
+verification/retained restored copies have never-started live state; the owner
+page is an empty settled lobby with the new save feedback hidden. The guarded
+existing-service image-only update publishes **API29-bgt**, with image99 retained
+as the prior deployment. Actual health200, anonymous401 and exact private-origin
+preflight204 pass. Settings fingerprint **`0fee47ff...`**, traffic, request-based
+CPU1/GiB1, min0/max1, concurrency40, timeout3600, runtime identity, origins and IAM
+remain unchanged. Frontend9a remains matching; no browser application bytes
+change in this server-only release.
+
+The recovery helper's current exact source/image pins now match7cb/136 while the
+tested compatible A8/A7 image remains available. Its read-only registry/runtime
+preflight passes, with no rollback performed. The sourcef5 completion gate is
+historical, not a source7cb four-hour result; the exact-source mutation guard is
+not waived. No additional live game, rehearsal, visual acceptance, new latency
+pass, production release or selected-source cutover is implied.
