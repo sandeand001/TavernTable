@@ -73,6 +73,8 @@ class ParticipantChanges {
       group: null,
       previous: null,
       cachedAssets: null,
+      dirty: false,
+      running: false,
     };
     void this._admit(viewer).catch((error) => this._fail(viewer, error));
     return {
@@ -119,8 +121,6 @@ class ParticipantChanges {
         viewers: new Set(),
         stops: [],
         closed: false,
-        dirty: false,
-        running: false,
         frame: null,
         signals: new Map(),
       };
@@ -190,18 +190,32 @@ class ParticipantChanges {
 
   _schedule(group) {
     if (group.closed) return;
-    group.dirty = true;
-    if (group.running) return;
-    group.running = true;
-    void this._drain(group)
+    for (const viewer of group.viewers) this._scheduleViewer(viewer);
+  }
+
+  _scheduleViewer(viewer) {
+    const group = viewer.group;
+    if (viewer.closed || group.closed) return;
+    viewer.dirty = true;
+    if (viewer.running) return;
+    viewer.running = true;
+    void this._drain(viewer)
       .catch((error) => this._failGroup(group, error))
       .finally(() => {
-        group.running = false;
-        if (group.dirty && !group.closed) this._schedule(group);
+        viewer.running = false;
+        if (viewer.dirty && !viewer.closed && !group.closed) this._scheduleViewer(viewer);
       });
   }
 
-  _load(group, head) {
+  _load(group, head, knownGeneration) {
+    if (head.generation < knownGeneration)
+      throw new CloudError(
+        503,
+        'invalid-change-history',
+        'The committed campaign revision moved backwards'
+      );
+    if (group.frame && group.frame.head.generation > head.generation)
+      throw new CloudError(409, 'participant-state-changed', 'The live world frame advanced');
     const key = stableStringify({
       generation: head.generation,
       sceneRef: head.sceneRef,
@@ -225,192 +239,205 @@ class ParticipantChanges {
     return frame.promise;
   }
 
-  async _drain(group) {
-    while (group.dirty && !group.closed) {
-      group.dirty = false;
-      const values = await Promise.all(
-        [...group.viewers].map(async (viewer) => {
-          try {
-            if (viewer.scope.seatId === null && !viewer.ownerWorld) {
-              const owner = await this.store._ownerLiveHead(
-                viewer.principal,
-                viewer.id,
-                viewer.command,
-                viewer.scope
-              );
-              if (viewer.previous && owner.head.generation < viewer.previous.head.generation)
-                throw new CloudError(
-                  503,
-                  'invalid-change-history',
-                  'The committed campaign revision moved backwards'
-                );
-              return viewer.closed ? null : { viewer, owner };
-            }
-            const next = viewer.ownerWorld
-              ? await this.store._ownerWorldSnapshot(
-                  viewer.principal,
-                  viewer.id,
-                  { sessionId: viewer.command.sessionId },
-                  viewer.scope,
-                  (head) => this._load(group, head)
-                )
-              : await this.store._participantSnapshot(
-                  viewer.principal,
-                  viewer.id,
-                  {
-                    ...viewer.command,
-                    assetKey: viewer.previous?.state.publicScene.assetKey ?? null,
-                  },
-                  viewer.scope,
-                  (head) => this._load(group, head)
-                );
-            if (viewer.previous && next.generation < viewer.previous.generation)
-              throw new CloudError(
-                503,
-                'invalid-change-history',
-                'The committed campaign revision moved backwards'
-              );
-            return viewer.closed ? null : { viewer, next };
-          } catch (error) {
-            if (error.code === 'participant-state-changed') {
-              group.dirty = true;
-              return null;
-            }
-            this._fail(viewer, error);
-            return null;
-          }
-        })
-      );
-      if (group.closed) return;
-      const ready = values.filter(Boolean);
-      const advancing = ready.filter(
-        ({ viewer, next }) =>
-          (viewer.scope.seatId !== null || viewer.ownerWorld) &&
-          viewer.previous &&
-          next.generation > viewer.previous.generation
-      );
-      let history = null;
-      if (advancing.length) {
-        const chosen = advancing[0].viewer;
-        const afterGeneration = Math.min(
-          ...advancing.map(({ viewer }) => viewer.previous.generation)
-        );
-        try {
-          history = await this.store._participantCommittedChanges(
-            chosen.principal,
-            group.id,
-            chosen.command,
-            chosen.scope,
-            afterGeneration
-          );
-        } catch (error) {
+  async _history(group, viewer, generation) {
+    const frame = group.frame;
+    if (frame?.head.generation !== generation)
+      throw new CloudError(409, 'participant-state-changed', 'The live change frame advanced');
+    // A lagging cursor must not force current peers to resync.
+    const afterGeneration = viewer.previous.generation;
+    frame.histories ??= new Map();
+    let history = frame.histories.get(afterGeneration);
+    if (!history) {
+      history = this.store
+        ._participantCommittedChanges(
+          viewer.principal,
+          group.id,
+          viewer.command,
+          viewer.scope,
+          afterGeneration
+        )
+        .catch((error) => {
+          if (frame.histories.get(afterGeneration) === history)
+            frame.histories.delete(afterGeneration);
           if (!accessDenials.has(error.code)) throw error;
-          this._fail(chosen, error);
-          group.dirty = true;
-          continue;
-        }
-      }
-      for (const { viewer, next, owner } of ready) {
-        if (viewer.closed || group.closed) continue;
-        if (owner) {
+          this._fail(viewer, error);
+          return null;
+        });
+      frame.histories.set(afterGeneration, history);
+    }
+    return history;
+  }
+
+  async _drain(viewer) {
+    const group = viewer.group;
+    while (viewer.dirty && !viewer.closed && !group.closed) {
+      viewer.dirty = false;
+      const knownGeneration = Math.max(
+        viewer.previous?.generation ?? 0,
+        group.frame?.head.generation ?? 0
+      );
+      let next;
+      try {
+        if (viewer.scope.seatId === null && !viewer.ownerWorld) {
+          const owner = await this.store._ownerLiveHead(
+            viewer.principal,
+            viewer.id,
+            viewer.command,
+            viewer.scope
+          );
+          if (viewer.previous && owner.head.generation < viewer.previous.head.generation)
+            throw new CloudError(
+              503,
+              'invalid-change-history',
+              'The committed campaign revision moved backwards'
+            );
+          if (viewer.closed || group.closed) return;
           if (!viewer.previous || owner.head.generation > viewer.previous.head.generation) {
             viewer.previous = owner;
             this._emit(viewer, owner);
           }
           continue;
         }
-        if (history && next.generation !== history.headGeneration) {
-          group.dirty = true;
+        next = viewer.ownerWorld
+          ? await this.store._ownerWorldSnapshot(
+              viewer.principal,
+              viewer.id,
+              { sessionId: viewer.command.sessionId },
+              viewer.scope,
+              (head) => this._load(group, head, knownGeneration)
+            )
+          : await this.store._participantSnapshot(
+              viewer.principal,
+              viewer.id,
+              {
+                ...viewer.command,
+                assetKey: viewer.previous?.state.publicScene.assetKey ?? null,
+              },
+              viewer.scope,
+              (head) => this._load(group, head, knownGeneration)
+            );
+        if (viewer.previous && next.generation < viewer.previous.generation)
+          throw new CloudError(
+            503,
+            'invalid-change-history',
+            'The committed campaign revision moved backwards'
+          );
+      } catch (error) {
+        if (error.code === 'participant-state-changed') {
+          viewer.dirty = true;
           continue;
         }
-        if (viewer.ownerWorld) {
-          let event;
-          if (!viewer.previous) event = { kind: 'owner-checkpoint', checkpoint: next };
-          else if (next.generation === viewer.previous.generation) continue;
-          else if (history?.resync || next.generation !== viewer.previous.generation + 1)
-            event = { kind: 'owner-resync', checkpoint: next };
-          else {
-            try {
-              const presentations = group.frame?.head.presentationRef
-                ? await this.store._ownerWorldPresentations(
-                    viewer.principal,
-                    group.id,
-                    viewer.command,
-                    viewer.scope,
-                    viewer.previous,
-                    next,
-                    group.frame
-                  )
-                : [];
-              event = {
-                kind: 'owner-delta',
-                delta: cloudOwnerDelta(viewer.previous, next, presentations),
-              };
-            } catch (error) {
-              if (error.code === 'participant-state-changed') {
-                group.dirty = true;
-                continue;
-              }
-              this._fail(viewer, error);
-              continue;
-            }
-          }
-          viewer.previous = next;
-          this._emit(viewer, event);
-          continue;
-        }
-        let event;
-        if (!viewer.previous) {
-          const cached =
-            viewer.command.assetKey !== null &&
-            viewer.command.assetKey === next.state.publicScene.assetKey;
-          event = {
-            kind: 'checkpoint',
-            checkpoint: cached
-              ? {
-                  ...next,
-                  state: {
-                    ...next.state,
-                    publicScene: { ...next.state.publicScene, assets: null },
-                  },
-                }
-              : next,
-          };
-        } else if (next.generation === viewer.previous.generation) continue;
-        else if (history?.resync || next.generation !== viewer.previous.generation + 1)
-          event = { kind: 'resync', checkpoint: next };
-        else {
-          const delta = participantDelta(viewer.previous, next, {
-            cachedAssets: viewer.cachedAssets,
-          });
-          if (delta.kind === 'update' && group.frame?.head.presentationRef) {
-            try {
-              const presentations = await this.store._participantPresentations(
-                viewer.principal,
-                group.id,
-                viewer.command,
-                viewer.scope,
-                viewer.previous,
-                next,
-                group.frame
-              );
-              if (presentations.length) delta.presentations = presentations;
-            } catch (error) {
-              if (error.code === 'participant-state-changed') {
-                group.dirty = true;
-                continue;
-              }
-              this._fail(viewer, error);
-              continue;
-            }
-          }
-          event = { kind: 'delta', delta };
-        }
-        viewer.previous = next;
-        if (next.state.publicScene.assets) viewer.cachedAssets = next.state.publicScene.assets;
-        if (next.state.publicScene.assetKey === null) viewer.cachedAssets = null;
-        this._emit(viewer, event);
+        this._fail(viewer, error);
+        return;
       }
+      if (viewer.closed || group.closed) return;
+      let history = null;
+      if (viewer.previous && next.generation > viewer.previous.generation) {
+        try {
+          history = await this._history(group, viewer, next.generation);
+        } catch (error) {
+          if (error.code !== 'participant-state-changed') throw error;
+        }
+        if (!history || next.generation !== history.headGeneration) {
+          viewer.dirty = true;
+          continue;
+        }
+      }
+      if (viewer.closed || group.closed) return;
+      const frame = group.frame;
+      if (frame?.head.generation !== next.generation) {
+        viewer.dirty = true;
+        continue;
+      }
+      if (viewer.ownerWorld) {
+        let event;
+        if (!viewer.previous) event = { kind: 'owner-checkpoint', checkpoint: next };
+        else if (next.generation === viewer.previous.generation) continue;
+        else if (history?.resync || next.generation !== viewer.previous.generation + 1)
+          event = { kind: 'owner-resync', checkpoint: next };
+        else {
+          try {
+            const presentations = frame.head.presentationRef
+              ? await this.store._ownerWorldPresentations(
+                  viewer.principal,
+                  group.id,
+                  viewer.command,
+                  viewer.scope,
+                  viewer.previous,
+                  next,
+                  frame
+                )
+              : [];
+            event = {
+              kind: 'owner-delta',
+              delta: cloudOwnerDelta(viewer.previous, next, presentations),
+            };
+          } catch (error) {
+            if (error.code === 'participant-state-changed') {
+              viewer.dirty = true;
+              continue;
+            }
+            this._fail(viewer, error);
+            return;
+          }
+        }
+        if (viewer.closed || group.closed) return;
+        viewer.previous = next;
+        this._emit(viewer, event);
+        continue;
+      }
+      let event;
+      if (!viewer.previous) {
+        const cached =
+          viewer.command.assetKey !== null &&
+          viewer.command.assetKey === next.state.publicScene.assetKey;
+        event = {
+          kind: 'checkpoint',
+          checkpoint: cached
+            ? {
+                ...next,
+                state: {
+                  ...next.state,
+                  publicScene: { ...next.state.publicScene, assets: null },
+                },
+              }
+            : next,
+        };
+      } else if (next.generation === viewer.previous.generation) continue;
+      else if (history?.resync || next.generation !== viewer.previous.generation + 1)
+        event = { kind: 'resync', checkpoint: next };
+      else {
+        const delta = participantDelta(viewer.previous, next, {
+          cachedAssets: viewer.cachedAssets,
+        });
+        if (delta.kind === 'update' && frame.head.presentationRef) {
+          try {
+            const presentations = await this.store._participantPresentations(
+              viewer.principal,
+              group.id,
+              viewer.command,
+              viewer.scope,
+              viewer.previous,
+              next,
+              frame
+            );
+            if (presentations.length) delta.presentations = presentations;
+          } catch (error) {
+            if (error.code === 'participant-state-changed') {
+              viewer.dirty = true;
+              continue;
+            }
+            this._fail(viewer, error);
+            return;
+          }
+        }
+        event = { kind: 'delta', delta };
+      }
+      if (viewer.closed || group.closed) return;
+      viewer.previous = next;
+      if (next.state.publicScene.assets) viewer.cachedAssets = next.state.publicScene.assets;
+      if (next.state.publicScene.assetKey === null) viewer.cachedAssets = null;
+      this._emit(viewer, event);
     }
   }
 

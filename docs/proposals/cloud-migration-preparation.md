@@ -6290,3 +6290,45 @@ complete57 active and complete9a retained, the same 1,216 application hashes,
 unchanged runtime/provenance and all seven retired-entry bridges. It is not
 published or exercised as another rollback/rehearsal. This keeps future rollback
 preparation compatible with clients already loading the new private UI.
+
+## M5 responsiveness follow-up - independent scoped delivery
+
+The existing forty sourceDCB timings remain the current hosted baseline. The
+older stage/CPU observations are explicitly API18/API20, not API28 measurements;
+they guide source investigation without being relabelled as current timings.
+
+The current change observer contains two causal head-of-line barriers: all
+viewers finish private snapshot/projection work before any is delivered, then
+fresh presentation checks are awaited one viewer at a time. Two deterministic
+local native-observer regressions fail first at the public subscription seam
+with controlled store IO: a delayed presentation and a delayed snapshot each
+prevent another independently authorized observer from advancing. A second
+accepted generation while that peer is still pending also exposes the shared
+oldest-cursor problem: a stale cursor makes current peers resync and discard
+otherwise contiguous live motion.
+
+The candidate serializes each viewer independently, retaining the shared
+canonical frame and sharing committed history only for the same frame/cursor.
+Each viewer still uses the original fresh scope/epoch, body and presentation
+checks; canonical writes, original command IDs, costs, retries and complete
+backup work are not moved or bypassed. Stale captures retry latest state rather
+than replacing a newer shared frame. A read begun after a known generation
+cannot silently move backwards.
+
+The eight-case native projection/CPU suite passes locally. The first sixteen
+targeted emulator cases pass fifteen, with the shared-observer case timing out
+at its deliberate backwards-head fault. A minimized local check proves the
+new stale-frame guard was classifying that actual corruption as retryable
+supersession. The fixed guard compares the captured head with the generation
+known before its fresh read; both local delayed-view cases then pass, and the
+original shared-observer emulator case passes in14.095s without changing its
+30-second timeout.
+
+The final source passes all **eight native projection/CPU cases / 1.697s**
+and **sixteen targeted emulator cases / 134.162s**. These include real HTTP
+owner/member motion and emotes, queued unrendered routes, scoped revocation and
+post-IO owner eligibility, unchanged shared canonical downloads, exact retained
+history, Free Play in both rulesets and backwards-head denial. Targeted
+formatting, JS lint and layering pass before committing. No additional live
+rehearsal, backend publication or production/cutover approval is claimed;
+candidate packaging is next.

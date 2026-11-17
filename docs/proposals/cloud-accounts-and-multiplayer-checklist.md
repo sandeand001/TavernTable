@@ -43,14 +43,21 @@ data, or grant production approval.
 ## Current status
 
 **60 of 65 tasks complete.** This includes the four setup tasks and excludes
-the separately deferred routine-save UX task. M0 through M4 and `M5-01` through
-`M5-05` and `M5-07` are complete. Remaining are `M5-06` final-candidate acceptance
+the separate, now privately completed routine-save UX task. M0 through M4,
+`M5-01` through `M5-05` and `M5-07` are complete. Remaining are `M5-06` final-candidate acceptance
 and `M5-08` through `M5-11`.
 
 - **Current work:** sourcef5's long-session technical verification and `M5-07`
   actual private recovery/rollback testing are complete. `M5-06` remains
   open for final-candidate live validation and the recorded performance/owner
   acceptance conditions, rather than silently promoting the baseline result.
+- **Responsiveness candidate:** local observer delivery no longer waits for all
+  other viewers' snapshots/presentation checks. Per-viewer serialized drains and
+  same-frame/cursor history sharing preserve current motion instead of letting
+  a lagging cursor force peers to resync. **Eight native projection cases and
+  sixteen targeted emulator cases** pass, including original scope, motion,
+  Free Play, retention and backwards-head guards. API28 remains published while
+  candidate packaging proceeds; no new hosted latency/visual pass is claimed.
 - **Completed technical rehearsal:** **250m29.883s** of continuous official
   sourcef5 activity/quiet lifecycle, with actual 55-minute warning, owner Keep
   Active, all ten identities' token rotation and exact renewed 60-minute pause.

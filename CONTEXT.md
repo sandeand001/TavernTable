@@ -378,7 +378,13 @@
   Active participants share one per-campaign head/live/access observation group
   and one private canonical body load per generation, while each viewer still
   receives current-scope authorization and an explicit private-data-free
-  projection. Presence pings do not reload scene/character bodies. Bursts
+  projection. Each viewer drains sequentially but independently: another
+  viewer's pending authorization, projection or presentation must not hold back
+  current or subsequent updates. Committed history is shared only within the
+  same frame and cursor, so a lagging cursor cannot force current peers to
+  discard live motion. A captured head can be superseded, but a fresh read
+  begun after a known generation cannot move backwards. Presence pings do not
+  reload scene/character bodies. Bursts
   supersede stale work with a latest checkpoint, not historical movement.
   Warm checkpoints omit unchanged graphics; scope revocation, owner pause and
   final subscriber close stop observation. Event listeners enqueue synchronously;

@@ -1,5 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { setImmediate: yieldToIO } = require('node:timers/promises');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { IDBFactory } = require('fake-indexeddb');
@@ -17,6 +19,8 @@ const {
   participantProjectionSource,
 } = require('../../tools/cloud/participant-state.js');
 const { visibleMovementPresentations } = require('../../tools/movement-presentations.js');
+const { ParticipantChanges } = require('../../tools/cloud/participant-changes.js');
+const { CloudError } = require('../../tools/cloud/cloud-error.js');
 const { sceneActorPlacement } = require('../../src/scene/token-adapter/SavedPlacements.js');
 const { sceneState } = require('../helpers/sceneState.js');
 const {
@@ -124,6 +128,146 @@ test('shared snapshot geometry keeps sheets, image slots and hidden owned gamepl
   assert.deepEqual(warm.state.gameplay, first.state.gameplay);
   assert.deepEqual(f.state, original);
 });
+
+for (const stage of ['presentation', 'snapshot'])
+  test(
+    `a pending scoped ${stage} does not hold another current native observer behind it`,
+    { timeout: 10000 },
+    async (t) => {
+      const f = await fixture(t);
+      const sessionId = randomUUID();
+      const access = {
+        version: 1,
+        uid: 'native-observation-owner',
+        campaignId: f.campaign.id,
+        role: 'owner',
+        seatId: null,
+        accessGeneration: 0,
+      };
+      const delayed = { uid: access.uid };
+      const current = { uid: access.uid };
+      const entered = Promise.withResolvers();
+      const release = Promise.withResolvers();
+      t.after(() => release.resolve());
+      let head = { generation: 1 };
+      let notifyHead;
+      const idleWatch = () => () => {};
+      const reference = {
+        onSnapshot(listener) {
+          notifyHead = listener;
+          return () => {
+            notifyHead = null;
+          };
+        },
+        collection: () => ({ onSnapshot: idleWatch, doc: () => ({ onSnapshot: idleWatch }) }),
+      };
+      const changes = new ParticipantChanges({
+        firestore: { collection: () => ({ doc: () => reference }) },
+        _accessExpectation: (scope) => scope,
+        getLiveAccess: async () => ({ participant: { access } }),
+        _loadSnapshot: async () => f.state,
+        async _ownerWorldSnapshot(principal, id, command, scope, load) {
+          const captured = head;
+          await yieldToIO();
+          if (stage === 'snapshot' && captured.generation > 1 && principal === delayed) {
+            entered.resolve();
+            await release.promise;
+          }
+          return {
+            version: 1,
+            access,
+            sessionId,
+            generation: captured.generation,
+            origin: null,
+            state: await load(captured),
+          };
+        },
+        _participantCommittedChanges: async (principal, id, command, scope, afterGeneration) => ({
+          headGeneration: head.generation,
+          resync: afterGeneration < head.generation - 1,
+        }),
+        async _ownerWorldPresentations(principal, id, command, scope, previous, next) {
+          if (stage === 'presentation' && principal === delayed) {
+            entered.resolve();
+            await release.promise;
+          }
+          if (head.generation !== next.generation)
+            throw new CloudError(409, 'participant-state-changed', 'The live world advanced');
+          return [];
+        },
+      });
+      const observe = (principal) => {
+        const events = [];
+        const errors = [];
+        const failed = Promise.withResolvers();
+        const advanced = new Map([2, 3].map((generation) => [generation, Promise.withResolvers()]));
+        const subscription = changes.subscribe(
+          principal,
+          f.campaign.id,
+          { sessionId, observerTokenId: null, mapId: null, assetKey: null },
+          access,
+          {
+            onEvent(event) {
+              events.push(event);
+              const generation = event.delta?.generation ?? event.checkpoint?.generation;
+              advanced.get(generation)?.resolve(event);
+            },
+            onError(error) {
+              errors.push(error.code);
+              failed.resolve(error.code);
+            },
+          },
+          true
+        );
+        t.after(() => subscription.close());
+        return { events, errors, failed, advanced, subscription };
+      };
+      const slow = observe(delayed);
+      await slow.subscription.ready;
+      const ready = observe(current);
+      await ready.subscription.ready;
+      head = { generation: 2, presentationRef: {} };
+      notifyHead({ data: () => head });
+      await entered.promise;
+      try {
+        const delivered = await Promise.race([
+          ready.advanced.get(2).promise.then(() => true),
+          yieldToIO().then(() => false),
+        ]);
+        assert.deepEqual(ready.errors, []);
+        assert.equal(delivered, true, 'An independently authorized observer must advance now');
+        assert.equal(slow.events.length, 1, 'The unconfirmed observer must still wait');
+        head = { generation: 3, presentationRef: {} };
+        notifyHead({ data: () => head });
+        const continued = await Promise.race([
+          ready.advanced.get(3).promise.then((event) => event.kind),
+          yieldToIO().then(() => null),
+        ]);
+        assert.equal(
+          continued,
+          'owner-delta',
+          'Later commands must keep flowing without inheriting the slow observer cursor'
+        );
+        assert.equal(slow.events.length, 1, 'The unconfirmed observer must still wait');
+      } finally {
+        release.resolve();
+      }
+      assert.equal((await slow.advanced.get(3).promise).kind, 'owner-resync');
+      assert.equal((await ready.advanced.get(2).promise).delta.generation, 2);
+      assert.equal((await ready.advanced.get(3).promise).delta.generation, 3);
+      assert.deepEqual(slow.errors, []);
+      head = { generation: 2 };
+      notifyHead({ data: () => head });
+      assert.deepEqual(
+        await Promise.race([
+          Promise.all([slow.failed.promise, ready.failed.promise]),
+          yieldToIO().then(() => null),
+        ]),
+        ['invalid-change-history', 'invalid-change-history'],
+        'An actually backwards head must fail, not retry forever as a superseded capture'
+      );
+    }
+  );
 
 test('a reused capture refreshes native geometry and sheets when its canonical contents change', async (t) => {
   const f = await fixture(t);
