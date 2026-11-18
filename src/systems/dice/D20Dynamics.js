@@ -251,7 +251,8 @@ export function createD20Simulation({
           body.sleep();
         }
         if (world.time >= MAX_ROLL_SECONDS && !simulation.finished) {
-          throw new Error('The d20 did not settle; roll again');
+          simulation.cocked = true;
+          body.sleep();
         }
       }
       simulation.alpha = Math.min(accumulator / D20_FIXED_STEP, 1);

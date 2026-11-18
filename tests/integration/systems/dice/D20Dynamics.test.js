@@ -187,7 +187,7 @@ describe('Large d20 rigid-body simulation', () => {
     expect(simulation.world.time).toBeLessThan(6);
   });
 
-  test('an unsettled throw reports failure at the time limit instead of forcing a face', () => {
+  test('an unsettled throw becomes a cocked reroll at the time limit', () => {
     const simulation = createD20Simulation({
       geometry,
       scale: 3.6,
@@ -198,9 +198,9 @@ describe('Large d20 rigid-body simulation', () => {
     simulation.body.position.y = 10000;
     simulation.body.aabbNeedsUpdate = true;
 
-    expect(() => {
-      while (!simulation.finished) simulation.advance(D20_FIXED_STEP);
-    }).toThrow('The d20 did not settle; roll again');
+    while (!simulation.finished) simulation.advance(D20_FIXED_STEP);
+
+    expect(simulation.cocked).toBe(true);
     expect(simulation.world.time).toBeCloseTo(6);
     expect(simulation.settled).toBe(false);
   });
