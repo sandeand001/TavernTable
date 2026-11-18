@@ -18,6 +18,7 @@ import { escapeHtml as escape } from './escapeHtml.js';
 import TargetingProfileEditor from './TargetingProfileEditor.js';
 import { characterActionOptions } from '../../entities/characters/combat/actions.js';
 import ActionRequestQueue from '../../campaigns/ActionRequestQueue.js';
+import { sameJsonValue } from '../../utils/JsonValue.js';
 
 export default class TargetingController {
   constructor({ gameManager, library, session, onChanged }) {
@@ -163,7 +164,7 @@ export default class TargetingController {
     this.beginQuery();
     if (action.spellEffectId) {
       const effect = this.session.effects.find((entry) => entry.id === action.spellEffectId);
-      if (!effect || JSON.stringify(effect) !== JSON.stringify(action.effectSnapshot))
+      if (!effect || !sameJsonValue(effect, action.effectSnapshot))
         throw new Error('This spell effect ended or changed while selecting its destination');
       if (!this.visibleEffects().some((entry) => entry.id === effect.id))
         throw new Error('This spell effect is in another location');

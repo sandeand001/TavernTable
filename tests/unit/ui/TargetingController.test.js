@@ -257,6 +257,34 @@ test('Moonbeam placement and its Move button share the real targeting flow witho
   expect(errors).not.toHaveBeenCalled();
 });
 
+test('spell-effect tickets ignore property order but reject meaningful state changes', async () => {
+  const id = addSpell('spell:moonbeam');
+  session.startTurn(caster);
+  const casting = performPlayAction(context, id);
+  await settle();
+  controller.updatePoint({ x: 5.5, y: 0, z: 1.5 }, true);
+  confirm();
+  await casting;
+  session.endTurn();
+  session.startTurn(caster);
+  const ticket = session.prepareAction(caster, `effect-move:${session.effects[0].id}`);
+  const choosing = controller.choose(caster, ticket);
+  await settle();
+  controller.updatePoint({ x: 17.5, y: 0, z: 1.5 }, true);
+
+  session.effects = [Object.fromEntries(Object.entries(session.effects[0]).reverse())];
+  expect(() =>
+    controller.validate(caster, ticket.action, { ...controller.active.selection })
+  ).not.toThrow();
+
+  session.effects[0].area.origin.x += 1;
+  expect(() =>
+    controller.validate(caster, ticket.action, { ...controller.active.selection })
+  ).toThrow('ended or changed');
+  controller.cancel();
+  await choosing;
+});
+
 test('wall-template buttons preview a ring without changing the original reservation or spending early', async () => {
   const id = addSpell('spell:wall-of-fire');
   session.startTurn(caster);

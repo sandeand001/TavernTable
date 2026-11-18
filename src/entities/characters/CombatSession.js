@@ -17,6 +17,7 @@ import {
 } from './combat/falling.js';
 import { movementSpeed } from '../../rules/flight.js';
 import { getTokenTravelMode } from '../creatures/TokenMovement.js';
+import { sameJsonValue } from '../../utils/JsonValue.js';
 import {
   actionTargetingEffect,
   advanceTargetingEffects,
@@ -447,7 +448,7 @@ export default class CombatSession {
       character.level !== ticket.level ||
       ticket.turn !== this.turn ||
       ticket.attackCount !== attackCount ||
-      JSON.stringify(action) !== JSON.stringify(ticket.action)
+      !sameJsonValue(action, ticket.action)
     )
       throw new Error(
         'The character or action changed while resolving the use; no costs were spent'
@@ -672,8 +673,10 @@ export default class CombatSession {
       throw new Error('No matching action use can be undone');
     if (
       entry.movedEffect &&
-      JSON.stringify(this.effects.find((effect) => effect.id === entry.movedEffect.after.id)) !==
-        JSON.stringify(entry.movedEffect.after)
+      !sameJsonValue(
+        this.effects.find((effect) => effect.id === entry.movedEffect.after.id),
+        entry.movedEffect.after
+      )
     )
       throw new Error('The moved spell effect ended or changed; its movement cannot be undone');
     if (
@@ -1057,14 +1060,14 @@ export default class CombatSession {
     if (effect?.kind !== 'targets' || !effect.targetTokenIds.includes(tokenId))
       throw new Error('That spell reminder no longer includes this target');
     if (effect.targetTokenIds.length === 1) return this.endEffect(effectId);
-    const expected = JSON.stringify(effect);
+    const expected = JSON.parse(JSON.stringify(effect));
     const ticket = Object.freeze({ characterId: effect.characterId, removeRecipient: tokenId });
     this.pending = ticket;
     let managed = false;
     try {
       const apply = (_, session = this) => {
         const current = session.effects.find((entry) => entry.id === effectId);
-        if (JSON.stringify(current) !== expected)
+        if (!sameJsonValue(current, expected))
           throw new Error('The spell reminder changed before the target removal could be saved');
         session.effects = session.effects.map((entry) =>
           entry.id === effectId
