@@ -3,6 +3,7 @@
 jest.mock('three', () => {
   class PlaneGeometry {
     rotateX() {}
+    translate() {}
   }
   class MeshBasicMaterial {
     constructor() {}
@@ -30,9 +31,27 @@ jest.mock('three', () => {
           this.scale.z = z;
         },
       };
+      this.rotation = {
+        x: 0,
+        y: 0,
+        z: 0,
+        set: (x, y, z) => {
+          this.rotation.x = x;
+          this.rotation.y = y;
+          this.rotation.z = z;
+        },
+      };
     }
     updateMatrix() {
-      this.matrix = { position: { ...this.position } };
+      this.matrix = {
+        position: { ...this.position },
+        rotation: { ...this.rotation },
+      };
+    }
+    lookAt(x, y, z) {
+      this.rotation.x = x;
+      this.rotation.y = y;
+      this.rotation.z = z;
     }
   }
   class InstancedMesh {
@@ -69,8 +88,8 @@ describe('PlaceableMeshPool.resyncHeights', () => {
     const gm = buildGM(heights);
     const pool = new PlaceableMeshPool({ gameManager: gm, initialCapacity: 4 });
 
-    const a = { gridX: 1, gridY: 1, type: 'plant' };
-    const b = { gridX: 2, gridY: 1, type: 'plant' };
+    const a = { gridX: 1, gridY: 1, type: 'plant', renderProfile: 'ground' };
+    const b = { gridX: 2, gridY: 1, type: 'plant', renderProfile: 'ground' };
     await pool.addPlaceable(a);
     await pool.addPlaceable(b);
 
@@ -91,5 +110,59 @@ describe('PlaceableMeshPool.resyncHeights', () => {
     const afterB = group.instancedMesh._matrices[b.__meshPoolHandle.index].position.y;
     expect(afterA).toBeCloseTo(2.005, 5);
     expect(afterB).toBeCloseTo(1.005, 5);
+  });
+
+  test('reuses cached placement during billboard camera-only updates', async () => {
+    const heights = [[2]];
+    const camera = {
+      rotation: { x: 0, y: 0 },
+      position: {
+        x: 4,
+        y: 5,
+        z: 6,
+        clone() {
+          return { x: this.x, y: this.y, z: this.z };
+        },
+      },
+    };
+    const gm = buildGM(heights);
+    gm.threeSceneManager.camera = camera;
+    gm.threeSceneManager.addAnimationCallback = jest.fn((callback) => {
+      gm.billboardUpdate = callback;
+    });
+    gm.getTerrainHeight = jest.fn(gm.getTerrainHeight);
+    gm.spatial.gridToWorld = jest.fn(gm.spatial.gridToWorld);
+    const pool = new PlaceableMeshPool({ gameManager: gm });
+
+    const placeable = { gridX: 0, gridY: 0, type: 'plant' };
+    await pool.addPlaceable(placeable);
+    const group = [...pool._groups.values()][0];
+    const setMatrixAt = jest.spyOn(group.instancedMesh, 'setMatrixAt');
+    gm.getTerrainHeight.mockClear();
+    gm.spatial.gridToWorld.mockClear();
+    camera.position.x = 8;
+
+    gm.billboardUpdate();
+
+    expect(setMatrixAt).toHaveBeenCalledTimes(1);
+    expect(gm.getTerrainHeight).not.toHaveBeenCalled();
+    expect(gm.spatial.gridToWorld).not.toHaveBeenCalled();
+
+    heights[0][0] = 4;
+    await pool.resyncHeights();
+    expect(group.instancedMesh._matrices[placeable.__meshPoolHandle.index].position.y).toBeCloseTo(
+      2,
+      6
+    );
+    setMatrixAt.mockClear();
+    gm.getTerrainHeight.mockClear();
+    gm.spatial.gridToWorld.mockClear();
+    camera.rotation.y = 0.25;
+
+    gm.billboardUpdate();
+
+    expect(setMatrixAt).toHaveBeenCalledTimes(1);
+    expect(gm.getTerrainHeight).not.toHaveBeenCalled();
+    expect(gm.spatial.gridToWorld).not.toHaveBeenCalled();
   });
 });

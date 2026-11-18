@@ -32,7 +32,7 @@ export class PlaceableMeshPool {
     this._groups = new Map(); // key -> { instancedMesh, capacity, count, freeIndices[] }
     this._pendingGroups = new Map();
     this._pendingPlacements = new Set();
-    // Per-group metadata: Map<key, Map<index, { gx, gy }>> for reverse height recompute
+    // Per-group metadata: live instance coordinates and cached world transforms.
     this._metadata = new Map();
     this._three = null; // cached namespace once loaded
     this._metrics = { groups: 0, instances: 0, capacityExpansions: 0 };
@@ -365,6 +365,7 @@ export class PlaceableMeshPool {
     }
     const index = this._allocateIndex(group);
     if (index < 0) return null; // capacity exhaustion (future: grow)
+    let position = null;
     // Position from grid (approx center)
     try {
       const gx = placeable.gridX ?? 0;
@@ -381,7 +382,8 @@ export class PlaceableMeshPool {
         h = 0;
       }
       const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-      dummy.position.set(world.x, worldY + heightOffset, world.z);
+      position = { x: world.x, y: worldY + heightOffset, z: world.z };
+      dummy.position.set(position.x, position.y, position.z);
       dummy.scale.set(scale.x ?? 1, scale.y ?? 1, scale.z ?? 1);
       dummy.updateMatrix();
       instancedMesh.setMatrixAt(index, dummy.matrix);
@@ -424,6 +426,7 @@ export class PlaceableMeshPool {
       profile,
       heightOffset,
       source,
+      position,
     });
     this._metadata.set(key, metaGroup);
     // Update metrics to reflect new live instance
@@ -447,22 +450,18 @@ export class PlaceableMeshPool {
       delete placeable.__meshPoolHandle;
       return;
     }
-    // Mark index free (do not compact now for simplicity)
-    if (!group.freeIndices.includes(handle.index)) {
-      group.freeIndices.push(handle.index);
+    const metaGroup = this._metadata.get(handle.key);
+    if (!metaGroup?.has(handle.index)) {
+      delete placeable.__meshPoolHandle;
+      return;
     }
+    group.freeIndices.push(handle.index);
+    metaGroup.delete(handle.index);
     const hidden = new this._three.Object3D();
     hidden.scale.set(0, 0, 0);
     hidden.updateMatrix();
     group.instancedMesh.setMatrixAt(handle.index, hidden.matrix);
     group.instancedMesh.instanceMatrix.needsUpdate = true;
-    // Remove metadata
-    try {
-      const metaGroup = this._metadata.get(handle.key);
-      if (metaGroup) metaGroup.delete(handle.index);
-    } catch (_) {
-      /* ignore */
-    }
     delete placeable.__meshPoolHandle;
     this._updateMetrics();
     this.gameManager.sceneAutosave?.changed('terrain placement removed');
@@ -736,22 +735,31 @@ export class PlaceableMeshPool {
                 const metaMap = this._metadata.get(gKey);
                 if (!metaMap) continue;
                 for (const [index, coords] of metaMap.entries()) {
-                  if (g.freeIndices.includes(index)) continue;
-                  const { gx, gy, scale, heightOffset } = coords || {
+                  const { gx, gy, scale, heightOffset, position } = coords || {
                     gx: 0,
                     gy: 0,
                     scale: { x: 1, y: 1, z: 1 },
                     heightOffset: 0,
+                    position: null,
                   };
-                  let h = 0;
-                  try {
-                    h = gm.getTerrainHeight?.(gx, gy) || 0;
-                  } catch (_) {
-                    h = 0;
+                  let instancePosition = position;
+                  if (!instancePosition) {
+                    let h = 0;
+                    try {
+                      h = gm.getTerrainHeight?.(gx, gy) || 0;
+                    } catch (_) {
+                      h = 0;
+                    }
+                    const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+                    const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
+                    instancePosition = {
+                      x: world.x,
+                      y: worldY + (heightOffset || 0),
+                      z: world.z,
+                    };
+                    coords.position = instancePosition;
                   }
-                  const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
-                  const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-                  dummy.position.set(world.x, worldY + (heightOffset || 0), world.z);
+                  dummy.position.set(instancePosition.x, instancePosition.y, instancePosition.z);
                   // Full spherical billboard: always face the camera at any pitch & yaw
                   // so the tree quad never collapses into a line from overhead or oblique angles.
                   // NOTE: This introduces pitch tilt (the sprite leans toward the camera) which
@@ -761,8 +769,8 @@ export class PlaceableMeshPool {
                     dummy.lookAt(worldCamPos.x, worldCamPos.y, worldCamPos.z);
                   } else {
                     // Fallback: manually compute facing yaw (rare path if lookAt unavailable)
-                    const dx = worldCamPos.x - world.x;
-                    const dz = worldCamPos.z - world.z;
+                    const dx = worldCamPos.x - instancePosition.x;
+                    const dz = worldCamPos.z - instancePosition.z;
                     const faceYaw = Math.atan2(dx, dz);
                     dummy.rotation.set(0, faceYaw, 0);
                   }
@@ -1004,7 +1012,6 @@ export class PlaceableMeshPool {
         const metaMap = this._metadata.get(key);
         if (!metaMap) continue;
         for (const [index, coords] of metaMap.entries()) {
-          if (group.freeIndices.includes(index)) continue;
           const { gx, gy, scale, heightOffset } = coords || {
             gx: 0,
             gy: 0,
@@ -1019,7 +1026,13 @@ export class PlaceableMeshPool {
           }
           const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
           const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-          dummy.position.set(world.x, worldY + (heightOffset || 0), world.z);
+          const position = { x: world.x, y: worldY + (heightOffset || 0), z: world.z };
+          coords.position = position;
+          dummy.position.set(position.x, position.y, position.z);
+          if (group.profile === 'billboard' && gm.threeSceneManager?.camera) {
+            const cameraPosition = gm.threeSceneManager.camera.position;
+            dummy.lookAt?.(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+          }
           const useScale = scale || { x: 1, y: 1, z: 1 };
           dummy.scale.set(useScale.x ?? 1, useScale.y ?? 1, useScale.z ?? 1);
           dummy.updateMatrix();
