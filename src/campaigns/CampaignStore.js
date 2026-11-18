@@ -3,6 +3,8 @@ import { CHARACTER_BACKUP_LIMIT } from '../config/characters/CharacterImages.js'
 import IndexedDBCampaignStorage from './IndexedDBCampaignStorage.js';
 import { campaignBackupByteLength } from './CampaignBackupBytes.js';
 
+const ROOM_VISIT_LIMIT = 10000;
+
 const revisionConflict = (campaign, message) =>
   Object.assign(new Error(message), {
     status: 409,
@@ -101,7 +103,7 @@ export default class CampaignStore {
   }
 
   // -- Atomic, campaign-owned character state --
-  async readCharacters(id) {
+  async readCharacters(id, { includeRoomVisits = false } = {}) {
     return this._transaction('readonly', async (transaction) => {
       const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
@@ -114,6 +116,9 @@ export default class CampaignStore {
         scene: campaign.scene ?? null,
         sceneRevision: campaign.sceneRevision ?? 0,
         sceneSavedAt: campaign.sceneSavedAt ?? null,
+        ...(includeRoomVisits
+          ? { roomVisits: this._roomVisits(campaign.roomVisitCheckpoint) }
+          : {}),
       };
     });
   }
@@ -133,12 +138,13 @@ export default class CampaignStore {
     });
   }
 
-  async commitScene(id, { ruleset, revision, charactersRevision, scene }) {
+  async commitScene(id, { ruleset, revision, charactersRevision, scene, roomVisits }) {
     edition(ruleset);
     this._sceneInput(revision, scene);
     if (!Number.isSafeInteger(charactersRevision) || charactersRevision < 0) {
       throw new Error('The scene change has an invalid character revision');
     }
+    const visits = this._roomVisits(roomVisits);
     return this._transaction('readwrite', async (transaction) => {
       const campaign = await transaction.getCampaign(id);
       if (!campaign) throw new Error('The campaign was not found');
@@ -152,6 +158,7 @@ export default class CampaignStore {
         );
       }
       this._writeScene(campaign, revision, scene);
+      this._mergeRoomVisits(campaign, visits);
       await transaction.writeCampaign(campaign);
       return { revision: campaign.sceneRevision, savedAt: campaign.sceneSavedAt };
     });
@@ -180,6 +187,8 @@ export default class CampaignStore {
         );
       }
       if (scene !== undefined) this._writeScene(campaign, scene.revision, scene.value);
+      if (scene?.roomVisits !== undefined)
+        this._mergeRoomVisits(campaign, this._roomVisits(scene.roomVisits));
       await transaction.replaceCharacters(id, records);
       campaign.charactersRevision++;
       await transaction.writeCampaign(campaign);
@@ -243,6 +252,8 @@ export default class CampaignStore {
 
   async importBackup(text) {
     const data = this.parseBackup(text);
+    if (Object.hasOwn(data.campaign, 'roomVisitCheckpoint'))
+      throw new Error('Room discovery checkpoints cannot be imported from campaign backups');
     const campaign = {
       ...data.campaign,
       id: globalThis.crypto.randomUUID(),
@@ -332,11 +343,13 @@ export default class CampaignStore {
       }
       this._sceneInput(record.sceneRevision, record.scene);
     }
+    if (Object.hasOwn(record, 'roomVisitCheckpoint')) this._roomVisits(record.roomVisitCheckpoint);
   }
 
   _public(record) {
     const metadata = { ...record };
     delete metadata.scene;
+    delete metadata.roomVisitCheckpoint;
     return {
       ...metadata,
       sceneRevision: record.sceneRevision ?? 0,
@@ -367,6 +380,49 @@ export default class CampaignStore {
     campaign.scene = scene;
     campaign.sceneRevision = revision + 1;
     campaign.sceneSavedAt = new Date().toISOString();
+  }
+
+  _roomVisits(entries) {
+    if (entries === undefined) return [];
+    if (
+      !Array.isArray(entries) ||
+      entries.length > ROOM_VISIT_LIMIT ||
+      entries.some(
+        (entry) =>
+          !entry ||
+          typeof entry.characterId !== 'string' ||
+          !entry.characterId ||
+          entry.characterId.length > 300 ||
+          typeof entry.mapId !== 'string' ||
+          !entry.mapId ||
+          entry.mapId.length > 300
+      )
+    )
+      throw new Error('The scene change contains invalid room discovery checkpoints');
+    const unique = new Map();
+    for (const entry of entries)
+      unique.set(`${entry.characterId}\u0000${entry.mapId}`, {
+        characterId: entry.characterId,
+        mapId: entry.mapId,
+      });
+    return [...unique.values()].sort(
+      (left, right) =>
+        left.characterId.localeCompare(right.characterId) || left.mapId.localeCompare(right.mapId)
+    );
+  }
+
+  _mergeRoomVisits(campaign, entries) {
+    if (!entries.length) return;
+    const existing = this._roomVisits(campaign.roomVisitCheckpoint);
+    const unique = new Map(
+      [...existing, ...entries].map((entry) => [`${entry.characterId}\u0000${entry.mapId}`, entry])
+    );
+    if (unique.size > ROOM_VISIT_LIMIT)
+      throw new Error('The room discovery checkpoint has exceeded its retained-entry limit');
+    campaign.roomVisitCheckpoint = [...unique.values()].sort(
+      (left, right) =>
+        left.characterId.localeCompare(right.characterId) || left.mapId.localeCompare(right.mapId)
+    );
   }
 
   _records(records) {

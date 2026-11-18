@@ -10,4 +10,13 @@ function playerRoomVisits(scene) {
   return visits;
 }
 
-module.exports = { playerRoomVisits };
+function playerRoomVisitEntries(scene) {
+  return [...playerRoomVisits(scene)]
+    .flatMap(([characterId, rooms]) => [...rooms].map((mapId) => ({ characterId, mapId })))
+    .sort(
+      (left, right) =>
+        left.characterId.localeCompare(right.characterId) || left.mapId.localeCompare(right.mapId)
+    );
+}
+
+module.exports = { playerRoomVisits, playerRoomVisitEntries };

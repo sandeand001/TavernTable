@@ -14,6 +14,8 @@ const { LoginThrottle } = require('./login-throttle.js');
 const { PlayerGameplay } = require('./player-gameplay.js');
 const { readLimitedBody } = require('./http-body.js');
 const { resolvePublicFile } = require('./public-files.js');
+const { playerRoomVisitEntries } = require('./player-room-visits.js');
+const { recoverRoomVisitsAfterCommit } = require('./room-visit-recovery.js');
 
 const operations = new Map([
   ['create', 1],
@@ -376,6 +378,7 @@ async function startLocalHost({
             !Array.isArray(visitedScene.creatures)
           )
             throw failure(400, 'Room discovery requires a connected scene checkpoint');
+          sceneChange.roomVisits = playerRoomVisitEntries(visitedScene);
         }
         if (sceneChange && Object.hasOwn(sceneChange, 'presentations'))
           await players.validatePresentations(
@@ -408,7 +411,23 @@ async function startLocalHost({
           : ['playerCommit', 'playerCommand'].includes(command.operation)
             ? identity.campaignId
             : command.args[0];
-        if (visitedScene) authority.recordRoomVisits(changedCampaign, visitedScene);
+        if (
+          [
+            'commitScene',
+            'commitCharacters',
+            'doorState',
+            'playerCommit',
+            'playerCommand',
+          ].includes(command.operation)
+        ) {
+          const visitedRoomIds = await recoverRoomVisitsAfterCommit({
+            store,
+            authority,
+            session,
+            campaignId: changedCampaign,
+          });
+          if (visitedRoomIds && result?.state) result.state.visitedRoomIds = visitedRoomIds;
+        }
         const revisions =
           command.operation === 'playerCommand'
             ? result.applied

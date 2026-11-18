@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { webcrypto } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import http from 'node:http';
 import CampaignWorkspace from '../../src/campaigns/CampaignWorkspace.js';
 import { testIndexedDB } from '../helpers/indexedDB.js';
@@ -513,20 +514,28 @@ test('doors hide room geometry, enforce nearby player access and DM locks, and p
   actor.gridX = 0;
   actor.gridY = 1;
   actor.pose.world = { x: 0.5, y: 0, z: 1.5 };
-  expect(
-    (
-      await host.request('commitScene', [
-        campaignId,
-        {
-          ruleset: '2024',
-          revision: shared.sceneRevision,
-          charactersRevision: shared.revision,
-          scene: JSON.stringify(scene),
-          trackRoomVisits: true,
-        },
-      ])
-    ).status
-  ).toBe(200);
+  const accessLock = new DatabaseSync(path.join(folder, 'access.sqlite'));
+  accessLock.exec('BEGIN IMMEDIATE');
+  let visitCommit;
+  try {
+    visitCommit = await host.request('commitScene', [
+      campaignId,
+      {
+        ruleset: '2024',
+        revision: shared.sceneRevision,
+        charactersRevision: shared.revision,
+        scene: JSON.stringify(scene),
+        trackRoomVisits: true,
+      },
+    ]);
+  } finally {
+    accessLock.exec('ROLLBACK');
+    accessLock.close();
+  }
+  expect(visitCommit.status).toBe(200);
+  await terminate(host.child);
+  host = await start();
+  player = await join(invites[0]);
   const otherPlayer = await join(invites[1]);
   const returned = (await host.request('readCharacters', [campaignId])).result;
   const returning = JSON.parse(returned.scene);

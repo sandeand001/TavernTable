@@ -142,3 +142,26 @@ test('unassigning a character revokes its explicit placement grant and reassignm
   expect(authority.placementGrants(player)).toEqual([]);
   expect(() => authority.placementGrant(player, grant.id)).toThrow('not authorized');
 });
+
+test('room discovery checkpoints are idempotent across access database restarts', () => {
+  const dm = authority.signInHost(hostKey).session;
+  const invitation = authority.createInvite(dm, 'campaign', 'Player');
+  authority.assignCharacter(dm, 'campaign', invitation.id, 'hero', true);
+  const player = authority.join(invitation.invite).session;
+  const visits = [
+    { characterId: 'hero', mapId: 'room-b' },
+    { characterId: 'hero', mapId: 'room-a' },
+    { characterId: 'hero', mapId: 'room-a' },
+    { characterId: 'unassigned', mapId: 'room-c' },
+  ];
+
+  authority.recordRoomVisitEntries('campaign', visits);
+  authority.recordRoomVisitEntries('campaign', visits);
+  expect(authority.visitedRoomIds(player)).toEqual(['room-a', 'room-b']);
+
+  authority.close();
+  authority = new SessionAuthority({ filename: path.join(folder, 'access.sqlite'), hostKey });
+  const returning = authority.join(invitation.invite).session;
+  authority.recordRoomVisitEntries('campaign', visits);
+  expect(authority.visitedRoomIds(returning)).toEqual(['room-a', 'room-b']);
+});

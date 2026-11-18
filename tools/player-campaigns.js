@@ -4,6 +4,8 @@ const { PublishedMaps } = require('./published-maps.js');
 const { isDeepStrictEqual } = require('node:util');
 const { prepareAssignedCharacterChange } = require('./assigned-character-change.js');
 const { playerUndoFor, rememberPlayerUndo } = require('./player-undo-sessions.js');
+const { playerRoomVisitEntries } = require('./player-room-visits.js');
+const { reconcileRoomVisits } = require('./room-visit-recovery.js');
 const {
   validateMovementPresentations,
   visibleMovementPresentations,
@@ -44,14 +46,20 @@ class PlayerCampaigns {
     const profile = this.authority.profile(session);
     if (profile.role !== 'player')
       throw reject('Join with a player invitation to open assigned characters');
-    const state = await store.readCharacters(profile.campaignId);
+    const state = await store.readCharacters(profile.campaignId, { includeRoomVisits: true });
     const catalog = await this.resources.catalog(state.campaign);
     const [{ default: CampaignCharacters }] = await this._modules();
     const library = new CampaignCharacters({ ...state, store, catalog });
     return { profile, state, catalog, library };
   }
 
-  async state(session, options = {}, store = this.store, undo = null) {
+  async state(
+    session,
+    options = {},
+    store = this.store,
+    undo = null,
+    { deferRoomVisits = false } = {}
+  ) {
     const { profile, state, library } = await this._state(session, store);
     if (
       options.sinceSceneRevision !== undefined &&
@@ -62,7 +70,16 @@ class PlayerCampaigns {
     const scene = state.scene
       ? decodeScene(state.scene, { ruleset: state.campaign.ruleset, library })
       : null;
-    if (scene) this.authority.recordRoomVisits(profile.campaignId, scene);
+    const visitedRoomIds = deferRoomVisits
+      ? this.authority.visitedRoomIds(session)
+      : await reconcileRoomVisits({
+          store,
+          authority: this.authority,
+          session,
+          campaignId: profile.campaignId,
+          state,
+          scene,
+        });
     const view = await this.published.view({
       scene,
       library,
@@ -152,7 +169,7 @@ class PlayerCampaigns {
       sceneRevision: state.sceneRevision,
       sceneSavedAt: state.sceneSavedAt,
       profile: currentProfile,
-      visitedRoomIds: this.authority.visitedRoomIds(session),
+      visitedRoomIds,
       gameplay,
       placementGrants: this.authority.placementGrants(session),
       ...view,
@@ -286,8 +303,8 @@ class PlayerCampaigns {
       revision: state.sceneRevision,
       charactersRevision: state.revision,
       scene: encodeScene(changedScene, context),
+      roomVisits: playerRoomVisitEntries(changedScene),
     });
-    this.authority.recordRoomVisits(campaignId, changedScene);
     return { ...receipt, door: changed };
   }
 

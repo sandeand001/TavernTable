@@ -4,6 +4,7 @@ const { createHash } = require('node:crypto');
 const stableStringify = require('fast-json-stable-stringify');
 const { advancePlayerUndo } = require('./player-undo-sessions.js');
 const { PhysicalDice } = require('./physical-dice.js');
+const { playerRoomVisitEntries } = require('./player-room-visits.js');
 const { scopePlayerReceipt: scopedReceipt } = require('../src/campaigns/PlayerPublicProtocol.js');
 
 const denied = () =>
@@ -78,7 +79,8 @@ class PlayerGameplay {
           assetKey: observed && !follow ? view?.assetKey : null,
         },
         store,
-        undo
+        undo,
+        { deferRoomVisits: true }
       );
     };
     const committed = await this.players.store.storage.transaction(
@@ -164,6 +166,7 @@ class PlayerGameplay {
           revision: current.sceneRevision,
           charactersRevision: currentLibrary.revision,
           scene: JSON.stringify(result.scene),
+          roomVisits: playerRoomVisitEntries(result.scene),
         });
         const finalProfile = this.players.authority.profile(session);
         if (!finalProfile.characterIds.includes(characterId)) throw denied();

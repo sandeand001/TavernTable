@@ -64,6 +64,44 @@ test('scene snapshots persist independently inside their own campaign and editio
   reopened.close();
 });
 
+test('room discovery checkpoints commit with scenes but stay out of public backups', async () => {
+  const indexedDB = testIndexedDB();
+  const store = new CampaignStore({ indexedDB, packs });
+  const campaign = await store.create({ name: 'Connected rooms', ruleset: '2024' });
+  await store.commitScene(campaign.id, {
+    ruleset: '2024',
+    revision: 0,
+    charactersRevision: 0,
+    scene: '{"version":3,"maps":[],"creatures":[]}',
+    roomVisits: [{ characterId: 'hero', mapId: 'room-a' }],
+  });
+  await store.commitScene(campaign.id, {
+    ruleset: '2024',
+    revision: 1,
+    charactersRevision: 0,
+    scene: '{"version":3,"maps":[],"creatures":[]}',
+    roomVisits: [
+      { characterId: 'hero', mapId: 'room-a' },
+      { characterId: 'hero', mapId: 'room-b' },
+    ],
+  });
+
+  expect(await store.readCharacters(campaign.id)).not.toHaveProperty('roomVisits');
+  expect((await store.readCharacters(campaign.id, { includeRoomVisits: true })).roomVisits).toEqual(
+    [
+      { characterId: 'hero', mapId: 'room-a' },
+      { characterId: 'hero', mapId: 'room-b' },
+    ]
+  );
+  const backup = await store.exportBackup(campaign.id);
+  expect(backup).not.toContain('roomVisitCheckpoint');
+  const restored = await store.importBackup(backup);
+  expect((await store.readCharacters(restored.id, { includeRoomVisits: true })).roomVisits).toEqual(
+    []
+  );
+  store.close();
+});
+
 test('character costs and their scene snapshot commit atomically and backups include the scene', async () => {
   const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
   const campaign = await store.create({ name: 'Atomic world', ruleset: '2024' });
