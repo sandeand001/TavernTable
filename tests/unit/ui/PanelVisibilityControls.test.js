@@ -127,6 +127,34 @@ test('attaching twice does not double-toggle a panel', () => {
   expect(panel('sidebar-content').hidden).toBe(true);
 });
 
+test('disposing a sidebar retires global sync callbacks and allows one clean replacement', () => {
+  window.__TT_SUN_TIME_LISTENERS__ = [];
+  window.__TT_GRID_VISIBILITY_LISTENERS__ = [];
+  const visualGrid = document.createElement('input');
+  visualGrid.type = 'checkbox';
+  visualGrid.id = 'visual-grid-toggle';
+  document.body.append(visualGrid);
+  const first = new SidebarController();
+  expect(window.__TT_SUN_TIME_LISTENERS__).toHaveLength(1);
+  expect(window.__TT_GRID_VISIBILITY_LISTENERS__).toHaveLength(1);
+  const retiredInput = jest.spyOn(first, 'onSunTimeChange');
+
+  first.dispose();
+  expect(window.__TT_SUN_TIME_LISTENERS__).toHaveLength(0);
+  expect(window.__TT_GRID_VISIBILITY_LISTENERS__).toHaveLength(0);
+
+  const replacement = new SidebarController();
+  const activeInput = jest.spyOn(replacement, 'onSunTimeChange');
+  expect(window.__TT_SUN_TIME_LISTENERS__).toHaveLength(1);
+  expect(window.__TT_GRID_VISIBILITY_LISTENERS__).toHaveLength(1);
+  const sun = panel('sun-time-range');
+  sun.value = '600';
+  sun.dispatchEvent(new Event('input', { bubbles: true }));
+  expect(retiredInput).not.toHaveBeenCalled();
+  expect(activeInput).toHaveBeenCalledTimes(1);
+  replacement.dispose();
+});
+
 test('an unavailable preference store is reported and does not prevent menu use', () => {
   const report = jest.spyOn(GameErrors, 'input').mockImplementation(() => {});
   const failure = new Error('Preferences unavailable');
