@@ -25,24 +25,17 @@ extend the terrain, humanoid, sheet, rest and manual-play foundation.
 ## Verified baseline
 
 ```powershell
-npm run test:stable -- --watch=false
+npm test -- --runInBand --ci
 npm run lint:all
 ```
 
-- Latest complete Jest run: 128 suites and 1,032 tests pass, including the native
-  fetch receiver contract and edition-scoped persistence/recovery regressions.
-- The Core-speed/Combat-meter follow-up passes 3 focused UI suites and 57 tests.
-- Play layouts/Favorites pass 14 focused suites and 208 tests, covering character
-  persistence, rest/actions, sheets/compendium, turn rules and actual navigation.
-- History rail/roll attribution passes 17 focused suites and 223 tests.
-- Compact roll summaries/tooltips pass 12 focused suites and 120 tests.
-- The fresh-turn attack-counter follow-up passes 6 focused suites / 84 tests.
-  Native 2024 checks show 1 attack at Fighter 1, 2 at Fighter 5, 4 after Action
-  Surge, 0 after spending the last action on Dash, and 2 after Undo. Display uses
-  `status.attacksAvailable`; keep `attacksRemaining` as the already-started
-  sequence for attack continuation, forfeit and DM ongoing-attack corrections.
-- JavaScript lint has no errors and 40 existing unused-variable warnings.
-- Stylesheet lint and the architecture-layer check pass.
+- Latest complete Jest run (2026-11-18): 310 suites and 4,086 tests pass.
+- JavaScript and stylesheet lint and the architecture-layer check pass with no
+  errors or warnings.
+- Clean full and production-only `npm ci` installs resolve, including the seven
+  intentional production dependencies and development-only build tooling.
+- Cloud frontend packaging and production-host checks pass 9/9 without emulator
+  credentials. Cloud emulator integration remains a separate release gate.
 - Repository-wide `format:check` reports the unchanged
   [lint configuration](./tools/.eslintrc.json); changed JavaScript and tests pass
   a focused formatting check.
@@ -1319,6 +1312,6 @@ The 3D model pipeline uses [ModelAssetCache](./src/core/ModelAssetCache.js),
 
 Asset scale calibration and model-load fallbacks still need browser checks.
 
-The [March 2026 audit](./docs/archive/CONVENTIONS-AUDIT-2026-03-30.md) is retained
-as historical context. Its file counts, paths, and findings are not a current
-verification report.
+The [November 2026 codebase audit](./docs/reviews/codebase-audit-2026-11-17.md)
+is the cleanup starting point. Its initial failing-test counts describe the
+pre-cleanup state; use the current branch and this verified baseline instead.

@@ -2112,19 +2112,16 @@ Coverage check (October 30, 2026): the existing 60% global branch threshold is
 unmet both at the starting commit (56.82%) and after this cleanup (56.83%).
 All test cases pass; the threshold and full-suite coverage selection are unchanged.
 
-### Verification snapshot: October 28, 2026
+### Verification snapshot: November 18, 2026
 
-- Last full Jest baseline: **113 suites, 964 tests passing**.
-- Speed editor/movement-bar follow-up: **3 focused UI suites, 57 tests passing**.
-- Play layouts/Favorites: **14 focused suites, 208 tests passing**, including
-  character backups, turn rules and real navigation.
-- History rail/roll attribution: **17 focused suites, 223 tests passing**.
-- Compact roll summaries/tooltips: **12 focused suites, 120 tests passing**.
-- JavaScript lint: **0 errors, 40 existing unused-variable warnings**.
-- Stylesheet lint and architecture-layer check: **passing**.
-- The repository-wide formatting check flags the unchanged
-  [lint configuration](./tools/.eslintrc.json). Changed JavaScript and tests pass
-  a focused formatting check.
+- Last full Jest baseline: **310 suites, 4,086 tests passing**.
+- JavaScript lint, stylesheet lint and the architecture-layer check: **passing
+  with zero warnings**.
+- Clean full and production-only `npm ci` installs pass with only the intended
+  direct production dependencies.
+- Cloud frontend packaging and production-host checks: **9/9 passing**.
+- [HANDOFF.md](./HANDOFF.md) contains the current maintenance baseline and
+  unfinished-work notes.
 
 The humanoid contracts replay actual FBXs on every registered appearance:
 grounding, shared locomotion, live gait changes, movement budgets, double-cost
@@ -2184,7 +2181,7 @@ return to idle after arrival.
   Keep these resources and license files intact.
 - [tools](./tools/) and [scripts](./scripts/): development and asset-inspection utilities.
 - [docs/adr](./docs/adr/): accepted architecture decisions.
-- [docs/archive](./docs/archive/): historical reports, not the current task list.
+- [docs/reviews](./docs/reviews/): dated audit and review reports.
 
 Dependencies and generated coverage output are ignored by Git. Do not use an old
 coverage report as evidence of current test health.
@@ -2195,5 +2192,6 @@ coverage report as evidence of current test health.
 - [TODO.md](./TODO.md): current engineering follow-ups and feature backlog.
 - [CONVENTIONS.md](./CONVENTIONS.md): code organization and conventions.
 - [HANDOFF.md](./HANDOFF.md): concise maintenance handoff and cleanup context.
-- [March 2026 conventions audit](./docs/archive/CONVENTIONS-AUDIT-2026-03-30.md):
-  historical findings that must be rechecked before acting on them.
+- [November 2026 codebase audit](./docs/reviews/codebase-audit-2026-11-17.md):
+  the cleanup starting point. Completed and outstanding work must be checked
+  against the current branch before acting on it.
