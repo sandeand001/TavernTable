@@ -67,6 +67,42 @@ test('a small action checkpoints changed state without cloning unchanged effects
   expect(session.status(token).movement.total).toBe(60);
 });
 
+test('combat checkpoints share history records and copy only the entry changed by Undo', async () => {
+  session.startTurn(token);
+  await session.useAction(token, 'dash');
+  session.endTurn();
+  session.startTurn(token);
+  const characterId = token.characterSheetId;
+  const previous = session.histories.get(characterId)[0];
+  let staged;
+  library.withCombatSnapshot = (factory, operation) => {
+    const result = operation();
+    staged = factory(library);
+    return Promise.resolve(result);
+  };
+
+  await session.useAction(token, 'dash');
+
+  const current = session.histories.get(characterId)[0];
+  expect(staged.histories.get(characterId)[1]).toBe(previous);
+  expect(current).not.toBe(previous);
+  let undoStaged;
+  library.withCombatSnapshot = (factory, operation) => {
+    const result = operation();
+    undoStaged = factory(library);
+    return Promise.resolve(result);
+  };
+
+  await session.undoLastUse(token);
+
+  const undone = undoStaged.histories
+    .get(characterId)
+    .find((entry) => entry.sequence === current.sequence);
+  expect(undone).not.toBe(current);
+  expect(undone.undone).toBe(true);
+  expect(current.undone).toBeUndefined();
+});
+
 test('manual combat shares one movement allowance across clicks and never resets it between moves', () => {
   expect(session.active).toBe(false);
   session.startTurn(token);

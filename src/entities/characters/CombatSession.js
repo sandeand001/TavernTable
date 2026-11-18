@@ -696,7 +696,18 @@ export default class CombatSession {
         Object.assign(state, entry.before);
         state.undo.pop();
         const recent = state.recent.find((row) => row.sequence === entry.sequence);
-        if (recent) recent.undone = true;
+        if (recent) {
+          const undone = { ...recent, undone: true };
+          for (const candidate of session.states.values())
+            candidate.recent = candidate.recent.map((row) =>
+              row.sequence === entry.sequence ? undone : row
+            );
+          const history = session.histories.get(character.id) || [];
+          session.histories.set(
+            character.id,
+            history.map((row) => (row.sequence === entry.sequence ? undone : row))
+          );
+        }
         session.effects = session.effects.filter((effect) => effect.id !== entry.sequence);
         if (entry.movedEffect)
           session.effects = session.effects.map((effect) =>
@@ -723,9 +734,7 @@ export default class CombatSession {
   _persistWithScene(operation, apply, scenePlacements = null) {
     if (!this.library.withCombatSnapshot) return operation();
     return this.library.withCombatSnapshot((engine) => {
-      const histories = new Map(
-        [...this.histories].map(([id, entries]) => [id, JSON.parse(JSON.stringify(entries))])
-      );
+      const histories = new Map([...this.histories].map(([id, entries]) => [id, [...entries]]));
       const bySequence = new Map(
         [...histories.values()].flat().map((entry) => [entry.sequence, entry])
       );
