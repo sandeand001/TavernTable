@@ -10,9 +10,7 @@
     "expression": "1d20+5",
     "label": "Synthetic physical trajectory fixture",
     "mode": "normal",
-    "values": [
-      3
-    ],
+    "values": [3],
     "total": 8,
     "physical": true,
     "text": "Synthetic physical trajectory fixture: 1d20+5 [3] = 8",
