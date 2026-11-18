@@ -1,7 +1,8 @@
 import CampaignStore from './CampaignStore.js';
 import HostCampaignStore from './HostCampaignStore.js';
 import CloudCampaignClientStore from './CloudCampaignClientStore.js';
-import CampaignCharacters, { validateCampaignCharacters } from './CampaignCharacters.js';
+import CampaignCharacters from './CampaignCharacters.js';
+import { validateCampaignBackup } from './CampaignBackupValidation.js';
 import { loadBundledResources } from '../resources/ResourceSeeds.js';
 import { CompendiumCatalog } from '../entities/characters/CompendiumCatalog.js';
 import { decodeScene } from './CampaignScene.js';
@@ -107,17 +108,7 @@ export default class CampaignWorkspace {
   async importBackup(text) {
     const data = this.store.parseBackup(text);
     const catalog = await this.resources.catalog(data.campaign);
-    validateCampaignCharacters(data.campaign, catalog, data.records);
-    if (data.scene !== null) {
-      const library = new CampaignCharacters({
-        store: this.store,
-        catalog,
-        campaign: data.campaign,
-        records: data.records,
-        revision: 0,
-      });
-      decodeScene(data.scene, { ruleset: library.ruleset, library });
-    }
+    validateCampaignBackup(data, catalog);
     return this.store.importBackup(text);
   }
 

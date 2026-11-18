@@ -137,6 +137,9 @@ async function startLocalHost({
   const { default: CampaignStore } = await import(
     pathToFileURL(path.join(root, 'src', 'campaigns', 'CampaignStore.js')).href
   );
+  const { validateCampaignBackup } = await import(
+    pathToFileURL(path.join(root, 'src', 'campaigns', 'CampaignBackupValidation.js')).href
+  );
   const manifest = JSON.parse(
     await fs.readFile(path.join(root, 'assets', 'data', 'resources', 'manifest.json'), 'utf8')
   );
@@ -344,6 +347,11 @@ async function startLocalHost({
             )
               throw new Error('Save the board and choose an existing map before publishing it');
             return authority.publishMap(session, id, mapId, published);
+          },
+          importBackup: async (text) => {
+            const data = store.parseBackup(text);
+            validateCampaignBackup(data, await resources.catalog(data.campaign));
+            return store.importBackup(text);
           },
         };
         const backupOperations = {

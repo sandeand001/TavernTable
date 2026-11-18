@@ -294,6 +294,47 @@ test('automatic/manual JSON backup files are discoverable and restore without re
   ).toHaveLength(1);
 }, 30000);
 
+test('host imports reject semantically invalid scenes without creating a campaign copy', async () => {
+  const host = await start();
+  const id = (await host.request('create', [{ name: 'Import validation', ruleset: '2024' }])).result
+    .id;
+  const snapshot = await host.request('backupNow', [id]);
+  const text = (await host.request('readBackup', [id, snapshot.result.name])).result;
+  const malformed = JSON.parse(text);
+  malformed.scene = '{';
+
+  const imported = await host.request('importBackup', [JSON.stringify(malformed)]);
+
+  expect(imported.status).toBe(400);
+  expect((await host.request('list')).result).toHaveLength(1);
+}, 30000);
+
+test.each([
+  ['malformed primary character JSON', [{ key: 'taverntable.character.v1.broken', value: '{' }]],
+  [
+    'orphaned companion character data',
+    [{ key: 'taverntable.character-rest.v1.missing', value: '{}' }],
+  ],
+])(
+  'host imports reject %s before creating a campaign copy',
+  async (_label, records) => {
+    const host = await start();
+    const id = (await host.request('create', [{ name: 'Import records', ruleset: '2024' }])).result
+      .id;
+    const snapshot = await host.request('backupNow', [id]);
+    const malformed = JSON.parse(
+      (await host.request('readBackup', [id, snapshot.result.name])).result
+    );
+    malformed.records = records;
+
+    const imported = await host.request('importBackup', [JSON.stringify(malformed)]);
+
+    expect(imported.status).toBe(400);
+    expect((await host.request('list')).result).toHaveLength(1);
+  },
+  30000
+);
+
 test('doors hide room geometry, enforce nearby player access and DM locks, and persist individual room visits', async () => {
   let host = await start();
   const workspace = await CampaignWorkspace.load({
