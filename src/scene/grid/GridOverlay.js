@@ -170,10 +170,20 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
           const x1 = (gx + 1) * tileSize;
           const z0 = gy * tileSize;
           const z1 = (gy + 1) * tileSize;
+          const east = gx + 1 < cols ? gy * cols + gx + 1 : -1;
+          const south = gy + 1 < rows ? (gy + 1) * cols + gx : -1;
+          const sharedEast =
+            east >= 0 &&
+            visibleTiles[east] &&
+            Math.abs((tileHeights[east] || 0) - baseHeight) <= 1e-7;
+          const sharedSouth =
+            south >= 0 &&
+            visibleTiles[south] &&
+            Math.abs((tileHeights[south] || 0) - baseHeight) <= 1e-7;
+          pushSegment(x0, h, z0, x0, h, z1);
           pushSegment(x0, h, z0, x1, h, z0);
-          pushSegment(x1, h, z0, x1, h, z1);
-          pushSegment(x1, h, z1, x0, h, z1);
-          pushSegment(x0, h, z1, x0, h, z0);
+          if (!sharedEast) pushSegment(x1, h, z0, x1, h, z1);
+          if (!sharedSouth) pushSegment(x1, h, z1, x0, h, z1);
         }
       }
 

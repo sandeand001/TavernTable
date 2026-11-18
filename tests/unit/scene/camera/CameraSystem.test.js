@@ -83,7 +83,7 @@ test('campaign camera state preserves focus, zoom, top-down mode and its return 
   });
 });
 
-test('unchanged reframes and zoom animation frames do not repeatedly dirty saved camera state', () => {
+test('camera-only interactions never dirty scene state during a zoom sequence', () => {
   const camera = new CameraHarness();
   const changed = jest.fn();
   camera.gameManager.sceneAutosave = { changed };
@@ -94,13 +94,13 @@ test('unchanged reframes and zoom animation frames do not repeatedly dirty saved
   expect(changed).not.toHaveBeenCalled();
   camera._zoomEase = 0.1;
   camera.setZoom(1.7);
-  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed).not.toHaveBeenCalled();
   for (let frame = 0; frame < 60; frame++) camera._updateZoom(16);
-  expect(changed).toHaveBeenCalledTimes(1);
+  expect(changed).not.toHaveBeenCalled();
   camera.setCameraTarget(8, 11, 3);
-  expect(changed).toHaveBeenCalledTimes(2);
+  expect(changed).not.toHaveBeenCalled();
   camera.setCameraTarget(8, 11, 3);
-  expect(changed).toHaveBeenCalledTimes(2);
+  expect(changed).not.toHaveBeenCalled();
 });
 
 function project(manager, point) {

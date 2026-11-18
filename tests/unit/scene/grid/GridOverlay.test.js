@@ -41,3 +41,59 @@ test('cavern grid fills and lines stay on low floors rather than the tall rock r
     mesh.material.dispose();
   }
 });
+
+function gridManager({ cols, rows, heights, cavern = null }) {
+  const prototype = {};
+  installGridOverlayMethods(prototype);
+  return Object.assign(Object.create(prototype), {
+    three,
+    scene: new three.Scene(),
+    gameManager: {
+      terrainEngine: cavern
+        ? {
+            cavern,
+            isActive: false,
+            getHeightAt: (x, y) => heights[y * cols + x],
+          }
+        : null,
+    },
+    showBootstrapGrid: true,
+    _gridOverlayBaseStyle: {
+      fillColor: 0x777777,
+      fillAlpha: 0.32,
+      borderColor: 0xaaaaaa,
+      borderAlpha: 0.5,
+    },
+    _getBoardMetrics: () => ({ cols, rows, tileSize: 1 }),
+    _computeTileHeights: () => ({ heights, elevationUnit: 0 }),
+  });
+}
+
+test('a flat grid emits each shared edge once', () => {
+  const cols = 3,
+    rows = 2,
+    manager = gridManager({ cols, rows, heights: Array(cols * rows).fill(0) });
+  manager._rebuildGridOverlay();
+  const positions = manager.scene
+    .getObjectByName('GridLineFrame')
+    .geometry.getAttribute('position');
+  const actualSegments = positions.count / 2;
+  expect(actualSegments).toBe(2 * cols * rows + cols + rows);
+});
+
+test('unequal adjacent tile heights retain both physical edge levels', () => {
+  const manager = gridManager({ cols: 2, rows: 1, heights: [0, 1] });
+  manager._rebuildGridOverlay();
+  const positions = manager.scene
+    .getObjectByName('GridLineFrame')
+    .geometry.getAttribute('position');
+  const levels = [];
+  for (let i = 0; i < positions.count; i += 2) {
+    if (Math.abs(positions.getX(i) - 1) < 1e-8 && Math.abs(positions.getX(i + 1) - 1) < 1e-8)
+      levels.push(positions.getY(i));
+  }
+  expect(levels).toHaveLength(2);
+  expect(levels.sort((a, b) => a - b)).toEqual(
+    expect.arrayContaining([expect.closeTo(0.004), expect.closeTo(1.004)])
+  );
+});

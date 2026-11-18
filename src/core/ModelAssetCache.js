@@ -402,8 +402,12 @@ class ModelAssetCache {
       promise = this._loadOBJ(this._three, key, primaryPath, descriptor);
     }
     this._loading.set(key, promise);
-    const obj = await promise;
-    this._loading.delete(key);
+    let obj;
+    try {
+      obj = await promise;
+    } finally {
+      if (this._loading.get(key) === promise) this._loading.delete(key);
+    }
     if (obj) this._cache.set(key, obj);
     else {
       logger.warn(
