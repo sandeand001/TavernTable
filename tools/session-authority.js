@@ -50,7 +50,14 @@ class SessionAuthority {
     `);
   }
 
+  _pruneExpiredSessions(now = this.now()) {
+    for (const [key, session] of this.sessions)
+      if (session.expiresAt <= now) this.sessions.delete(key);
+  }
+
   _issue(role, playerId = null, generation = null) {
+    const issuedAt = this.now();
+    this._pruneExpiredSessions(issuedAt);
     const token = randomBytes(32).toString('base64url');
     const session = {
       id: randomUUID(),
@@ -58,7 +65,7 @@ class SessionAuthority {
       playerId,
       generation,
       csrf: randomBytes(32).toString('base64url'),
-      expiresAt: this.now() + this.sessionTtlMs,
+      expiresAt: issuedAt + this.sessionTtlMs,
     };
     this.sessions.set(digest(token), session);
     return { token, session };
@@ -86,6 +93,8 @@ class SessionAuthority {
   }
 
   authenticate(cookie, name = 'tt-session') {
+    const now = this.now();
+    this._pruneExpiredSessions(now);
     const token = (cookie || '')
       .split(';')
       .map((part) => part.trim())
@@ -96,7 +105,7 @@ class SessionAuthority {
     const session = this.sessions.get(key);
     if (!session) return null;
     if (
-      session.expiresAt <= this.now() ||
+      session.expiresAt <= now ||
       (session.role === 'player' &&
         this._player(session.playerId)?.generation !== session.generation)
     ) {
@@ -128,11 +137,9 @@ class SessionAuthority {
   }
 
   _assertSession(session) {
-    if (
-      !session ||
-      session.expiresAt <= this.now() ||
-      ![...this.sessions.values()].includes(session)
-    )
+    const now = this.now();
+    this._pruneExpiredSessions(now);
+    if (!session || session.expiresAt <= now || ![...this.sessions.values()].includes(session))
       throw Object.assign(new Error('Sign in as the host or join with a private invitation'), {
         status: 401,
       });

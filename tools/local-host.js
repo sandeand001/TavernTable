@@ -10,6 +10,7 @@ const { CampaignBackups } = require('./campaign-backups.js');
 const { SessionAuthority } = require('./session-authority.js');
 const { HostResources } = require('./host-resources.js');
 const { PlayerCampaigns } = require('./player-campaigns.js');
+const { LoginThrottle } = require('./login-throttle.js');
 const { PlayerGameplay } = require('./player-gameplay.js');
 const { readLimitedBody } = require('./http-body.js');
 const { resolvePublicFile } = require('./public-files.js');
@@ -178,7 +179,7 @@ async function startLocalHost({
         );
     }
   };
-  const loginAttempts = new Map();
+  const loginAttempts = new LoginThrottle();
   const server = http.createServer(async (request, response) => {
     try {
       const currentPort = server.address().port;
@@ -216,14 +217,8 @@ async function startLocalHost({
           )
             throw failure(403, 'Host sign-in is available only directly on the host computer');
           const key = `${request.socket.remoteAddress}:${url.pathname}`;
-          const previous = loginAttempts.get(key);
-          const attempts =
-            previous && Date.now() - previous.since < 60000
-              ? previous
-              : { since: Date.now(), count: 0 };
-          if (++attempts.count > 30)
+          if (!loginAttempts.allow(key))
             throw failure(429, 'Too many sign-in attempts. Wait a minute and retry.');
-          loginAttempts.set(key, attempts);
           const credentials = await requestBody(request, 4096);
           const issued = url.pathname.endsWith('/host')
             ? authority.signInHost(credentials?.key)

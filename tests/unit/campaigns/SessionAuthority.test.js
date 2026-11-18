@@ -38,6 +38,25 @@ test('expired and explicitly signed-out cookies cannot authenticate again', () =
   expect(authority.authenticate(cookie(renewed))).toBeNull();
 });
 
+test('issuing a session purges unrelated expired sessions that were never reused', () => {
+  authority.close();
+  let time = 1000;
+  authority = new SessionAuthority({
+    filename: path.join(folder, 'access.sqlite'),
+    hostKey,
+    now: () => time,
+    sessionTtlMs: 1000,
+  });
+  authority.signInHost(hostKey);
+  authority.signInHost(hostKey);
+  expect(authority.sessions.size).toBe(2);
+
+  time += 1001;
+  authority.signInHost(hostKey);
+
+  expect(authority.sessions.size).toBe(1);
+});
+
 test('private invitations retain assigned saved characters after server restart', () => {
   const dm = authority.signInHost(hostKey).session;
   const invitation = authority.createInvite(dm, 'campaign', 'Player');

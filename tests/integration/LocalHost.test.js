@@ -217,6 +217,24 @@ test('acknowledged campaign state survives killing the host process and an indep
   ).toBe(403);
 }, 30000);
 
+test('host sign-in throttling rejects the thirty-first attempt from one client', async () => {
+  const host = await start();
+  for (let attempt = 0; attempt < 29; attempt++) {
+    const response = await fetch(host.url + '/api/session/host', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'definitely-incorrect-host-key' }),
+    });
+    expect(response.status).toBe(401);
+  }
+  const limited = await fetch(host.url + '/api/session/host', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'definitely-incorrect-host-key' }),
+  });
+  expect(limited.status).toBe(429);
+}, 30000);
+
 test('concurrent clients cannot overwrite newer character or scene revisions', async () => {
   const host = await start();
   const id = (await host.request('create', [{ name: 'Two clients', ruleset: '2014' }])).result.id;
