@@ -96,6 +96,7 @@ export class TerrainGeometry {
     this._revision = 0;
     this._operations = new Map();
     this._structures = new Map();
+    this._constructionDetailsSignature = '[]';
     this._cells = new Map();
     this._solidCells = null;
     this._volumeIndex = null;
@@ -402,6 +403,10 @@ export class TerrainGeometry {
     return JSON.parse(JSON.stringify([...this._structures.values()]));
   }
 
+  get constructionDetailsSignature() {
+    return this._constructionDetailsSignature;
+  }
+
   structureAt(point) {
     if (!finitePoint(point)) throw new TypeError('Structure selection requires a physical point');
     const inset = 0.02;
@@ -642,6 +647,9 @@ export class TerrainGeometry {
     this._operations = restored._operations;
     this._cells = restored._cells;
     this._structures = restored._structures;
+    this._constructionDetailsSignature = JSON.stringify(
+      [...this._structures.values()].filter((spec) => spec.appearance)
+    );
     this.invalidate();
   }
 

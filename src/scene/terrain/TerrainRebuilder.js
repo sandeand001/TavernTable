@@ -360,43 +360,47 @@ export class TerrainRebuilder {
     if (hasConstructionMaterials(geo))
       configureConstructionMaterial(mesh.material, gm.spatial.tileWorldSize / 5);
     mesh.castShadow = !!gm.terrainEngine?.geometry.hasVolumes;
-    const specs =
-      gm.terrainEngine?.geometry.getStructures().filter((spec) => spec.appearance) ?? [];
+    const geometry = gm.terrainEngine?.geometry;
+    const readSpecs = () => geometry?.getStructures().filter((spec) => spec.appearance) ?? [];
+    let specs = null;
+    const detailsInput =
+      typeof geometry?.constructionDetailsSignature === 'string'
+        ? geometry.constructionDetailsSignature
+        : (specs = readSpecs());
     const detailsSignature = JSON.stringify([
-      specs,
+      detailsInput,
       gm.spatial?.tileWorldSize,
       gm.terrainEngine?.visibleLayers,
     ]);
-    if (specs.length || mesh.userData?.constructionDetailsSignature) {
+    if (detailsSignature !== mesh.userData?.constructionDetailsSignature) {
+      specs ??= readSpecs();
       mesh.userData ??= {};
-      if (detailsSignature !== mesh.userData.constructionDetailsSignature) {
-        const old = mesh.getObjectByName('ConstructionDetails');
-        if (old) {
-          old.geometry.dispose();
-          old.removeFromParent();
-        }
-        if (specs.length) {
-          const detailsGeometry = buildConstructionDetails({
-            specs,
-            three: threeNs,
-            worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
-            visibleLayers: gm.terrainEngine.visibleLayers,
-          });
-          if (detailsGeometry) {
-            const details = new threeNs.Mesh(detailsGeometry, mesh.material);
-            details.name = 'ConstructionDetails';
-            details.raycast = () => {};
-            details.userData.renderOnly = true;
-            details.castShadow = true;
-            details.receiveShadow = true;
-            mesh.add(details);
-          }
-        }
-        mesh.userData.constructionDetailsSignature = detailsSignature;
+      const old = mesh.getObjectByName?.('ConstructionDetails');
+      if (old) {
+        old.geometry.dispose();
+        old.removeFromParent();
       }
-      const details = mesh.getObjectByName('ConstructionDetails');
-      if (details) details.material = mesh.material;
+      if (specs.length) {
+        const detailsGeometry = buildConstructionDetails({
+          specs,
+          three: threeNs,
+          worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
+          visibleLayers: gm.terrainEngine.visibleLayers,
+        });
+        if (detailsGeometry) {
+          const details = new threeNs.Mesh(detailsGeometry, mesh.material);
+          details.name = 'ConstructionDetails';
+          details.raycast = () => {};
+          details.userData.renderOnly = true;
+          details.castShadow = true;
+          details.receiveShadow = true;
+          mesh.add(details);
+        }
+      }
+      mesh.userData.constructionDetailsSignature = detailsSignature;
     }
+    const details = mesh.getObjectByName?.('ConstructionDetails');
+    if (details) details.material = mesh.material;
     try {
       const currentOpacity = Number.isFinite(gm?.threeSceneManager?._terrainMeshOpacity)
         ? gm.threeSceneManager._terrainMeshOpacity

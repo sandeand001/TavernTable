@@ -37,17 +37,41 @@ describe('TerrainRebuildPerformance', () => {
       },
     };
 
+    let terrainMesh = null;
+    const getStructures = jest.fn(() => []);
     const gm = {
       cols: 8,
       rows: 8,
       getTerrainHeight: () => 0,
-      threeSceneManager: { scene: { getObjectByName: () => null, add: jest.fn() } },
+      terrainEngine: {
+        isActive: false,
+        biomeKey: null,
+        visibleLayers: null,
+        geometry: {
+          hasVolumes: false,
+          getStructures,
+          constructionDetailsSignature: '[]',
+        },
+      },
+      threeSceneManager: {
+        scene: {
+          getObjectByName: () => terrainMesh,
+          add: (mesh) => {
+            terrainMesh = mesh;
+          },
+        },
+      },
     };
 
     const builder = new TerrainMeshBuilder({ tileWorldSize: 1, elevationUnit: 0.25 });
     const rebuilder = new TerrainRebuilder({ gameManager: gm, builder, debounceMs: 10 });
     const mesh = rebuilder.rebuild({ three });
+    rebuilder.rebuild({ three });
     expect(mesh).toBeTruthy();
+    expect(getStructures).toHaveBeenCalledTimes(1);
+    gm.terrainEngine.geometry.constructionDetailsSignature = '["changed"]';
+    rebuilder.rebuild({ three });
+    expect(getStructures).toHaveBeenCalledTimes(2);
     if (typeof window !== 'undefined') {
       const metrics = window.__TT_METRICS__?.terrain;
       expect(metrics).toBeTruthy();
