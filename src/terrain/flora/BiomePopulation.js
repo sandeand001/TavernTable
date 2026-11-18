@@ -4,14 +4,11 @@
  * Non-invasive: only adds/removes placeables of type 'plant'.
  * Heuristics are intentionally coarse and can be tuned later.
  */
-import { createSeededRNG, rngInt, makeWeightedPicker } from '../../../utils/SeededRNG.js';
-import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../../config/terrain/FloraProfiles.js';
-import { TERRAIN_PLACEABLES } from '../../../config/terrain/TerrainPlaceables.js';
-import { structureBounds } from '../../../terrain/ConstructionBlueprints.js';
-import {
-  cavernPassageCells,
-  CAVERN_FLOOR_LEVEL,
-} from '../../../terrain/generation/CavernInteriors.js';
+import { createSeededRNG, rngInt, makeWeightedPicker } from '../../utils/SeededRNG.js';
+import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../config/terrain/FloraProfiles.js';
+import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
+import { structureBounds } from '../ConstructionBlueprints.js';
+import { cavernPassageCells, CAVERN_FLOOR_LEVEL } from '../generation/CavernInteriors.js';
 import {
   candidateFilters,
   isSpectralPlaceable,
@@ -21,7 +18,7 @@ import {
   stripSpectralWeights,
   relocateTropicalCandidate,
   isCoastlineTile,
-} from '../../../terrain/flora/floraHelpers.js';
+} from './floraHelpers.js';
 
 // ── Resolution Helpers ───────────────────────────────────
 

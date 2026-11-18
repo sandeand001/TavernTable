@@ -1,6 +1,6 @@
 import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
 import { BRUSH_COLORS } from '../../terrain/brush/BrushCommon.js';
-import { autoPopulateBiomeFlora } from '../../coordinators/terrain-coordinator/internals/flora.js';
+import { autoPopulateBiomeFlora } from '../../terrain/flora/BiomePopulation.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validateConstructionEdit } from '../../campaigns/CampaignConstruction.js';
 import { CampaignBuildingEditor } from '../../campaigns/CampaignBuildingEditor.js';

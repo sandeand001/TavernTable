@@ -1,7 +1,7 @@
 import { createTerrainWorld, floraContext } from '../../helpers/terrainWorld.js';
 import { BIOME_FLORA_PROFILES } from '../../../src/config/terrain/FloraProfiles.js';
 import { ALL_BIOMES } from '../../../src/config/biome/BiomeConstants.js';
-import { autoPopulateBiomeFlora } from '../../../src/coordinators/terrain-coordinator/internals/flora.js';
+import { autoPopulateBiomeFlora } from '../../../src/terrain/flora/BiomePopulation.js';
 
 function generate(biomeKey, seed = 12345) {
   const placements = [];

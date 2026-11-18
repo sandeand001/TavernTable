@@ -1,4 +1,4 @@
-import { TerrainInputHandlers } from './terrain-coordinator/TerrainInputHandlers.js';
+import { TerrainInputHandlers } from '../terrain/TerrainInputHandlers.js';
 import { TerrainEngineSceneAdapter } from '../scene/terrain/TerrainEngineSceneAdapter.js';
 
 export class TerrainCoordinator {

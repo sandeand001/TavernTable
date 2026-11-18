@@ -1,5 +1,5 @@
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
-import { TerrainInputHandlers } from '../../../src/coordinators/terrain-coordinator/TerrainInputHandlers.js';
+import { TerrainInputHandlers } from '../../../src/terrain/TerrainInputHandlers.js';
 import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 
 let view;

@@ -1,5 +1,5 @@
 import { createTerrainWorld, floraContext } from '../../../helpers/terrainWorld.js';
-import { autoPopulateBiomeFlora } from '../../../../src/coordinators/terrain-coordinator/internals/flora.js';
+import { autoPopulateBiomeFlora } from '../../../../src/terrain/flora/BiomePopulation.js';
 
 /**
  * Dead / Burnt forest composition test

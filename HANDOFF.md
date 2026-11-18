@@ -72,7 +72,7 @@ regressions below. Remaining browser reports are tracked separately in the backl
   terrain. The owner explicitly chose this behavior after the raise-only
   clamp silently ignored negative targets on level-zero ground. Do not restore
   the old preservation clamp; preview and commit must agree for all 21 levels.
-- [TerrainInputHandlers](./src/coordinators/terrain-coordinator/TerrainInputHandlers.js)
+- [TerrainInputHandlers](./src/terrain/TerrainInputHandlers.js)
   starts a pending wall on mouse-down, previews without editing during drag,
   and commits once on a valid canvas release. Window capture and canvas release
   must not apply twice. Escape, Space pan, blur, leaving the canvas, tool/mode
@@ -1102,10 +1102,10 @@ Existing strafe and crouch clips were reused rather than downloaded again.
   Dispose unpublished baked geometry when a map-reset epoch cancels its group.
   The existing pinned Three.js BufferGeometryUtils addon is mapped in the browser;
   Jest permits its ES-module addons so tests can parse actual OBJ/FBX assets.
-- [Flora generation](./src/coordinators/terrain-coordinator/internals/flora.js)
+- [Flora generation](./src/terrain/flora/BiomePopulation.js)
   explicitly marks generated instances. For generated tree IDs only,
   [treeSupport](./src/scene/terrain/treeSupport.js) checks the basal footprint
-  against the live coordinator heights and map bounds, with one percent of a
+  against the live terrain-engine heights and map bounds, with one percent of a
   tile as edge clearance. Full size is preferred; find the largest supported
   uniform scale down to 0.65, otherwise skip the site. This is the owner's
   selected policy, not global downsizing or canopy containment.

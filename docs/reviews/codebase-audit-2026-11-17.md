@@ -68,36 +68,36 @@ clearer than in many personal projects. The main gaps are:
 
 ### Measured repository shape
 
-| Measure | Value |
-| --- | ---: |
-| Tracked files | 1,773 |
-| Tracked JavaScript files | 592 |
-| Files under `src/` | 314 |
-| Files under `tests/` | 265 |
-| Audited text files (`src`, `tests`, `tools`) | 593 / 143,772 lines |
-| Tracked assets | 1,144 / 502,116,584 bytes / 478.86 MiB |
-| Terrain assets | 320.6 MiB |
-| Animated character assets | 136.3 MiB |
-| Resource/data assets | 15.4 MiB |
-| Other tracked visual assets | 6.6 MiB |
+| Measure                                      |                                  Value |
+| -------------------------------------------- | -------------------------------------: |
+| Tracked files                                |                                  1,773 |
+| Tracked JavaScript files                     |                                    592 |
+| Files under `src/`                           |                                    314 |
+| Files under `tests/`                         |                                    265 |
+| Audited text files (`src`, `tests`, `tools`) |                    593 / 143,772 lines |
+| Tracked assets                               | 1,144 / 502,116,584 bytes / 478.86 MiB |
+| Terrain assets                               |                              320.6 MiB |
+| Animated character assets                    |                              136.3 MiB |
+| Resource/data assets                         |                               15.4 MiB |
+| Other tracked visual assets                  |                                6.6 MiB |
 
 These sizes are a reason to create an asset packaging boundary, not a reason to
 delete source assets or reduce model/texture quality in place.
 
 ## Verification baseline
 
-| Check | Result |
-| --- | --- |
-| `npm test -- --runInBand --ci` | **Failed:** 13/254 suites and 47/3,438 tests failed; 241 suites and 3,391 tests passed. Duration: 1,115.404 s. |
-| Targeted reruns of representative failures | The character-sheet heading, empty-interior checkpoint, complex castle door and real-rig movement failures reproduced in isolation. |
-| `npm run lint:all` | Passed with 0 errors, 39 warnings; architecture-layer check passed. |
-| `npm run format:check` | Failed only on `tools/.eslintrc.json`. |
-| `npm ls --depth=0` | Passed; direct dependencies are installed and valid. |
-| `npm outdated --json` | Registry-reported stale direct/major versions; representative results are listed below. |
-| `npm audit --json` | Registry-reported 19 vulnerable package entries: 14 high, 4 moderate and 1 low; 0 critical. All entries reported a fix as available. |
-| `node tools/find-unused-exports.js` | Heuristic candidates only; not a proof of dead exports. |
-| `node tools/cycle-scan.js` | No simple relative ESM cycles; limited static scan, not a general cycle proof. |
-| CI workflow inventory | No `.github/workflows/` files in this checkout. |
+| Check                                      | Result                                                                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm test -- --runInBand --ci`             | **Failed:** 13/254 suites and 47/3,438 tests failed; 241 suites and 3,391 tests passed. Duration: 1,115.404 s.                       |
+| Targeted reruns of representative failures | The character-sheet heading, empty-interior checkpoint, complex castle door and real-rig movement failures reproduced in isolation.  |
+| `npm run lint:all`                         | Passed with 0 errors, 39 warnings; architecture-layer check passed.                                                                  |
+| `npm run format:check`                     | Failed only on `tools/.eslintrc.json`.                                                                                               |
+| `npm ls --depth=0`                         | Passed; direct dependencies are installed and valid.                                                                                 |
+| `npm outdated --json`                      | Registry-reported stale direct/major versions; representative results are listed below.                                              |
+| `npm audit --json`                         | Registry-reported 19 vulnerable package entries: 14 high, 4 moderate and 1 low; 0 critical. All entries reported a fix as available. |
+| `node tools/find-unused-exports.js`        | Heuristic candidates only; not a proof of dead exports.                                                                              |
+| `node tools/cycle-scan.js`                 | No simple relative ESM cycles; limited static scan, not a general cycle proof.                                                       |
+| CI workflow inventory                      | No `.github/workflows/` files in this checkout.                                                                                      |
 
 The failed suite is a **release-confidence finding**, not evidence that every
 failure has the same cause. It is likely a mixture of real regressions and stale
@@ -125,26 +125,26 @@ Findings are sorted by potential impact, then by implementation complexity.
 
 ## Prioritized improvement opportunities
 
-| Rank | Opportunity | Impact | Complexity | Confidence |
-| --- | --- | ---: | ---: | --- |
-| 1 | Restore and enforce a green baseline | 5 | 3 | Confirmed |
-| 2 | Separate source assets from an optimized runtime package | 5 | 5 | Confirmed size; solution requires measurement |
-| 3 | Replace frame-driven full projection/layout work with invalidation | 4 | 4 | Code-confirmed; not profiled |
-| 4 | Batch terrain writes and notifications | 4 | 2 | Code-confirmed |
-| 5 | Remove/contain the obsolete second terrain generation path | 4 | 2 | Code-confirmed |
-| 6 | Reduce biome-generation peak copies | 4 | 3 | Code-confirmed; needs large-map profiling |
-| 7 | Establish CI and an explicit release/publishing workflow | 4 | 2 | Confirmed repository gap |
-| 8 | Correct the package manifest and address registry advisories | 4 | 3 | Registry-confirmed; compatibility untested |
-| 9 | Separate character-sheet work from full-view reconstruction | 4 | 3 | Code-confirmed; needs interaction profiling |
-| 10 | Semantically validate campaign imports before commit | 3 | 3 | Confirmed |
-| 11 | Make room-discovery persistence recoverable with scene commits | 3 | 3 | Confirmed consistency risk |
-| 12 | Bound combat snapshot copying and use declared targeting revisions | 3 | 3 | Code-confirmed; needs scaling benchmark |
-| 13 | Add explicit interaction/sidebar listener teardown | 3 | 2 | Confirmed lifecycle gap |
-| 14 | Bound local-session and rate-limit retention | 3 | 2 | Confirmed process-memory risk |
-| 15 | Make failed model loads retryable | 3 | 1 | Confirmed |
-| 16 | Reduce camera/overview and terrain-signature micro-work | 2 | 2 | Code-confirmed; not benchmarked |
-| 17 | Clean lint warnings, stale shims and dead-code candidates | 2 | 2 | Confirmed warnings; dead exports unconfirmed |
-| 18 | Repair documentation links and reconcile branch/status facts | 2 | 1 | Confirmed |
+| Rank | Opportunity                                                        | Impact | Complexity | Confidence                                    |
+| ---- | ------------------------------------------------------------------ | -----: | ---------: | --------------------------------------------- |
+| 1    | Restore and enforce a green baseline                               |      5 |          3 | Confirmed                                     |
+| 2    | Separate source assets from an optimized runtime package           |      5 |          5 | Confirmed size; solution requires measurement |
+| 3    | Replace frame-driven full projection/layout work with invalidation |      4 |          4 | Code-confirmed; not profiled                  |
+| 4    | Batch terrain writes and notifications                             |      4 |          2 | Code-confirmed                                |
+| 5    | Remove/contain the obsolete second terrain generation path         |      4 |          2 | Code-confirmed                                |
+| 6    | Reduce biome-generation peak copies                                |      4 |          3 | Code-confirmed; needs large-map profiling     |
+| 7    | Establish CI and an explicit release/publishing workflow           |      4 |          2 | Confirmed repository gap                      |
+| 8    | Correct the package manifest and address registry advisories       |      4 |          3 | Registry-confirmed; compatibility untested    |
+| 9    | Separate character-sheet work from full-view reconstruction        |      4 |          3 | Code-confirmed; needs interaction profiling   |
+| 10   | Semantically validate campaign imports before commit               |      3 |          3 | Confirmed                                     |
+| 11   | Make room-discovery persistence recoverable with scene commits     |      3 |          3 | Confirmed consistency risk                    |
+| 12   | Bound combat snapshot copying and use declared targeting revisions |      3 |          3 | Code-confirmed; needs scaling benchmark       |
+| 13   | Add explicit interaction/sidebar listener teardown                 |      3 |          2 | Confirmed lifecycle gap                       |
+| 14   | Bound local-session and rate-limit retention                       |      3 |          2 | Confirmed process-memory risk                 |
+| 15   | Make failed model loads retryable                                  |      3 |          1 | Confirmed                                     |
+| 16   | Reduce camera/overview and terrain-signature micro-work            |      2 |          2 | Code-confirmed; not benchmarked               |
+| 17   | Clean lint warnings, stale shims and dead-code candidates          |      2 |          2 | Confirmed warnings; dead exports unconfirmed  |
+| 18   | Repair documentation links and reconcile branch/status facts       |      2 |          1 | Confirmed                                     |
 
 ## Owner-requested corrections and cloud-release crosswalk
 
@@ -153,19 +153,19 @@ behavior needs an exact reproduction and acceptance test even if a base module
 passes in isolation. It is not weaker evidence: it defines the required
 product contract.
 
-| Priority | Opportunity | Impact | Complexity | Evidence |
-| --- | --- | ---: | ---: | --- |
-| C1 | Resolve concurrent-player pending/input-response delay and visible discontinuity | 5 | 4 | Open `M5-06`; owner-observed click delay, out-of-sequence facing and DM reload |
-| C2 | Stop non-meaningful camera/selection interactions from creating saves or interrupting play | 5 | 3 | Confirmed in this checkout; cloud private-pilot fix recorded elsewhere |
-| C3 | Bind player camera/presentation to the selected assigned creature | 5 | 4 | Current player viewer allows independent OrbitControls and map browsing |
-| C4 | Reproduce cavern-to-castle generation failure as a full-campaign transition | 4 | 2 | Owner-reported; direct engine-only transition succeeded |
-| C5 | Add biome-specific generation choices before destructive Generate | 4 | 4 | Current Generate uses seed/structure/density only |
-| C6 | Make underground geometry grounded and visually distinct | 4 | 4 | Point-height placeable positioning and shared cave recipe |
-| C7 | Increase settlement/castle variability and scale use | 4 | 4 | Fixed default profiles, structure caps and template branches |
-| C8 | Make radial menus right-click-only and assignment-authorized | 4 | 2 | Current DM interaction intentionally dispatches on left-click |
-| C9 | Correct castle wall/tower joins and use intentional window rhythm | 4 | 4 | Separate wall/turret generators plus randomized facade composition |
-| C10 | Permit closer zoom without degrading large-map overview | 3 | 1 | Fixed max zoom and board-scaled framing |
-| C11 | Add 3D models for the remaining dice | 2 | 3 | Only the single d20 has a physical model/collider |
+| Priority | Opportunity                                                                                | Impact | Complexity | Evidence                                                                       |
+| -------- | ------------------------------------------------------------------------------------------ | -----: | ---------: | ------------------------------------------------------------------------------ |
+| C1       | Resolve concurrent-player pending/input-response delay and visible discontinuity           |      5 |          4 | Open `M5-06`; owner-observed click delay, out-of-sequence facing and DM reload |
+| C2       | Stop non-meaningful camera/selection interactions from creating saves or interrupting play |      5 |          3 | Confirmed in this checkout; cloud private-pilot fix recorded elsewhere         |
+| C3       | Bind player camera/presentation to the selected assigned creature                          |      5 |          4 | Current player viewer allows independent OrbitControls and map browsing        |
+| C4       | Reproduce cavern-to-castle generation failure as a full-campaign transition                |      4 |          2 | Owner-reported; direct engine-only transition succeeded                        |
+| C5       | Add biome-specific generation choices before destructive Generate                          |      4 |          4 | Current Generate uses seed/structure/density only                              |
+| C6       | Make underground geometry grounded and visually distinct                                   |      4 |          4 | Point-height placeable positioning and shared cave recipe                      |
+| C7       | Increase settlement/castle variability and scale use                                       |      4 |          4 | Fixed default profiles, structure caps and template branches                   |
+| C8       | Make radial menus right-click-only and assignment-authorized                               |      4 |          2 | Current DM interaction intentionally dispatches on left-click                  |
+| C9       | Correct castle wall/tower joins and use intentional window rhythm                          |      4 |          4 | Separate wall/turret generators plus randomized facade composition             |
+| C10      | Permit closer zoom without degrading large-map overview                                    |      3 |          1 | Fixed max zoom and board-scaled framing                                        |
+| C11      | Add 3D models for the remaining dice                                                       |      2 |          3 | Only the single d20 has a physical model/collider                              |
 
 ### Cloud checklist: remaining release blockers
 
@@ -474,12 +474,12 @@ coverage and preserve the current visual behavior.
 The tracked asset payload is 502,116,584 bytes across 1,144 files. The main
 working tree contains:
 
-| Asset group | MiB |
-| --- | ---: |
-| Terrain models/textures/source | 320.6 |
+| Asset group                     |   MiB |
+| ------------------------------- | ----: |
+| Terrain models/textures/source  | 320.6 |
 | Animated character models/clips | 136.3 |
-| Resource/data packs | 15.4 |
-| Items, sprites and images | 6.6 |
+| Resource/data packs             |  15.4 |
+| Items, sprites and images       |   6.6 |
 
 The tracked migration inventory in
 [cloud-migration-preparation.md](../proposals/cloud-migration-preparation.md#tracked-asset-totals)
@@ -563,7 +563,7 @@ passing.
 [TerrainDataStore.set](../../src/terrain/TerrainDataStore.js#L29) assigns a cell
 and notifies all listeners. A committed edit in
 [TerrainEngine.js](../../src/terrain/TerrainEngine.js#L1042) calls `set` for each
-changed cell, then copies the full working grid into the base store. A  large
+changed cell, then copies the full working grid into the base store. A large
 brush or wall gesture therefore produces per-cell listener fan-out plus a
 full-grid copy as one logical edit.
 
@@ -606,12 +606,11 @@ apply and rollback phases.
 **Impact 4 / Complexity 2 / Code-confirmed**
 
 [ADR-0001](../adr/ADR-0001-terrain-engine-event-seam.md) requires one terrain
-state owner and a wiring-only coordinator. The live coordinator still has an
-internally retained generation path at
-[generation.js](../../src/coordinators/terrain-coordinator/internals/activation/generation.js#L61)
-that directly mutates `c.dataStore`. It appears to have no active production
-caller, while [TerrainEngine.js](../../src/terrain/TerrainEngine.js#L448)
-owns the active generation operation.
+state owner and a wiring-only coordinator. The live coordinator retained a
+duplicate generation path that directly mutated `c.dataStore` without an
+active production caller, while
+[TerrainEngine.js](../../src/terrain/TerrainEngine.js#L448) owned the active
+operation.
 
 **Risk:** an apparently harmless helper can reactivate duplicate state and undo
 the accepted ownership decision. The conflict is confirmed as stale code, not a
@@ -625,6 +624,12 @@ as wiring rather than extracting another pass-through facade.
 **Verification:** all generation entry points reach the authoritative engine;
 coordinator tests still validate only wiring; campaign capture/restore and live
 editing remain exact.
+
+**Resolved 2026-11-18:** production-reference tracing found that the old
+coordinator generation, activation, tile, brush and rendering modules were no
+longer imported. Those modules and their no-op-only tests were removed. The
+active flora generator moved under `src/terrain/flora/`, and engine picking stays
+covered through `TerrainInputHandlers`.
 
 ### 7. Establish CI and an explicit release workflow
 
@@ -882,17 +887,17 @@ Line count is an organizational signal, not a defect by itself. The following
 large files deserve seam-oriented review because their responsibilities span
 state, behavior and presentation:
 
-| Module | Lines |
-| --- | ---: |
-| `src/ui/styles.css` | 4,395 |
-| `src/ui/TerrainConstructionPanel.js` | 2,032 |
+| Module                                       | Lines |
+| -------------------------------------------- | ----: |
+| `src/ui/styles.css`                          | 4,395 |
+| `src/ui/TerrainConstructionPanel.js`         | 2,032 |
 | `src/ui/components/CharacterSheetContent.js` | 1,209 |
-| `src/terrain/BuildingModel.js` | 1,206 |
-| `src/scene/ThreeSceneManager.js` | 1,200 |
-| `src/entities/characters/CombatSession.js` | 1,198 |
-| `src/terrain/TerrainEngine.js` | 1,170 |
-| `src/ui/UIController.js` | 1,148 |
-| `src/scene/terrain/PlaceableMeshPool.js` | 1,099 |
+| `src/terrain/BuildingModel.js`               | 1,206 |
+| `src/scene/ThreeSceneManager.js`             | 1,200 |
+| `src/entities/characters/CombatSession.js`   | 1,198 |
+| `src/terrain/TerrainEngine.js`               | 1,170 |
+| `src/ui/UIController.js`                     | 1,148 |
+| `src/scene/terrain/PlaceableMeshPool.js`     | 1,099 |
 
 The project convention already permits `internals/` extraction for large
 classes. Prefer cohesive deep Modules with tests at the Interface rather than
