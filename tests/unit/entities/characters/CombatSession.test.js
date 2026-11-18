@@ -43,6 +43,30 @@ test('a saved combat session restores committed turn budgets and completed rolls
   expect(restored.status(restoredToken).attacksAvailable).toBe(0);
 });
 
+test('a small action checkpoints changed state without cloning unchanged effects', async () => {
+  session.startTurn(token);
+  const effect = Object.freeze({
+    id: 'persistent-area',
+    kind: 'point',
+    origin: Object.freeze({ x: 2, y: 0, z: 3 }),
+  });
+  session.effects = [effect];
+  let staged;
+  library.withCombatSnapshot = (factory, operation) => {
+    const result = operation();
+    staged = factory(library);
+    return Promise.resolve(result);
+  };
+
+  await session.useAction(token, 'dash');
+
+  expect(staged.effects).not.toBe(session.effects);
+  expect(staged.effects[0]).toBe(effect);
+  expect(staged._state(token)).not.toBe(session._state(token));
+  expect(session.effects).toEqual([effect]);
+  expect(session.status(token).movement.total).toBe(60);
+});
+
 test('manual combat shares one movement allowance across clicks and never resets it between moves', () => {
   expect(session.active).toBe(false);
   session.startTurn(token);

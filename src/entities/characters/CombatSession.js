@@ -734,7 +734,7 @@ export default class CombatSession {
           token,
           {
             ...state,
-            ...JSON.parse(JSON.stringify(this._actionSnapshot(state))),
+            ...this._actionSnapshot(state),
             recent: state.recent.map((entry) => bySequence.get(entry.sequence)),
             undo: [...state.undo],
           },
@@ -746,7 +746,7 @@ export default class CombatSession {
         histories,
         listeners: new Set(),
         scenePlacements,
-        effects: this.effects.map((effect) => JSON.parse(JSON.stringify(effect))),
+        effects: [...this.effects],
         _movementSnapshot: new Map(
           [...this.states].map(([token, state]) => [token, state.movementSpent])
         ),
