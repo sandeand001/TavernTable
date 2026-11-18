@@ -58,7 +58,7 @@ import {
 } from './game-manager/internals/tokenDrag.js';
 import { sync3DElevationScaling as sync3DElevationScalingImpl } from './game-manager/internals/elevation.js';
 
-import { logger, LOG_CATEGORY, LOG_LEVEL } from '../utils/logger/Logger.js';
+import { logger, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import {
   ErrorHandler,
   errorHandler,

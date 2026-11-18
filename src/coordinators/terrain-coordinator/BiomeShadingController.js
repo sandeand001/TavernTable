@@ -39,7 +39,7 @@ export class BiomeShadingController {
   // ── Base Tile Visibility ───────────────────────────────────────────
 
   /** Show or hide the base tile fills — no-op in 3D mode (mesh owns visuals). */
-  toggleBaseTileVisibility(_show) {
+  toggleBaseTileVisibility() {
     // 2D sprite tiles gone; Three.js mesh controls visibility.
   }
 

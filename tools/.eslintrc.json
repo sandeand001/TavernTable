@@ -8,12 +8,11 @@
     "ecmaVersion": "latest",
     "sourceType": "module"
   },
-  "globals": {
-  },
+  "globals": {},
   "rules": {
     // Style handled by Prettier; keep behavioral rules here
     "linebreak-style": "off",
-    "no-unused-vars": ["warn"],
+    "no-unused-vars": ["error"],
     "no-console": "off",
     "camelcase": "error",
     "prefer-const": "error",

@@ -22,7 +22,7 @@
 // ── Imports & Constants ────────────────────────────────────────
 import { TERRAIN_CONFIG } from '../terrain/TerrainConstants.js';
 import { getBiomeColorHex } from './BiomePalettes.js';
-import { clamp, lerp, hexFromRgb, hexToRgb, lerpColor } from '../../utils/color/ColorUtils.js';
+import { clamp, hexFromRgb, hexToRgb, lerpColor } from '../../utils/color/ColorUtils.js';
 
 const MIN_H = TERRAIN_CONFIG.MIN_HEIGHT ?? -5;
 const MAX_H = TERRAIN_CONFIG.MAX_HEIGHT ?? 5;

@@ -23,12 +23,12 @@ export class TileLifecycleController {
    * @param {number} x
    * @param {number} y
    */
-  findGridTilesToRemove(_x, _y) {
+  findGridTilesToRemove() {
     // 2D sprite tiles no longer exist; nothing to remove.
     return [];
   }
 
-  removeGridTilesSafely(_tilesToRemove, _x, _y) {
+  removeGridTilesSafely() {
     // No-op: sprite tiles gone in 3D mode.
   }
 
@@ -40,7 +40,7 @@ export class TileLifecycleController {
    * @param {number} y
    * @param {number} height
    */
-  createReplacementTile(_x, _y, _height) {
+  createReplacementTile() {
     throw new Error('createReplacementTile: 2D tile creation removed (3D mode)');
   }
 

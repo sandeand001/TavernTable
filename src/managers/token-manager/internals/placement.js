@@ -6,7 +6,7 @@ import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/err
 
 // ── Token Placement ────────────────────────────────────────────
 
-export function placeNewToken(c, gridX, gridY, gridContainer) {
+export function placeNewToken(c, gridX, gridY) {
   try {
     const hasBlockingPlaceable = (gx, gy) => {
       try {

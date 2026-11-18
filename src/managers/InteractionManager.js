@@ -832,10 +832,9 @@ export class InteractionManager {
 
   /**
    * Convert to local grid coordinates
-   * @param {Object} mouseCoords - Mouse coordinates
    * @returns {Object} Local coordinates
    */
-  convertToLocalCoordinates({ mouseX, mouseY }) {
+  convertToLocalCoordinates() {
     // gridContainer no longer exists in 3D mode; this 2D path is only reached
     // when the 3D pickGroundSync path in getGridCoordinatesFromClick already failed.
     // Return a sentinel that will produce an invalid grid position and be filtered out.

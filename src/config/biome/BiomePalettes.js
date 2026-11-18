@@ -827,15 +827,3 @@ export function getBiomeColorHex(biomeKey, height, x = 0, y = 0, opts = {}) {
   }
   return computePainterlyColor(biomeKey, height, x, y, opts).color;
 }
-
-function blendWithBiome(baseHex, biomeKey, height, weight = 0.6) {
-  const biomeHex = getBiomeHeightColor(biomeKey, height);
-  const a = hexToRgb(baseHex);
-  const b = hexToRgb(biomeHex);
-  const mixed = {
-    r: Math.round(lerp(a.r, b.r, weight)),
-    g: Math.round(lerp(a.g, b.g, weight)),
-    b: Math.round(lerp(a.b, b.b, weight)),
-  };
-  return rgbToHex(mixed);
-}

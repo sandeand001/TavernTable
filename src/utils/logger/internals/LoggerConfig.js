@@ -1,5 +1,5 @@
 import { LOG_LEVEL } from '../enums.js';
-import { normalizeLevelInput, isValidLogLevel } from './logUtils.js';
+import { normalizeLevelInput } from './logUtils.js';
 
 /**
  * Configuration class for logger behavior

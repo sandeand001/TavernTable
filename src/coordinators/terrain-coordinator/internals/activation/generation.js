@@ -52,10 +52,6 @@ export function logPlaceableInstancingState(c, stage = 'unknown') {
   }
 }
 
-function _tagPlants(_c) {
-  // No-op: terrainManager.placeables removed (ADR-0001)
-}
-
 // ── Public API ───────────────────────────────────────────────
 
 export function generateBiomeElevationIfFlat(c, biomeKey, options = {}) {
@@ -109,7 +105,6 @@ export function generateBiomeElevationIfFlat(c, biomeKey, options = {}) {
         biomeKey || (typeof window !== 'undefined' && window.selectedBiome),
         seed
       );
-      _tagPlants(c);
       logPlaceableInstancingState(c, 'post-populate:generateBiomeElevationIfFlat');
     } catch (_) {
       /* ignore flora errors */
