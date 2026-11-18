@@ -105,6 +105,30 @@ export class TerrainDataStore {
     }
   }
 
+  setMany(changes, { commit = false } = {}) {
+    if (!Array.isArray(changes)) throw new TypeError('Terrain changes must be an array');
+    let changed = false;
+    for (const change of changes) {
+      const { x, y, height } = change;
+      if (
+        Number.isInteger(x) &&
+        Number.isInteger(y) &&
+        y >= 0 &&
+        y < this.rows &&
+        x >= 0 &&
+        x < this.cols &&
+        Number.isFinite(height)
+      ) {
+        this.working[y][x] = height;
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    if (commit) this.base = this.working.map((row) => [...row]);
+    this._changed();
+    return true;
+  }
+
   applyWorkingToBase() {
     this.base = this.working.map((row) => [...row]);
     this._changed();

@@ -1120,8 +1120,10 @@ export class TerrainEngine {
 
   _commitChanges(changes, label, { history = true, allTiles = false, kind = 'edit' } = {}) {
     if (!changes.length) return false;
-    for (const { x, y, after } of changes) this._dataStore.set(x, y, after);
-    this._dataStore.applyWorkingToBase();
+    this._dataStore.setMany(
+      changes.map(({ x, y, after }) => ({ x, y, height: after })),
+      { commit: true }
+    );
     this.geometry.invalidate();
     if (history) {
       this._undo.push({ label, changes });

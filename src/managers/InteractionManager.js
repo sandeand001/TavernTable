@@ -92,6 +92,7 @@ export class InteractionManager {
     this._pendingRadialContext = null;
     this._radialDragThresholdSq = 81; // ~9px of pointer travel cancels radial capture
     this._radialProjectVector = null;
+    this._listenerDisposers = [];
   }
 
   // ── Lifecycle ─────────────────────────────────────────────
@@ -99,10 +100,34 @@ export class InteractionManager {
    * Set up all grid interactions
    */
   setupGridInteraction() {
+    this._detachGridInteractionListeners();
     this.setupContextMenu();
     this.setupMouseInteractions();
     this.setupKeyboardInteractions();
     this.setupZoomInteraction();
+  }
+
+  dispose() {
+    this._detachGridInteractionListeners();
+    this._pendingRadialContext = null;
+  }
+
+  _listen(target, type, listener, options) {
+    if (!target?.addEventListener) return;
+    target.addEventListener(type, listener, options);
+    this._listenerDisposers.push(() => target.removeEventListener(type, listener, options));
+  }
+
+  _detachGridInteractionListeners() {
+    if (this.isRotating3D) this.stop3DRotation();
+    releasePanKey(this);
+    this._removeGlobalDragListeners();
+    this._facingGesture?.detach();
+    for (const dispose of this._listenerDisposers.splice(0).reverse()) dispose();
+    this._keyboardInteractionsAttached = false;
+    this._panPointerCaptureAttached = false;
+    this._savedPlacementCanvas = null;
+    this._facingGesture = null;
   }
 
   // ── Event Setup ─────────────────────────────────────────────
@@ -110,7 +135,7 @@ export class InteractionManager {
    * Disable browser context menu
    */
   setupContextMenu() {
-    this.gameManager.getEventCanvas().addEventListener('contextmenu', (event) => {
+    this._listen(this.gameManager.getEventCanvas(), 'contextmenu', (event) => {
       event.preventDefault();
     });
   }
@@ -141,7 +166,7 @@ export class InteractionManager {
       this.handleLeftClick(event);
     };
     this._savedPlacementCanvas = view;
-    view.addEventListener('mousedown', this._savedPlacementPointerDown, true);
+    this._listen(view, 'mousedown', this._savedPlacementPointerDown, true);
     this._facingGesture = new TokenFacingGesture(this).attach(view);
     this.setupMouseDown();
     this.setupMouseMove();
@@ -163,10 +188,11 @@ export class InteractionManager {
           event.stopPropagation();
       };
       // Claim map drags before terrain/build handlers, retaining compatibility mouse events.
-      document.addEventListener('pointerdown', capturePan, true);
-      document.addEventListener('mousedown', capturePan, true);
+      this._listen(document, 'pointerdown', capturePan, true);
+      this._listen(document, 'mousedown', capturePan, true);
     }
-    view.addEventListener(
+    this._listen(
+      view,
       'mousedown',
       (event) => {
         if (event.button === 0 && this.isSpacePressed) {
@@ -198,7 +224,7 @@ export class InteractionManager {
    */
   setupMouseMove() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener('mousemove', (event) => {
+    this._listen(view, 'mousemove', (event) => {
       if (this._pendingRadialContext) {
         this._pendingRadialContext.lastScreenX = event.clientX;
         this._pendingRadialContext.lastScreenY = event.clientY;
@@ -229,7 +255,7 @@ export class InteractionManager {
    */
   setupMouseUp() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener('mouseup', (event) => {
+    this._listen(view, 'mouseup', (event) => {
       if (event.button === 2) {
         if (this._pendingRadialContext) {
           this._dispatchRadialMenuRequest(this._pendingRadialContext);
@@ -261,7 +287,7 @@ export class InteractionManager {
    */
   setupMouseLeave() {
     const view = this.gameManager.getEventCanvas();
-    view.addEventListener('mouseleave', () => {
+    this._listen(view, 'mouseleave', () => {
       if (this.isDragging || this.isRotating3D) {
         this._ensureGlobalDragListeners();
       }
@@ -274,7 +300,7 @@ export class InteractionManager {
   setupKeyboardInteractions() {
     if (this._keyboardInteractionsAttached) return;
     this._keyboardInteractionsAttached = true;
-    document.addEventListener('keydown', (event) => {
+    this._listen(document, 'keydown', (event) => {
       if (handlePanKeyDown(this, event)) {
         event.preventDefault();
         return;
@@ -289,7 +315,7 @@ export class InteractionManager {
       }
     });
 
-    document.addEventListener('keyup', (event) => {
+    this._listen(document, 'keyup', (event) => {
       if (event.code === 'Space') this.isSpaceKeyHeld = false;
       if (event.code === 'Space' && this.isSpacePressed) {
         releasePanKey(this);
@@ -305,11 +331,11 @@ export class InteractionManager {
         event.preventDefault();
       }
     });
-    window.addEventListener('blur', () => releasePanKey(this));
-    document.addEventListener('visibilitychange', () => {
+    this._listen(window, 'blur', () => releasePanKey(this));
+    this._listen(document, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') releasePanKey(this);
     });
-    document.addEventListener('focusin', (event) => {
+    this._listen(document, 'focusin', (event) => {
       if (this.isSpacePressed && this._shouldIgnoreKeyTarget(event.target)) {
         const held = this.isSpaceKeyHeld;
         releasePanKey(this);
@@ -322,7 +348,7 @@ export class InteractionManager {
    * Set up zoom interaction handlers
    */
   setupZoomInteraction() {
-    this.gameManager.getEventCanvas().addEventListener('wheel', (event) => {
+    this._listen(this.gameManager.getEventCanvas(), 'wheel', (event) => {
       event.preventDefault();
       this.handleZoomWheel(event);
     });

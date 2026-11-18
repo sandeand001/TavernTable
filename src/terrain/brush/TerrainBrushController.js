@@ -101,10 +101,14 @@ export class TerrainBrushController {
 
   applyAt(gridX, gridY) {
     const footprint = this.getFootprintCells(gridX, gridY);
-    let modifiedCount = 0;
+    const changes = [];
     for (const cell of footprint) {
-      if (this._modifyCell(cell.x, cell.y)) modifiedCount += 1;
+      const current = this.dataStore.get(cell.x, cell.y);
+      const height = this.getPreviewHeight(cell.x, cell.y, current);
+      if (height !== current) changes.push({ x: cell.x, y: cell.y, height });
     }
+    this.dataStore.setMany(changes);
+    const modifiedCount = changes.length;
     // Aggregate logging instead of per-cell to reduce overhead (perf optimization)
     if (modifiedCount > 0) {
       // Detailed per-cell tracing can be re-enabled by setting global/window.DEBUG_TERRAIN_TRACE
@@ -120,18 +124,6 @@ export class TerrainBrushController {
       });
     }
     return modifiedCount > 0; // signal to callers whether a terrain change occurred
-  }
-
-  // ── Cell Modification ─────────────────────────────────
-  _modifyCell(x, y) {
-    if (x < 0 || y < 0 || y >= this.dataStore.rows || x >= this.dataStore.cols) return;
-    const current = this.dataStore.get(x, y);
-    const next = this.getPreviewHeight(x, y);
-    if (next !== current) {
-      this.dataStore.set(x, y, next);
-      return true; // signal modification took place
-    }
-    return false;
   }
 
   _getBounds() {

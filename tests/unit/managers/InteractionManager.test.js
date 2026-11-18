@@ -1,5 +1,42 @@
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
 
+test('disposing an interaction manager removes its input lifecycle listeners', () => {
+  const canvas = document.createElement('canvas');
+  const manager = new InteractionManager({
+    getEventCanvas: () => canvas,
+  });
+  manager.handleLeftClick = jest.fn();
+  manager.setupGridInteraction();
+
+  canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+  expect(manager.handleLeftClick).toHaveBeenCalledTimes(1);
+  document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+  expect(manager.getIsSpacePressed()).toBe(true);
+
+  manager.dispose();
+  document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+  canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+  expect(manager.getIsSpacePressed()).toBe(false);
+  expect(manager.handleLeftClick).toHaveBeenCalledTimes(1);
+});
+
+test('replacing the interaction canvas leaves listeners only on the new canvas', () => {
+  const first = document.createElement('canvas');
+  const second = document.createElement('canvas');
+  let canvas = first;
+  const manager = new InteractionManager({ getEventCanvas: () => canvas });
+  manager.handleLeftClick = jest.fn();
+  manager.setupGridInteraction();
+
+  canvas = second;
+  manager.setupGridInteraction();
+  first.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+  second.dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true }));
+
+  expect(manager.handleLeftClick).toHaveBeenCalledTimes(1);
+  manager.dispose();
+});
+
 describe('InteractionManager.getGridCoordinatesFromClick', () => {
   test.each([false, true])(
     'left-clicking a creature opens its radial menu; already selected=%s',
