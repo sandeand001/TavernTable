@@ -43,4 +43,37 @@ describe('ThreeSceneManager metrics', () => {
       expect(stats.degraded).toBe(false);
     }
   });
+
+  test('coalesces per-frame metrics exports while publishing the first sample immediately', () => {
+    const manager = new ThreeSceneManager({});
+    manager.renderer = { render: jest.fn() };
+    manager.camera = {};
+    const frames = [];
+    const requestFrame = jest
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    const stats = jest.spyOn(manager, 'getRenderStats');
+    const previousMetrics = window.__TT_METRICS__;
+    window.__TT_METRICS__ = {};
+    try {
+      manager._loop();
+      const advance = (timestamp) => frames.shift()(timestamp);
+      for (let timestamp = 0; timestamp < 500; timestamp += 16) advance(timestamp);
+
+      expect(stats).toHaveBeenCalledTimes(1);
+      expect(window.__TT_METRICS__.three.frameCount).toBe(1);
+
+      advance(500);
+
+      expect(stats).toHaveBeenCalledTimes(2);
+      expect(window.__TT_METRICS__.three.frameCount).toBeGreaterThan(1);
+    } finally {
+      requestFrame.mockRestore();
+      if (previousMetrics === undefined) delete window.__TT_METRICS__;
+      else window.__TT_METRICS__ = previousMetrics;
+    }
+  });
 });

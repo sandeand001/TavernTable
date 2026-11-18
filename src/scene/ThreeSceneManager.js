@@ -11,6 +11,8 @@ import { installCameraMethods } from './camera/CameraSystem.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { errorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 
+const METRICS_SAMPLE_INTERVAL_MS = 500;
+
 export class ThreeSceneManager {
   // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -104,6 +106,8 @@ export class ThreeSceneManager {
       accumulatedMs: 0,
       lastFrameTs: null,
     };
+    this._renderStatsSnapshot = null;
+    this._renderStatsSnapshotAt = null;
     this._loggedFirstFrame = false;
     this._degradeNotified = false;
     this._graphicsInfo = {
@@ -483,6 +487,25 @@ export class ThreeSceneManager {
       averageFrameMs: Number.isFinite(avg) ? +avg.toFixed(3) : 0,
       graphics: { ...this._graphicsInfo },
     };
+  }
+
+  _updateRenderMetrics(timestamp) {
+    const elapsed =
+      this._renderStatsSnapshotAt === null ? Infinity : timestamp - this._renderStatsSnapshotAt;
+    if (this._renderStatsSnapshot && elapsed >= 0 && elapsed < METRICS_SAMPLE_INTERVAL_MS) {
+      return this._renderStatsSnapshot;
+    }
+    this._renderStatsSnapshot = this.getRenderStats();
+    this._renderStatsSnapshotAt = timestamp;
+    if (typeof window !== 'undefined') {
+      try {
+        window.__TT_METRICS__ = window.__TT_METRICS__ || {};
+        window.__TT_METRICS__.three = this._renderStatsSnapshot;
+      } catch (_) {
+        /* noop */
+      }
+    }
+    return this._renderStatsSnapshot;
   }
 
   getGraphicsStatus() {
@@ -1030,14 +1053,7 @@ export class ThreeSceneManager {
           /* noop */
         }
       }
-      if (typeof window !== 'undefined') {
-        try {
-          window.__TT_METRICS__ = window.__TT_METRICS__ || {};
-          window.__TT_METRICS__.three = this.getRenderStats();
-        } catch (_) {
-          /* noop */
-        }
-      }
+      this._updateRenderMetrics(ts);
       this._animationHandle = requestAnimationFrame(step);
     };
     this._animationHandle = requestAnimationFrame(step);
@@ -1066,12 +1082,13 @@ export class ThreeSceneManager {
     } catch (_) {
       /* noop */
     }
-    const updateOverlay = () => {
+    const updateOverlay = (ts) => {
       if (!this.initialized) return;
       try {
-        const stats = this.getRenderStats();
+        const previousStats = this._renderStatsSnapshot;
+        const stats = this._updateRenderMetrics(ts);
         const place = (window.__TT_METRICS__ && window.__TT_METRICS__.placeables) || {};
-        if (overlay) {
+        if (overlay && (stats !== previousStats || !overlay.textContent)) {
           overlay.textContent = `3D frames:${stats.frameCount} avg:${stats.averageFrameMs.toFixed(2)}ms graphics:${stats.graphics.mode} placeableGroups:${place.groups || 0} instances:${place.liveInstances || 0}`;
         }
       } catch (_) {
