@@ -992,8 +992,10 @@ many helpers that merely expose the parent's entire `this` state.
 test-only terrain brush descriptor were traced to zero production or dynamic
 entry points and removed. The active biome test now asserts only the palette
 used by `TerrainMaterialFactory` and `TerrainRebuilder`. The focused terrain and
-scene regression set passed 70 suites / 963 tests; current docs no longer link
-the removed container helper.
+scene regression set passed 70 suites / 963 tests. The self-only
+`TerrainValidation` implementation/test pair was also removed, while the useful
+layered-volume proof fixture moved to `tests/helpers/`. Current docs no longer
+link the removed compatibility helpers.
 
 ### Not yet confirmed dead code
 

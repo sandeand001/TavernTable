@@ -1,5 +1,5 @@
 import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
-import { createLayeredExamples } from '../../../src/terrain/LayeredExamples.js';
+import { createLayeredExamples } from '../../helpers/layeredExamples.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 
 test('the proof map has a reachable upper balcony, bridge underpass and hollow cave', () => {

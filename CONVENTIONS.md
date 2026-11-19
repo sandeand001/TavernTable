@@ -208,8 +208,7 @@ Before adding a new function, search for existing implementations:
 
 - Coordinate conversion → [CoordinateUtils](./src/utils/coordinates/CoordinateUtils.js)
 - Color manipulation → [ColorUtils](./src/utils/color/ColorUtils.js)
-- Validation → [Validation](./src/utils/Validation.js) (general) or
-  [TerrainValidation](./src/utils/terrain/TerrainValidation.js) (terrain-specific)
+- Validation → [Validation](./src/utils/Validation.js)
 - Error handling → [ErrorHandler](./src/utils/error/ErrorHandler.js)
 - Logging → [Logger](./src/utils/logger/Logger.js)
 
