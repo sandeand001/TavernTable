@@ -533,6 +533,14 @@ again; changed old files remain physical, and malformed rewrite targets fail
 verification. This preserves old immutable URLs without duplicating unchanged
 model, animation or texture payloads.
 
+**Conversion probe 2026-11-19:** lossless PNG repacking of the 17 textures the
+active OBJ post-processor can request preserved decoded RGBA exactly but reduced
+27,259,957 bytes to 25,759,858 bytes (1,500,099 bytes / 5.5%). A lossless-WebP
+probe did not preserve decoded RGBA for `Flowers.png`. Given the small
+byte-identical PNG gain and a failed exact-pixel cross-format check, build-time
+format conversion is intentionally not enabled without an owner-approved
+rendered-parity policy and broader model/animation gates.
+
 ### 3. Replace frame-driven full projection/layout work with invalidation
 
 **Impact 4 / Complexity 4 / Code-confirmed; not production-profiled**
