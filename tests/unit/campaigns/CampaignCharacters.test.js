@@ -40,6 +40,46 @@ test('authorized display images update sheets without entering canonical edits o
   }
 });
 
+test('scene presentations are sent only while the store has live native-motion capability', async () => {
+  const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
+  try {
+    const campaign = await store.create({ name: 'Native motion readiness', ruleset: '2014' });
+    const state = await store.readCharacters(campaign.id);
+    const changes = [];
+    let nativeMotion = false;
+    const cloud = {
+      capabilities: { roomVisits: true, nativeMotion: true },
+      wantsSharedPresentations: (id) => id === campaign.id && nativeMotion,
+      readScene: (id) => store.readScene(id),
+      commitScene: async (_id, change) => {
+        changes.push(change);
+        return {
+          revision: change.revision + 1,
+          savedAt: new Date().toISOString(),
+        };
+      },
+    };
+    const library = new CampaignCharacters({ ...state, store: cloud, catalog });
+
+    await library.saveScene(() => ({
+      scene: { version: 3 },
+      value: '{"version":3,"frame":"unbound"}',
+      presentations: [{ fixture: 'not live' }],
+    }));
+    expect(changes[0]).not.toHaveProperty('presentations');
+
+    nativeMotion = true;
+    await library.saveScene(() => ({
+      scene: { version: 3 },
+      value: '{"version":3,"frame":"live"}',
+      presentations: [{ fixture: 'live' }],
+    }));
+    expect(changes[1].presentations).toEqual([{ fixture: 'live' }]);
+  } finally {
+    store.close();
+  }
+});
+
 test('large portrait and artwork data commit atomically and survive character and campaign backups', async () => {
   const store = new CampaignStore({ indexedDB: testIndexedDB(), packs });
   try {

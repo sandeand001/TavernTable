@@ -72,13 +72,15 @@ export function campaignCharacterRoster(campaign, catalog, records) {
     .map(({ id, name }) => ({ id, name }));
 }
 
-function sceneCommandMetadata(store, captured) {
+function sceneCommandMetadata(store, captured, campaignId) {
   return {
     ...(captured.scene?.version === 3 && store?.capabilities?.roomVisits !== false
       ? { trackRoomVisits: true }
       : {}),
     ...(captured.presentations?.length && store?.capabilities?.nativeMotion !== false
-      ? { presentations: captured.presentations }
+      ? (store.wantsSharedPresentations?.(campaignId) ?? true) === true
+        ? { presentations: captured.presentations }
+        : {}
       : {}),
   };
 }
@@ -355,7 +357,7 @@ export default class CampaignCharacters {
     this.pendingScenes++;
     const committed = this.queue.then(async () => {
       const captured = await capture(this.engine);
-      const metadata = sceneCommandMetadata(this.store, captured);
+      const metadata = sceneCommandMetadata(this.store, captured, this.campaign.id);
       if (captured.value === this.savedScene && !metadata.presentations?.length) {
         const current = await this.store.readScene(this.campaign.id);
         if (
@@ -433,7 +435,7 @@ export default class CampaignCharacters {
               scene: {
                 revision: this.sceneRevision,
                 value: captured.value,
-                ...sceneCommandMetadata(this.store, captured),
+                ...sceneCommandMetadata(this.store, captured, this.campaign.id),
               },
             }
           : {}),
