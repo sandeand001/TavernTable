@@ -36,6 +36,7 @@ export class PlaceableMeshPool {
     this._metadata = new Map();
     this._three = null; // cached namespace once loaded
     this._metrics = { groups: 0, instances: 0, capacityExpansions: 0 };
+    this._revision = 0;
     this._initialCapacity = Math.max(1, initialCapacity);
     this._maxCapacity = Math.max(this._initialCapacity, maxCapacity);
     // Preview (hover) single-mesh indicator state (experimental)
@@ -429,6 +430,7 @@ export class PlaceableMeshPool {
       position,
     });
     this._metadata.set(key, metaGroup);
+    this._revision += 1;
     // Update metrics to reflect new live instance
     this._updateMetrics();
     gm.sceneAutosave?.changed('terrain placement');
@@ -457,6 +459,7 @@ export class PlaceableMeshPool {
     }
     group.freeIndices.push(handle.index);
     metaGroup.delete(handle.index);
+    this._revision += 1;
     const hidden = new this._three.Object3D();
     hidden.scale.set(0, 0, 0);
     hidden.updateMatrix();

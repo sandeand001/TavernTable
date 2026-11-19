@@ -194,6 +194,24 @@ test('idle floor projection frames reuse meshes without copying map boards', asy
   }
 });
 
+test('stationary token frames skip repeated projection reconciliation and line of sight', async () => {
+  const { gm, adapter } = fixture();
+  try {
+    await adapter.syncMapProjections();
+    adapter.attach();
+    await adapter.syncMapProjections();
+    const lineOfSight = jest.spyOn(gm.campaignWorld, 'hasLineOfSight');
+    for (let frame = 0; frame < 30; frame++) gm.advanceFrame();
+    await Promise.resolve();
+    expect(lineOfSight).not.toHaveBeenCalled();
+  } finally {
+    gm.threeSceneManager.removeAnimationCallback(adapter._frameCallback);
+    for (const token of [...gm.placedTokens]) adapter.onTokenRemoved(token);
+    adapter.disposeMapProjectionTerrain();
+    adapter.disposeMovementRange();
+  }
+});
+
 test('foreign curved support context keeps valid triangles and the actual curved outline', async () => {
   const { gm, adapter, window } = outsideFixture();
   const saved = gm.campaignWorld.save();

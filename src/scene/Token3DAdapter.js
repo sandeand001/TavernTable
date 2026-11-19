@@ -162,7 +162,7 @@ export class Token3DAdapter {
           }
 
           try {
-            void this.syncMapProjections().catch((error) => {
+            void this.requestMapProjectionSync().catch((error) => {
               GameErrors.rendering(error, {
                 component: 'MapProjections',
                 operation: 'loadCreature',

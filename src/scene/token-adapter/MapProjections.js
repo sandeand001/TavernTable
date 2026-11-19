@@ -1,5 +1,66 @@
 import MapProjectionTerrain from './MapProjectionTerrain.js';
 
+const referenceIds = new WeakMap();
+let nextReferenceId = 1;
+
+function referenceId(value) {
+  if (!value || typeof value !== 'object') return 0;
+  if (!referenceIds.has(value)) referenceIds.set(value, nextReferenceId++);
+  return referenceIds.get(value);
+}
+
+function projectionStateKey(adapter) {
+  const gm = adapter.gameManager;
+  const world = gm?.campaignWorld;
+  if (!world || !gm?.threeSceneManager?.scene)
+    return JSON.stringify([
+      'unavailable',
+      referenceId(world),
+      referenceId(gm?.threeSceneManager?.scene),
+    ]);
+  const tokens = gm?.placedTokens || [];
+  const presentation = gm?.publicPlayerPresentation;
+  const terrain = gm?.terrainEngine;
+  const playerMaps = gm?.playerVisibleMapIds ? [...gm.playerVisibleMapIds].sort() : [];
+  const tokenState = tokens.map((token) => [
+    referenceId(token),
+    token.id,
+    token.mapId,
+    token.world?.x,
+    token.world?.y,
+    token.world?.z,
+    token.facingAngle,
+    referenceId(token.__threeMesh),
+    referenceId(token.openingHold),
+    referenceId(token.surfaceHold),
+    getTokenConditions(token).join(','),
+    presentation?.hasActor(token.id) === true,
+  ]);
+  return JSON.stringify([
+    referenceId(world),
+    referenceId(gm?.threeSceneManager?.scene),
+    world?.mapRevision,
+    world?.hasFloorMaps,
+    gm?.campaignMapId,
+    gm?.campaignView?.mapId,
+    gm?.campaignView?.focusTokenId,
+    gm?.campaignMapTransition === true,
+    gm?.campaignTraversalAnimating === true,
+    gm?.campaignMapFailure === true,
+    gm?.sceneAutosave?.ready !== false,
+    terrain?.cavern?.version ?? 0,
+    terrain?.geometry?.revision ?? 0,
+    terrain?.geometry?.terrainThicknessFeet,
+    terrain?.visibleLayers?.join(',') ?? null,
+    gm?.placeableMeshPool?._revision ?? 0,
+    referenceId(presentation),
+    presentation?.generation,
+    presentation?.revision,
+    playerMaps,
+    tokenState,
+  ]);
+}
+
 function clearMapProjectionTerrain() {
   this._mapProjectionTerrain?.clear();
 }
@@ -51,7 +112,7 @@ function isTokenProjectionVisible(token) {
   return !this.isTokenProjection(token) || this._mapProjectionVisible?.has(token) === true;
 }
 
-async function syncMapProjections() {
+async function reconcileMapProjections() {
   const gm = this.gameManager;
   if (!gm.campaignWorld || !gm.threeSceneManager?.scene) {
     this.disposeMapProjectionTerrain();
@@ -117,12 +178,65 @@ async function syncMapProjections() {
   this.syncMapProjectionTerrain();
 }
 
+async function drainMapProjectionSync(adapter) {
+  do {
+    adapter._mapProjectionSyncDirty = false;
+    adapter._mapProjectionSyncForce = false;
+    const key = projectionStateKey(adapter);
+    adapter._mapProjectionSyncActiveKey = key;
+    await reconcileMapProjections.call(adapter);
+    adapter._mapProjectionSyncKey = key;
+  } while (
+    adapter._mapProjectionSyncForce ||
+    adapter._mapProjectionSyncDirty ||
+    projectionStateKey(adapter) !== adapter._mapProjectionSyncKey
+  );
+}
+
+function queueMapProjectionSync({ force = false } = {}) {
+  const key = projectionStateKey(this);
+  if (this._mapProjectionSyncPromise) {
+    if (force) this._mapProjectionSyncForce = true;
+    if (key !== this._mapProjectionSyncActiveKey) this._mapProjectionSyncDirty = true;
+    return this._mapProjectionSyncPromise;
+  }
+  if (!force && key === this._mapProjectionSyncKey) return Promise.resolve(false);
+  this._mapProjectionSyncDirty = true;
+  this._mapProjectionSyncForce = force;
+  const pending = drainMapProjectionSync(this);
+  this._mapProjectionSyncPromise = pending;
+  pending.then(
+    () => {
+      if (this._mapProjectionSyncPromise === pending) {
+        this._mapProjectionSyncPromise = null;
+        this._mapProjectionSyncActiveKey = null;
+      }
+    },
+    () => {
+      if (this._mapProjectionSyncPromise === pending) {
+        this._mapProjectionSyncPromise = null;
+        this._mapProjectionSyncActiveKey = null;
+      }
+    }
+  );
+  return pending;
+}
+
+function requestMapProjectionSync() {
+  return queueMapProjectionSync.call(this);
+}
+
+function syncMapProjections() {
+  return queueMapProjectionSync.call(this, { force: true });
+}
+
 export function installMapProjectionMethods(prototype) {
   prototype.clearMapProjectionTerrain = clearMapProjectionTerrain;
   prototype.disposeMapProjectionTerrain = disposeMapProjectionTerrain;
   prototype.syncMapProjectionTerrain = syncMapProjectionTerrain;
   prototype.isTokenProjection = isTokenProjection;
   prototype.isTokenProjectionVisible = isTokenProjectionVisible;
+  prototype.requestMapProjectionSync = requestMapProjectionSync;
   prototype.syncMapProjections = syncMapProjections;
 }
 import { getTokenConditions } from '../../entities/creatures/TokenMovement.js';

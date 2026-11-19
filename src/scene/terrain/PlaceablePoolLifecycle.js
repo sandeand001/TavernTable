@@ -68,6 +68,7 @@ export function hidePreview(pool) {
 
 export function dispose(pool) {
   pool._clearEpoch += 1;
+  pool._revision = (pool._revision || 0) + 1;
   pool._pendingGroups.clear();
   for (const g of pool._groups.values()) {
     try {
@@ -110,6 +111,7 @@ export function clearAll(pool) {
     // Increment epoch so any in-flight async addPlaceable operations originating from the
     // previous generation abort on resume, preventing stale tree reappearance.
     pool._clearEpoch += 1;
+    pool._revision = (pool._revision || 0) + 1;
     pool._pendingGroups.clear();
     logMeshPoolDebug('[PlaceableMeshPool] clearAll begin', {
       epoch: pool._clearEpoch,
@@ -224,6 +226,7 @@ export function purgeAll(pool) {
     pool._metadata.clear();
     pool._updateMetrics();
     pool._clearEpoch += 1; // invalidate any in-flight add promises
+    pool._revision = (pool._revision || 0) + 1;
     pool._pendingGroups.clear();
     // Sweep scene for any orphaned instanced meshes we previously created (defensive)
     try {
