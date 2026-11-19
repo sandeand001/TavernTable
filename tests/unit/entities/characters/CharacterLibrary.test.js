@@ -162,6 +162,64 @@ test('2014 derived modifiers, skills, saves and spell DC follow abilities and le
   });
 });
 
+test('derived stats can reuse a parsed character snapshot without rereading storage', () => {
+  const storage = {
+    get length() {
+      return localStorage.length;
+    },
+    getItem: jest.fn((key) => localStorage.getItem(key)),
+    setItem: (key, value) => localStorage.setItem(key, value),
+    removeItem: (key) => localStorage.removeItem(key),
+    key: (index) => localStorage.key(index),
+  };
+  const library = new CharacterLibrary({
+    ruleset: '2014',
+    catalog: snapshot.entries,
+    classes: snapshot.classes,
+    storage,
+  });
+  const id = library.create('Mira');
+  library.edit(id, { classId: 'wizard', abilities: { intelligence: 16 } });
+  const character = library.get(id);
+  storage.getItem.mockClear();
+
+  expect(library.stats(character)).toMatchObject({
+    abilityModifiers: { intelligence: 3 },
+    spellSaveDC: 13,
+  });
+  expect(storage.getItem).not.toHaveBeenCalled();
+});
+
+test('spell details reuse a parsed character and precomputed stats without rereading storage', () => {
+  const storage = {
+    get length() {
+      return localStorage.length;
+    },
+    getItem: jest.fn((key) => localStorage.getItem(key)),
+    setItem: (key, value) => localStorage.setItem(key, value),
+    removeItem: (key) => localStorage.removeItem(key),
+    key: (index) => localStorage.key(index),
+  };
+  const library = new CharacterLibrary({
+    ruleset: '2014',
+    catalog: snapshot.entries,
+    classes: snapshot.classes,
+    storage,
+  });
+  const id = library.create('Mira');
+  library.edit(id, { classId: 'wizard', abilities: { intelligence: 16 } });
+  const fireball = library.add(id, 'spell:fireball');
+  const character = library.get(id);
+  const stats = library.stats(character);
+  storage.getItem.mockClear();
+
+  expect(library.spell(character, fireball, 3, stats)).toMatchObject({
+    saveDC: 13,
+    damage: [{ notation: '8d6', type: 'Fire' }],
+  });
+  expect(storage.getItem).not.toHaveBeenCalled();
+});
+
 test('equipped magical weapons derive attacks and damage from ability, proficiency and enhancement', () => {
   const library = new CharacterLibrary({
     ruleset: '2014',

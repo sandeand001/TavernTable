@@ -2,9 +2,10 @@ import { movementSpeed } from '../../../rules/flight.js';
 import { getTokenTravelMode } from '../../creatures/TokenMovement.js';
 
 // -- Voluntary recovery --
-export function standingAvailability(session, token) {
-  const character = session._character(token);
-  const speed = movementSpeed(character, getTokenTravelMode(token));
+export function standingAvailability(session, token, characterSnapshot = null) {
+  const character = session._characterFor(token, characterSnapshot);
+  const travelMode = getTokenTravelMode(token);
+  const speed = movementSpeed(character, travelMode);
   const cost = session.library.rules.standingCost(speed);
   let reason = '';
   if (!(character.conditions || []).includes('prone')) reason = 'This creature is not prone';
@@ -17,8 +18,9 @@ export function standingAvailability(session, token) {
   else if (session.active && session.activeToken !== token)
     reason = "Stand up during this creature's turn";
   else if (
-    (session.active ? session.movementAllowance(token) : session.freeMovementAllowance(token)) <
-    cost
+    (session.active
+      ? session.movementAllowance(token, travelMode, character)
+      : session.freeMovementAllowance(token, travelMode, character)) < cost
   )
     reason = `Standing up requires ${cost} feet of remaining movement`;
   return { allowed: reason === '', reason, cost, maxSpeed: speed };

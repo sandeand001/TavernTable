@@ -177,6 +177,9 @@ export default class CampaignCharacters {
   list() {
     return this.engine.list();
   }
+  listVersion() {
+    return this.engine.listVersion();
+  }
   get(id) {
     const character = this.engine.get(id);
     const images = this.displayImages?.(id) ?? null;

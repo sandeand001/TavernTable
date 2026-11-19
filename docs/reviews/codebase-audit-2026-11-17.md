@@ -734,6 +734,18 @@ substantive modules; line count alone is not a reason to split them.
 dispose, replace and repeated-event tests; stable canvas and global callback
 counts after repeated controller creation.
 
+**Resolved 2026-11-19:** interaction and sidebar lifecycle teardown was fixed in
+earlier cleanup commits. The character sheet now caches roster membership and
+unchanged identity, core, equipment, spell and notes markup; one validated
+character snapshot feeds movement, conditions, stats, spell, rest, custom-action
+and history consumers. Live combat and player-authoritative data remain
+recalculated on each refresh, and local/campaign/player library adapters expose
+the same invalidation interface. A settled sheet refresh now performs one
+persisted-character read, no saved-character rescan and no redundant derived-stat
+calculation while preserving the focused DOM control. The focused character/UI
+set passed 68 suites and 759 tests, followed by the full **308-suite / 4,094-test**
+baseline; lint, layering and repository formatting checks also pass.
+
 ### 10. Semantically validate campaign imports before commit
 
 **Impact 3 / Complexity 3 / Confirmed**

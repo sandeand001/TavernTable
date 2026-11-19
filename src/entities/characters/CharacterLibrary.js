@@ -77,6 +77,15 @@ export class CharacterLibrary {
     return characters.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   }
 
+  listVersion() {
+    const keys = [];
+    for (let index = 0; index < this.storage.length; index++) {
+      const key = this.storage.key(index);
+      if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+    }
+    return keys.sort().join('\n');
+  }
+
   export(id) {
     return JSON.stringify(
       {
@@ -331,8 +340,9 @@ export class CharacterLibrary {
     this._save(character);
   }
 
-  spell(id, spellId, slotLevel) {
-    const character = this.get(id);
+  spell(idOrCharacter, spellId, slotLevel, derivedStats = null) {
+    const character = typeof idOrCharacter === 'string' ? this.get(idOrCharacter) : idOrCharacter;
+    if (typeof idOrCharacter !== 'string' && !derivedStats) this._validate(character);
     const owned = character.spells.find((entry) => entry.id === spellId);
     if (!owned) throw new Error('The character does not know this spell');
     const entry = this.catalog.get(owned.entryId);
@@ -345,7 +355,7 @@ export class CharacterLibrary {
     ) {
       throw new RangeError('Choose a valid spell slot level');
     }
-    const stats = this.stats(id);
+    const stats = derivedStats || this.stats(character);
     const atLevel = (table, target) => {
       if (!table) return null;
       const keys = Object.keys(table)
@@ -396,9 +406,9 @@ export class CharacterLibrary {
   }
 
   _applyCast(character, spellId, slotLevel) {
-    const casting = this.spell(character.id, spellId, slotLevel);
-    if (!this.stats(character.id).castingAbility)
-      throw new Error('Choose a spellcasting ability before casting');
+    const stats = this.stats(character);
+    const casting = this.spell(character, spellId, slotLevel, stats);
+    if (!stats.castingAbility) throw new Error('Choose a spellcasting ability before casting');
     if (casting.entry.level > 0) {
       if (this._preparesSpells(character) && !casting.prepared) {
         throw new Error('Prepare this spell before casting it');
@@ -484,8 +494,9 @@ export class CharacterLibrary {
     this._save(character);
   }
 
-  stats(id) {
-    const character = this.get(id);
+  stats(idOrCharacter) {
+    const character = typeof idOrCharacter === 'string' ? this.get(idOrCharacter) : idOrCharacter;
+    if (typeof idOrCharacter !== 'string') this._validate(character);
     const active = new Map(
       character.equipment
         .filter(

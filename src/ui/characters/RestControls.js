@@ -109,7 +109,7 @@ export default class RestControls {
   }
 
   // -- Lifecycle and display --
-  update(character, library) {
+  update(character, library, readStatus = null) {
     this.library = library;
     const changed =
       this.characterId !== character.id ||
@@ -127,7 +127,7 @@ export default class RestControls {
     this.character = character;
     this.root.hidden = false;
     try {
-      this.info = library.rest.status(character.id);
+      this.info = readStatus ? readStatus() : library.rest.status(character.id);
       this._render();
     } catch (error) {
       this._failure(error);

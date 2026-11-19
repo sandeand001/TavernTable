@@ -46,6 +46,7 @@ import {
 import { CHARACTER_BACKUP_LIMIT } from '../../config/characters/CharacterImages.js';
 import CharacterImagesEditor from '../characters/CharacterImagesEditor.js';
 import { queueCampaignOperation } from '../../campaigns/SceneWorld.js';
+import { sameJsonValue } from '../../utils/JsonValue.js';
 
 export default class CharacterSheetContent {
   constructor({ gameManager, services = null, onOpenCompendium = null }) {
@@ -60,6 +61,11 @@ export default class CharacterSheetContent {
     this.playOpened = {};
     this.dmMovementDraft = null;
     this.dmEconomyDraft = {};
+    this._libraryOptions = new Map();
+    this._libraryOptionsLibrary = null;
+    this._libraryOptionsVersion = null;
+    this._derivedSheet = null;
+    this._renderCharacter = null;
     this._identityEdit = null;
     this._cancelingIdentityEdit = null;
     this.token = null;
@@ -235,6 +241,7 @@ export default class CharacterSheetContent {
       this.playChoices = {};
       this.dmMovementDraft = null;
       this.dmEconomyDraft = {};
+      this._renderCharacter = null;
     }
     this.token = token;
     if (this.services) {
@@ -287,6 +294,7 @@ export default class CharacterSheetContent {
     this.services?.targeting?.cancelFor(this.token);
     this._identityEdit = null;
     this.token = null;
+    this._renderCharacter = null;
     this.movementView = null;
     this.healthBar.clear();
     this.restControls.clear();
@@ -294,6 +302,7 @@ export default class CharacterSheetContent {
     this.layoutControls.clear();
     this.historyPanel.clear();
     this.imageEditor.clear();
+    this._derivedSheet = null;
     this.root.classList.remove('sheet-with-history');
   }
 
@@ -346,11 +355,13 @@ export default class CharacterSheetContent {
     const previousName = this.token.name;
     const previousNameMode = this.token.nameMode;
     const character = linkTokenCharacter(this.token, library, id);
+    this._renderCharacter = character;
     if (this.token.name !== previousName || this.token.nameMode !== previousNameMode)
       notifyCreatureNames(this.gameManager, [this.token]);
     this.gameManager.token3DAdapter?.refreshTokenAppearance?.(this.token, character);
-    const stats = library.stats(id);
-    const movement = getTokenMovementSettings(this.token);
+    const derived = this._characterDerivedSections(library, id, character);
+    const { stats } = derived;
+    const movement = getTokenMovementSettings(this.token, character);
     const playerBudget = this.services.playerGameplay?.movementBudget(this.token);
     const previous = this.movementView;
     this.movementView = { token: this.token, id, ...movement };
@@ -370,19 +381,11 @@ export default class CharacterSheetContent {
       }
       this.gameManager.token3DAdapter?.refreshMovementRange?.();
     }
-    this.librarySelect.replaceChildren(
-      ...library.list().map((entry) => {
-        const option = document.createElement('option');
-        option.value = entry.id;
-        option.textContent = `${entry.name} - ${entry.classId || 'Custom'} ${entry.level}`;
-        return option;
-      })
-    );
-    this.librarySelect.value = id;
+    this._syncLibraryOptions(library, id, character);
     this.layoutControls.sync();
     const markup = `
       <div class="sheet-identity-row" data-sheet-key="identity">
-        ${renderIdentitySection(this, character)}
+        ${derived.identity}
         <div class="sheet-initiative">${this._stat('Initiative', signed(stats.initiative), 'Initiative', 'initiative')}</div>
       </div>
       <div class="sheet-summary">
@@ -462,23 +465,17 @@ export default class CharacterSheetContent {
           : ''
       }
       <section class="sheet-section" ${this.section !== 'core' ? 'hidden' : ''}>
-        ${this._core(character, stats)}
+        ${derived.core}
         <div data-sheet-key="custom-editor" data-sheet-island="custom-editor"></div>
       </section>
       <section class="sheet-section" ${this.section !== 'equipment' ? 'hidden' : ''}>
-        ${this._equipment(character, stats)}
+        ${derived.equipment}
       </section>
       <section class="sheet-section" ${this.section !== 'spells' ? 'hidden' : ''}>
-        ${this._spells(character, stats)}
+        ${derived.spells}
       </section>
       <section class="sheet-section" ${this.section !== 'notes' ? 'hidden' : ''}>
-        ${
-          character.artworkImage
-            ? `<figure class="sheet-character-art"><img src="${escape(character.artworkImage)}" alt="${escape(character.name)} character artwork" loading="lazy"></figure>`
-            : ''
-        }
-        ${field('Experience', 'experience', character.experience, 'number', 'min="0" max="1000000000" step="1"')}
-        <label class="sheet-field">Bio and notes<textarea aria-label="Bio and notes" data-character-field="notes" rows="10">${escape(character.notes)}</textarea></label>
+        ${derived.notes}
       </section>
       <p class="sheet-rules-coverage">${library.ruleset} rules. Class/subclass features, conditional spell effects,
         damage, saves, mechanical spell effects and guided level-ups are not fully automated. Reviewed targeting uses this campaign's edition. Combat costs are tracked only after Start Turn. Level edits recalculate
@@ -490,11 +487,15 @@ export default class CharacterSheetContent {
     if (this.restControls.root.parentNode !== healthHost) healthHost.append(this.restControls.root);
     this.healthBar.update(character);
     this.imageEditor.update(character);
-    this.restControls.update(character, this.services.library);
+    const readRestStatus = this._restStatusReader(library, character, derived);
+    this.restControls.update(character, this.services.library, readRestStatus);
     const customHost = this.main.querySelector('[data-sheet-island="custom-editor"]');
     if (this.customActions.root.parentNode !== customHost)
       customHost.append(this.customActions.root);
-    this.customActions.update(character, this.services.library);
+    this.customActions.update(character, this.services.library, {
+      actions: derived.actions,
+      readRestStatus,
+    });
     this._updateHistory(character);
     this._syncSavingControls();
   }
@@ -513,16 +514,16 @@ export default class CharacterSheetContent {
   }
 
   _fallingControls(character) {
-    const prone = getTokenConditions(this.token).includes('prone');
+    const prone = getTokenConditions(this.token, character).includes('prone');
     const standing = this.services.playerGameplay
       ? this.services.playerGameplay.commands.availability('stand', this.token.id)
-      : this.services.combat.standingAvailability(this.token);
+      : this.services.combat.standingAvailability(this.token, character);
     const standingCost = this.services.playerGameplay ? standing.costFeet : standing.cost;
     const recent = character.lastFall;
     const freeAllowance =
       this.services.playerGameplay || this.services.combat.active
         ? null
-        : this.services.combat.freeMovementAllowance(this.token);
+        : this.services.combat.freeMovementAllowance(this.token, undefined, character);
     return `<section class="sheet-condition-controls" aria-label="Falling and prone">
       <strong aria-label="Prone condition">${prone ? 'Prone' : this.token.flightActive ? 'Airborne' : 'Standing'}</strong>
       ${
@@ -550,21 +551,130 @@ export default class CharacterSheetContent {
     </section>`;
   }
 
+  _syncLibraryOptions(library, id, character) {
+    const version = library.listVersion?.() ?? null;
+    const needsList =
+      this._libraryOptionsLibrary !== library ||
+      this._libraryOptionsVersion !== version ||
+      !this._libraryOptions.has(id);
+    if (needsList) {
+      const entries = library.list();
+      this._libraryOptions = new Map(entries.map((entry) => [entry.id, entry]));
+      this._libraryOptionsLibrary = library;
+      this._libraryOptionsVersion = version;
+      this.librarySelect.replaceChildren(...entries.map((entry) => this._libraryOption(entry)));
+    } else {
+      const previous = this._libraryOptions.get(id);
+      if (
+        previous.name !== character.name ||
+        previous.classId !== character.classId ||
+        previous.level !== character.level
+      ) {
+        const next = {
+          id: character.id,
+          name: character.name,
+          classId: character.classId,
+          level: character.level,
+        };
+        this._libraryOptions.set(id, next);
+        const option = Array.from(this.librarySelect.options).find((entry) => entry.value === id);
+        if (option) option.replaceWith(this._libraryOption(next));
+        else this.librarySelect.append(this._libraryOption(next));
+      }
+    }
+    this.librarySelect.value = id;
+  }
+
+  _libraryOption(entry) {
+    const option = this.root.ownerDocument.createElement('option');
+    option.value = entry.id;
+    option.textContent = `${entry.name} - ${entry.classId || 'Custom'} ${entry.level}`;
+    return option;
+  }
+
   _stat(label, value, caption, roll = '') {
     return `<div class="sheet-stat"><span>${caption}</span><output aria-label="${label}">${value}</output>
       ${roll ? `<button type="button" data-sheet-action="roll" data-roll-kind="${roll}" aria-label="Roll ${caption}">Roll</button>` : ''}</div>`;
   }
 
-  _core(character, stats) {
-    return renderCoreSection(this, character, stats);
+  _core(character, stats, snapshot) {
+    return renderCoreSection(this, character, stats, snapshot);
   }
 
   _equipment(character, stats) {
     return renderEquipmentSection(this, character, stats);
   }
 
-  _spells(character, stats) {
-    return renderSpellsSection(this, character, stats);
+  _spells(character, stats, snapshot) {
+    return renderSpellsSection(this, character, stats, snapshot);
+  }
+
+  _characterDerivedSections(library, id, character) {
+    const actions = library.actions.snapshot(character);
+    const source = {
+      id,
+      tokenId: this.token.id,
+      character,
+      actions,
+      allegiance: this.token.allegiance || 'neutral',
+      creatureType: this.token.creatureType || 'humanoid',
+      creatureSize: this.token.creatureSize || 'medium',
+      slotLevels: Array.from(this.slotLevels.entries()).sort(([left], [right]) =>
+        left.localeCompare(right)
+      ),
+    };
+    if (
+      this._derivedSheet?.library === library &&
+      sameJsonValue(this._derivedSheet.source, source)
+    ) {
+      return this._derivedSheet.sections;
+    }
+    const stats = library.stats(character);
+    const snapshot = { character, stats, actions };
+    const sections = {
+      stats,
+      actions,
+      identity: renderIdentitySection(this, character),
+      core: this._core(character, stats, snapshot),
+      equipment: this._equipment(character, stats),
+      spells: this._spells(character, stats, snapshot),
+      notes: `${
+        character.artworkImage
+          ? `<figure class="sheet-character-art"><img src="${escape(character.artworkImage)}" alt="${escape(character.name)} character artwork" loading="lazy"></figure>`
+          : ''
+      }
+        ${field('Experience', 'experience', character.experience, 'number', 'min="0" max="1000000000" step="1"')}
+        <label class="sheet-field">Bio and notes<textarea aria-label="Bio and notes" data-character-field="notes" rows="10">${escape(character.notes)}</textarea></label>`,
+    };
+    this._derivedSheet = {
+      library,
+      source: {
+        ...source,
+        slotLevels: Array.from(this.slotLevels.entries()).sort(([left], [right]) =>
+          left.localeCompare(right)
+        ),
+      },
+      sections,
+    };
+    return sections;
+  }
+
+  _restStatusReader(library, character, snapshot) {
+    let settled = false;
+    let status;
+    let failure;
+    return () => {
+      if (!settled) {
+        settled = true;
+        try {
+          status = library.rest.status(character, snapshot);
+        } catch (error) {
+          failure = error;
+        }
+      }
+      if (failure) throw failure;
+      return status;
+    };
   }
 
   _add(entryId, equip = false) {
@@ -685,7 +795,7 @@ export default class CharacterSheetContent {
     } else if (element.dataset.characterCondition) {
       const token = this.token;
       const condition = element.dataset.characterCondition;
-      const wasChecked = getTokenConditions(token).includes(condition);
+      const wasChecked = getTokenConditions(token, this._renderCharacter).includes(condition);
       const result = this._run(() => {
         if (condition === 'prone' && !element.checked) {
           if (this.services.sheetContext === 'library')
@@ -964,7 +1074,10 @@ export default class CharacterSheetContent {
     }
     if (action === 'movement-mode') {
       this._run(() => {
-        if (getTokenMovementSettings(this.token).mode === button.dataset.mode) return;
+        if (
+          getTokenMovementSettings(this.token, this._renderCharacter).mode === button.dataset.mode
+        )
+          return;
         setTokenMovementSettings(this.token, { mode: button.dataset.mode });
         this.gameManager.sceneAutosave?.changed('movement pace');
       }, 'Movement pace updated.');
@@ -972,7 +1085,10 @@ export default class CharacterSheetContent {
     }
     if (action === 'movement-style') {
       this._run(() => {
-        if (getTokenMovementSettings(this.token).type === button.dataset.style) return;
+        if (
+          getTokenMovementSettings(this.token, this._renderCharacter).type === button.dataset.style
+        )
+          return;
         setTokenMovementSettings(this.token, { type: button.dataset.style });
         this.gameManager.sceneAutosave?.changed('movement style');
       }, 'Movement style updated.');
@@ -1117,6 +1233,7 @@ export default class CharacterSheetContent {
     }
     this.healthBar.root.querySelector('[aria-label="Apply HP change"]').disabled = busy;
     const movementBusy = this.gameManager.token3DAdapter?.isMovementInProgress?.(this.token);
+    const conditions = this.token ? getTokenConditions(this.token, this._renderCharacter) : [];
     for (const input of this.main.querySelectorAll(
       '[data-character-condition], [data-character-field^="fallTraits."]'
     )) {
@@ -1124,10 +1241,10 @@ export default class CharacterSheetContent {
         busy || !!movementBusy || !!this.gameManager.token3DAdapter?.isWallAttached?.(this.token);
       if (
         input.dataset.characterCondition === 'prone' &&
-        getTokenConditions(this.token).includes('prone') &&
+        conditions.includes('prone') &&
         (this.services.playerGameplay ||
           this.services.sheetContext === 'library' ||
-          !this.services.combat.standingAvailability(this.token).allowed)
+          !this.services.combat.standingAvailability(this.token, this._renderCharacter).allowed)
       )
         input.disabled = true;
     }

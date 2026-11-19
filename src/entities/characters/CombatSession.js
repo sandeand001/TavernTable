@@ -239,8 +239,8 @@ export default class CombatSession {
     this._publish();
   }
 
-  status(token, travelMode = getTokenTravelMode(token)) {
-    const character = this._character(token);
+  status(token, travelMode = getTokenTravelMode(token), characterSnapshot = null) {
+    const character = this._characterFor(token, characterSnapshot);
     const state = this._state(token);
     const speed = movementSpeed(character, travelMode);
     const total = Math.max(0, speed * (1 + state.dashes) + state.movementBonus);
@@ -262,7 +262,7 @@ export default class CombatSession {
             state.actions *
               attacksPerAction(
                 character,
-                this.library.actions.snapshot(character.id).attackCountOverride
+                this.library.actions.snapshot(character).attackCountOverride
               )
           : 0,
       bonusAttacksRemaining: state.bonusAttacksRemaining,
@@ -283,9 +283,9 @@ export default class CombatSession {
   }
 
   // -- Selected-character session history --
-  history(token, filter = 'all') {
+  history(token, filter = 'all', characterSnapshot = null) {
     if (!['all', 'turn'].includes(filter)) throw new Error('Choose All rolls or This turn');
-    const character = this._character(token);
+    const character = this._characterFor(token, characterSnapshot);
     const entries = this.histories.get(character.id) || [];
     return entries
       .filter((entry) => filter === 'all' || (this.active && entry.turn === this.turn))
@@ -911,8 +911,8 @@ export default class CombatSession {
   }
 
   // -- Committed movement --
-  standingAvailability(token) {
-    return standingAvailability(this, token);
+  standingAvailability(token, characterSnapshot = null) {
+    return standingAvailability(this, token, characterSnapshot);
   }
 
   standUp(token) {
@@ -931,8 +931,8 @@ export default class CombatSession {
     return applyFall(this, token, context, options);
   }
 
-  freeMovementAllowance(token, travelMode = getTokenTravelMode(token)) {
-    const character = this._character(token);
+  freeMovementAllowance(token, travelMode = getTokenTravelMode(token), characterSnapshot = null) {
+    const character = this._characterFor(token, characterSnapshot);
     if (this.active || this.library.rules.movementImpaired(character)) return 0;
     return Math.max(0, movementSpeed(character, travelMode) - this._state(token).movementSpent);
   }
@@ -944,9 +944,9 @@ export default class CombatSession {
     }
   }
 
-  movementAllowance(token, travelMode = getTokenTravelMode(token)) {
+  movementAllowance(token, travelMode = getTokenTravelMode(token), characterSnapshot = null) {
     if (!this.active || this.activeToken !== token) return 0;
-    return this.status(token, travelMode).movement.remaining;
+    return this.status(token, travelMode, characterSnapshot).movement.remaining;
   }
 
   adjustMovement(token, remaining) {
@@ -1141,7 +1141,9 @@ export default class CombatSession {
         effect.kind !== 'flight' ||
         !effect.targetTokenIds.includes(token.id) ||
         (this.targeting && !this.targeting.hasTokenId(effect.casterTokenId, effect.characterId)) ||
-        this.library.get(effect.characterId).concentration !== effect.concentrationSpellId
+        (effect.characterId === character.id
+          ? character.concentration
+          : this.library.get(effect.characterId).concentration) !== effect.concentrationSpellId
       )
         continue;
       fallTraits.flySpeed = Math.max(fallTraits.flySpeed ?? 0, effect.flySpeed);
@@ -1156,6 +1158,13 @@ export default class CombatSession {
       throw new Error('Load a saved character for a creature in this scene');
     }
     return this.movementCharacter(token, this.library.get(token.characterSheetId));
+  }
+
+  _characterFor(token, characterSnapshot) {
+    if (!token || !this.hasToken(token) || !token.characterSheetId) return this._character(token);
+    return characterSnapshot?.id === token.characterSheetId
+      ? this.movementCharacter(token, characterSnapshot)
+      : this._character(token);
   }
 
   _state(token) {

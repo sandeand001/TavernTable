@@ -29,16 +29,15 @@ npm test -- --runInBand --ci
 npm run lint:all
 ```
 
-- Latest complete Jest run (2026-11-18): 310 suites and 4,086 tests pass.
+- Latest complete Jest run (2026-11-19): 308 suites and 4,094 tests pass.
 - JavaScript and stylesheet lint and the architecture-layer check pass with no
   errors or warnings.
 - Clean full and production-only `npm ci` installs resolve, including the seven
   intentional production dependencies and development-only build tooling.
 - Cloud frontend packaging and production-host checks pass 9/9 without emulator
   credentials. Cloud emulator integration remains a separate release gate.
-- Repository-wide `format:check` reports the unchanged
-  [lint configuration](./tools/.eslintrc.json); changed JavaScript and tests pass
-  a focused formatting check.
+- Repository-wide `format:check` passes. The
+  [lint configuration](./tools/.eslintrc.json) is unchanged.
 
 The three previously recorded movement failures were caused by stale test
 assumptions, not established gameplay regressions:

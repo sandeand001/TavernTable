@@ -13,9 +13,10 @@ export function attacksPerAction(character, override = null) {
     : 1;
 }
 
-export function characterActionOptions(library, token, choices = {}) {
-  const character = library.get(token.characterSheetId);
-  const stats = library.stats(character.id);
+export function characterActionOptions(library, token, choices = {}, snapshot = null) {
+  const character = snapshot?.character ?? library.get(token.characterSheetId);
+  const stats = snapshot?.stats ?? library.stats(character);
+  const actionState = snapshot?.actions ?? library.actions.snapshot(character);
   const rules = library.rules;
   const unarmored = !character.equipment.some(
     (item) =>
@@ -171,7 +172,7 @@ export function characterActionOptions(library, token, choices = {}) {
         ? 0
         : (stats.spellSlots.find((slot) => slot.level >= entry.level && slot.remaining > 0)
             ?.level ?? entry.level));
-    const spell = library.spell(character.id, owned.id, slotLevel);
+    const spell = library.spell(character, owned.id, slotLevel, stats);
     const time = entry.castingTime.toLowerCase();
     const cost = /^(?:1\s+)?bonus action\b/.test(time)
       ? 'bonus'
@@ -220,7 +221,7 @@ export function characterActionOptions(library, token, choices = {}) {
       ],
     });
   }
-  for (const entry of library.actions.list(character.id)) {
+  for (const entry of actionState.entries) {
     actions.push({
       id: `custom:${entry.id}`,
       customId: entry.id,
@@ -237,7 +238,7 @@ export function characterActionOptions(library, token, choices = {}) {
       reset: entry.reset,
     });
   }
-  const overrides = library.actions.snapshot(character.id).targetingOverrides || {};
+  const overrides = actionState.targetingOverrides || {};
   return actions.map((action) => {
     const targeting = targetingProfile(library, character, action, overrides);
     return {

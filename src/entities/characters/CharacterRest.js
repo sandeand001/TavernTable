@@ -9,8 +9,9 @@ export default class CharacterRest {
     this.characterStoragePrefix = characterStoragePrefix;
   }
 
-  status(id) {
-    const character = this.library.get(id);
+  status(idOrCharacter, snapshot = {}) {
+    const id = typeof idOrCharacter === 'string' ? idOrCharacter : idOrCharacter.id;
+    const character = typeof idOrCharacter === 'string' ? this.library.get(id) : idOrCharacter;
     const state = this._read(id);
     const classData = this.library.classes.get(character.classId);
     const sides = classData?.hitDie ?? null;
@@ -18,10 +19,10 @@ export default class CharacterRest {
       throw new Error('The class Hit Die data is invalid');
     }
     const spent = Math.min(character.level, state.hitDiceSpent);
-    const stats = this.library.stats(id);
+    const stats = snapshot.stats ?? this.library.stats(character);
     const resources = [
       ...this._resources(character, state, stats),
-      ...this.library.actions.resourceRows(id),
+      ...this.library.actions.resourceRows(character, snapshot.actions),
     ];
     return {
       classId: character.classId,

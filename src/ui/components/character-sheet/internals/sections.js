@@ -60,7 +60,7 @@ export function renderIdentitySection(context, character) {
   </section>`;
 }
 
-export function renderCoreSection(context, character, stats) {
+export function renderCoreSection(context, character, stats, snapshot = null) {
   const traits = { ...FALL_TRAITS_DEFAULTS, ...character.fallTraits };
   return `
       <section class="sheet-card sheet-class-selection" aria-label="Class selection">
@@ -130,7 +130,7 @@ export function renderCoreSection(context, character, stats) {
             Other protections and condition changes are manual.</p>
           <h4>Targeting configuration</h4>
           <label class="sheet-field">Action<select aria-label="Action targeting configuration">
-            ${characterActionOptions(context.services.library, context.token)
+            ${characterActionOptions(context.services.library, context.token, {}, snapshot)
               .filter(
                 (action) =>
                   action.cost === 'attack' ||
@@ -230,7 +230,7 @@ export function renderEquipmentSection(context, character, stats) {
       </section>`;
 }
 
-export function renderSpellsSection(context, character, stats) {
+export function renderSpellsSection(context, character, stats, snapshot = null) {
   const library = context.services.library;
   const prepared = character.spells.filter(
     (spell) => spell.prepared && library.catalog.get(spell.entryId).level > 0
@@ -289,7 +289,12 @@ export function renderSpellsSection(context, character, stats) {
                 ? context.slotLevels.get(owned.id)
                 : (available[0] ?? entry.level);
               context.slotLevels.set(owned.id, level);
-              const spell = library.spell(character.id, owned.id, level);
+              const spell = library.spell(
+                snapshot?.character ?? character,
+                owned.id,
+                level,
+                snapshot?.stats ?? stats
+              );
               const canCast =
                 !!stats.castingAbility &&
                 (entry.level === 0 ||

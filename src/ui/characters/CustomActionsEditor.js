@@ -94,7 +94,7 @@ export default class CustomActionsEditor {
   }
 
   // -- Lifecycle and display --
-  update(character, library) {
+  update(character, library, snapshot = {}) {
     this.library = library;
     if (this.characterId !== character.id) {
       this.characterId = character.id;
@@ -104,10 +104,11 @@ export default class CustomActionsEditor {
       this.status.textContent = '';
     }
     try {
-      const state = library.actions.snapshot(character.id);
-      const classes = library.rest
-        .status(character.id)
-        .resources.filter((resource) => !resource.id.startsWith('custom:'));
+      const state = snapshot.actions ?? library.actions.snapshot(character);
+      const status = snapshot.readRestStatus
+        ? snapshot.readRestStatus()
+        : library.rest.status(character);
+      const classes = status.resources.filter((resource) => !resource.id.startsWith('custom:'));
       const signature = JSON.stringify(classes.map((resource) => [resource.id, resource.name]));
       if (signature !== this.resourceSignature) {
         const selected = this.resource.value;
@@ -133,7 +134,7 @@ export default class CustomActionsEditor {
       reconcileContent(
         this.rows,
         library.actions
-          .list(character.id)
+          .list(character, state)
           .map(
             (entry) => `
         <article class="sheet-custom-row" data-sheet-key="custom:${entry.id}">

@@ -238,6 +238,38 @@ describe('Character sheet pop-out windows', () => {
     expect(popout.document.activeElement).toBe(speed);
   });
 
+  test('an unchanged sheet refresh keeps its controls and does not rescan saved characters', async () => {
+    await sheets.open(hero);
+    sheets.popOut();
+    const content = sheets.characterContent;
+    const speed = control('Character speed (feet)');
+    const list = jest.spyOn(library, 'list');
+    speed.focus();
+
+    content.render();
+
+    expect(list).not.toHaveBeenCalled();
+    expect(control('Character speed (feet)')).toBe(speed);
+    expect(popout.document.activeElement).toBe(speed);
+  });
+
+  test('an unchanged sheet refresh reuses its character-derived sections', async () => {
+    await sheets.open(hero);
+    sheets.popOut();
+    const content = sheets.characterContent;
+    const stats = jest.spyOn(library, 'stats');
+    const get = jest.spyOn(library, 'get');
+    const speed = control('Character speed (feet)');
+    speed.focus();
+
+    content.render();
+
+    expect(stats).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(control('Character speed (feet)')).toBe(speed);
+    expect(popout.document.activeElement).toBe(speed);
+  });
+
   test('switching map creatures blurs the old pop-out field before changing characters', async () => {
     await sheets.open(hero);
     sheets.popOut();

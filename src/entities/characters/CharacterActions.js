@@ -18,8 +18,8 @@ export default class CharacterActions {
     return `${ACTION_STORAGE_PREFIX}${id}`;
   }
 
-  list(id) {
-    return this.snapshot(id).entries.map((entry) => ({
+  list(idOrCharacter, state = null) {
+    return (state ?? this.snapshot(idOrCharacter)).entries.map((entry) => ({
       ...entry,
       remaining:
         entry.maximum === null
@@ -82,8 +82,8 @@ export default class CharacterActions {
     this._save(state);
   }
 
-  resourceRows(id) {
-    return this.list(id)
+  resourceRows(idOrCharacter, state = null) {
+    return this.list(idOrCharacter, state)
       .filter((entry) => entry.maximum !== null && entry.reset !== 'turn')
       .map((entry) => ({
         id: `custom:${entry.id}`,
@@ -290,8 +290,10 @@ export default class CharacterActions {
   }
 
   // -- Companion storage --
-  snapshot(id) {
-    this.library.get(id);
+  snapshot(idOrCharacter) {
+    const id = typeof idOrCharacter === 'string' ? idOrCharacter : idOrCharacter?.id;
+    if (typeof idOrCharacter === 'string') this.library.get(id);
+    else if (typeof id !== 'string' || !id) throw new Error('A saved character is required');
     const raw = this.storage.getItem(this.key(id));
     if (raw === null)
       return { version: 1, characterId: id, entries: [], attackCountOverride: null };

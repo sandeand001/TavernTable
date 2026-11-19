@@ -7,19 +7,20 @@ import {
 
 const characterLibraries = new WeakMap();
 
-export function getTokenCharacterRecord(token) {
+export function getTokenCharacterRecord(token, character = null) {
+  if (character?.id === token?.characterSheetId) return character;
   const library = characterLibraries.get(token);
   return library ? library.get(token.characterSheetId) : null;
 }
 
-export function getTokenConditions(token) {
-  return getTokenCharacterRecord(token)?.conditions || token?.conditions || [];
+export function getTokenConditions(token, character = null) {
+  return getTokenCharacterRecord(token, character)?.conditions || token?.conditions || [];
 }
 
-export function getTokenFallTraits(token) {
+export function getTokenFallTraits(token, character = null) {
   return {
     ...FALL_TRAITS_DEFAULTS,
-    ...(getTokenCharacterRecord(token)?.fallTraits || token?.fallTraits),
+    ...(getTokenCharacterRecord(token, character)?.fallTraits || token?.fallTraits),
   };
 }
 
@@ -73,10 +74,10 @@ export function unlinkTokenCharacter(token, movementSettings) {
   token.movementSettings = { ...movementSettings };
 }
 
-export function getTokenMovementSettings(token) {
+export function getTokenMovementSettings(token, character = null) {
   const settings = { ...TOKEN_MOVEMENT_DEFAULTS, ...token.movementSettings };
-  const library = characterLibraries.get(token);
-  if (library) settings.speed = library.get(token.characterSheetId).speed;
+  const linkedCharacter = getTokenCharacterRecord(token, character);
+  if (linkedCharacter) settings.speed = linkedCharacter.speed;
   if (!Number.isFinite(settings.speed) || settings.speed < 0) {
     throw new Error('Movement speed must be a finite, non-negative number of feet');
   }

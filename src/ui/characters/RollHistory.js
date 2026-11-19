@@ -70,7 +70,7 @@ export default class RollHistory {
     for (const button of this.root.querySelectorAll('[data-history-filter]'))
       button.disabled = false;
     const { session, token, editing } = this.context;
-    const entries = session.history(token, this.filter);
+    const entries = session.history(token, this.filter, this.context.character);
     for (const button of this.root.querySelectorAll('[data-history-filter]')) {
       button.setAttribute('aria-pressed', String(button.dataset.historyFilter === this.filter));
     }
