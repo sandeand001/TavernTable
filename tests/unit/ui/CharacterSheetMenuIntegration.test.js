@@ -3,6 +3,7 @@ import { applyTokenCommand } from '../../../src/core/game-manager/internals/toke
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCatalog.js';
 import { CHARACTER_DEFINITIONS } from '../../../src/config/CharacterCatalog.js';
+import { ErrorHandler } from '../../../src/utils/error/ErrorHandler.js';
 
 test('the real radial event opens and reuses the sheet window without applying a quick command', () => {
   const previousManager = window.gameManager;
@@ -56,6 +57,63 @@ test('the real radial event opens and reuses the sheet window without applying a
         new CustomEvent('taverntable:tokenRemoved', { detail: { token, gameManager } })
       );
     }
+    window.gameManager = previousManager;
+  }
+});
+
+test('an unassigned player token cannot open a radial menu through a stale UI event', () => {
+  const previousManager = window.gameManager;
+  const token = { id: 'unassigned-token', name: 'Unassigned', owned: false };
+  window.gameManager = {
+    placedTokens: [token],
+    playerInput: {
+      canOpenRadial: jest.fn(() => false),
+      radialAvailability: jest.fn(),
+    },
+  };
+  try {
+    const event = new CustomEvent('taverntable:tokenRadial', {
+      detail: { token, screenX: 500, screenY: 400 },
+    });
+    window.dispatchEvent(event);
+    expect(window.gameManager.playerInput.canOpenRadial).toHaveBeenCalledWith(token);
+    expect(window.gameManager.playerInput.radialAvailability).not.toHaveBeenCalled();
+    expect(document.querySelector('.radial-menu')?.classList.contains('hidden')).not.toBe(false);
+  } finally {
+    window.gameManager = previousManager;
+  }
+});
+
+test('a revoked player assignment cannot execute a command from an already open radial', () => {
+  const previousManager = window.gameManager;
+  const token = { id: 'assigned-token', name: 'Assigned', owned: true, characterSheetId: 'hero' };
+  const report = jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
+  window.gameManager = {
+    placedTokens: [token],
+    applyTokenCommand: jest.fn(),
+    playerInput: {
+      canOpenRadial: jest.fn(() => token.owned),
+      radialAvailability: jest.fn(() => ({
+        'character-sheet': { allowed: true },
+      })),
+    },
+    token3DAdapter: {},
+  };
+  try {
+    window.dispatchEvent(
+      new CustomEvent('taverntable:tokenRadial', {
+        detail: { token, screenX: 500, screenY: 400 },
+      })
+    );
+    token.owned = false;
+    document
+      .querySelector('.radial-menu path[data-action-id="character-sheet"]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(window.gameManager.applyTokenCommand).not.toHaveBeenCalled();
+    expect(document.querySelector('.character-sheet-window')?.hidden).not.toBe(false);
+    expect(report).toHaveBeenCalled();
+  } finally {
+    report.mockRestore();
     window.gameManager = previousManager;
   }
 });

@@ -405,6 +405,13 @@ radial; a short right-click on an allowed token opens it; right-drag retains
 orbit; unassigned or unrelated tokens cannot open any radial or sheet; the
 server remains the authority for sheet/control permissions.
 
+**Resolved 2026-11-19:** left-click token handling selects only. Short
+right-click capture is retained for token commands; player ownership is checked
+again at capture, dispatch and command execution, and stale custom events cannot
+open a menu or sheet for an unassigned/revoked token. The DM path remains
+available for placed creatures. Focused radial, player authorization, sheet and
+camera-drag coverage passed 87/87 tests.
+
 ### C11. Additional physical dice
 
 The physical dice path is deliberately d20-specific:

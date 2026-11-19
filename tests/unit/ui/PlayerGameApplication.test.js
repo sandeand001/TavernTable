@@ -1396,6 +1396,7 @@ test('player creature actions are host-gated instead of falling back to local po
   await expect(manager.applyTokenCommand(token, 'take-flight')).rejects.toThrow('host-authorized');
   expect(token.conditions).toEqual([]);
   const availability = app.input.radialAvailability(token);
+  expect(app.input.canOpenRadial(token)).toBe(true);
   expect(availability['character-sheet'].allowed).toBe(true);
   expect(availability['take-flight'].allowed).toBe(false);
   await app.destroy();

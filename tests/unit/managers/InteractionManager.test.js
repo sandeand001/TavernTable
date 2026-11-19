@@ -39,7 +39,7 @@ test('replacing the interaction canvas leaves listeners only on the new canvas',
 
 describe('InteractionManager.getGridCoordinatesFromClick', () => {
   test.each([false, true])(
-    'left-clicking a creature opens its radial menu; already selected=%s',
+    'left-clicking a creature selects it without opening a radial menu; already selected=%s',
     async (alreadySelected) => {
       const token = { id: 'creature', gridX: 2, gridY: 3 };
       const adapter = {
@@ -65,15 +65,53 @@ describe('InteractionManager.getGridCoordinatesFromClick', () => {
         await Promise.resolve();
         expect(adapter.setSelectedToken).toHaveBeenCalledWith(token);
         expect(adapter.requestMoveToGrid).not.toHaveBeenCalled();
-        expect(requested).toHaveBeenCalledTimes(1);
-        expect(requested.mock.calls[0][0].detail).toMatchObject({
-          token,
-          tokenId: token.id,
-          gridX: 2,
-          gridY: 3,
-          screenX: 120,
-          screenY: 80,
+        expect(requested).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener('taverntable:tokenRadial', requested);
+      }
+    }
+  );
+
+  test.each([
+    ['assigned', true, true],
+    ['unassigned', false, false],
+  ])(
+    'a right-click captures the radial only for an %s player token=%s',
+    async (_label, owned, expected) => {
+      const token = {
+        id: 'creature',
+        gridX: 2,
+        gridY: 3,
+        owned,
+        characterSheetId: owned ? 'character' : null,
+      };
+      const gm = {
+        placedTokens: [token],
+        is3DModeActive: () => true,
+        pickingService: {
+          pickGroundSync: () => ({
+            token,
+            grid: { gx: 2, gy: 3 },
+          }),
+        },
+        playerInput: {
+          canOpenRadial: jest.fn(() => owned),
+        },
+      };
+      const manager = new InteractionManager(gm);
+      const requested = jest.fn();
+      window.addEventListener('taverntable:tokenRadial', requested);
+      try {
+        const captured = manager._tryCaptureRadialTrigger({
+          clientX: 20,
+          clientY: 30,
+          preventDefault: jest.fn(),
+          stopPropagation: jest.fn(),
         });
+        expect(captured).toBe(expected);
+        expect(gm.playerInput.canOpenRadial).toHaveBeenCalledWith(token);
+        if (captured) manager._dispatchRadialMenuRequest(manager._pendingRadialContext);
+        expect(requested).toHaveBeenCalledTimes(expected ? 1 : 0);
       } finally {
         window.removeEventListener('taverntable:tokenRadial', requested);
       }

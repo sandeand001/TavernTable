@@ -458,12 +458,6 @@ export class InteractionManager {
 
           if (tokenEntry) {
             await this._selectTokenEntry(tokenEntry);
-            this._dispatchRadialMenuRequest({
-              token: tokenEntry,
-              gridX,
-              gridY,
-              screenPosition: { x: event.clientX, y: event.clientY },
-            });
             return;
           }
 

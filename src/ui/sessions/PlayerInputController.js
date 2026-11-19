@@ -215,9 +215,17 @@ export default class PlayerInputController {
     gm.threeSceneManager.setCameraTarget(world.x, world.z, world.y);
   }
 
+  canOpenRadial(token) {
+    return (
+      this.gameManager.placedTokens.includes(token) &&
+      token?.owned === true &&
+      typeof token.characterSheetId === 'string' &&
+      token.characterSheetId.length > 0
+    );
+  }
+
   radialAvailability(token) {
-    const owned =
-      this.gameManager.placedTokens.includes(token) && token.owned && !!token.characterSheetId;
+    const owned = this.canOpenRadial(token);
     const entries = TOKEN_COMMANDS.flatMap((action) => [action, ...(action.subActions || [])]);
     return Object.fromEntries(
       entries.map((action) => {

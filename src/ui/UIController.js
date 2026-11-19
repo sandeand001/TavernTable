@@ -112,6 +112,8 @@ async function handleRadialCommand(actionId, token) {
   try {
     if (!actionId) return;
     const gm = window.gameManager;
+    if (!canOpenRadialMenu(gm, token))
+      throw new Error('Choose an authorized creature before using its commands');
     if (actionId === 'character-sheet') {
       if (!gm) throw new Error('Character sheets require an active game session');
       await openCharacterSheet(gm, token);
@@ -134,9 +136,18 @@ async function handleRadialCommand(actionId, token) {
   }
 }
 
+function canOpenRadialMenu(gm, token) {
+  if (!gm || !token || !gm.placedTokens?.includes(token)) return false;
+  return !gm.playerInput || gm.playerInput.canOpenRadial?.(token) === true;
+}
+
 function showRadialMenu(detail = {}) {
-  const radial = getRadialMenuInstance();
   const gm = window.gameManager;
+  if (!canOpenRadialMenu(gm, detail.token)) {
+    radialMenuInstance?.hide();
+    return;
+  }
+  const radial = getRadialMenuInstance();
   const adapter = gm?.token3DAdapter;
   const availability = gm?.playerInput
     ? gm.playerInput.radialAvailability(detail.token)

@@ -76,7 +76,12 @@ function canSelectGridToken(gm, token, ground) {
 export function tryCaptureRadialTrigger(mgr, event) {
   try {
     const capture = pick3DTarget(mgr, event) || pickSpriteTarget(mgr, event);
-    if (!capture || !capture.token) {
+    if (
+      !capture ||
+      !capture.token ||
+      (mgr.gameManager?.playerInput &&
+        mgr.gameManager.playerInput.canOpenRadial?.(capture.token) !== true)
+    ) {
       mgr._pendingRadialContext = null;
       return false;
     }
@@ -101,7 +106,12 @@ export function tryCaptureRadialTrigger(mgr, event) {
 }
 
 export function dispatchRadialMenuRequest(mgr, context) {
-  if (typeof window === 'undefined' || !context?.token) {
+  if (
+    typeof window === 'undefined' ||
+    !context?.token ||
+    (mgr.gameManager?.playerInput &&
+      mgr.gameManager.playerInput.canOpenRadial?.(context.token) !== true)
+  ) {
     return;
   }
   try {
