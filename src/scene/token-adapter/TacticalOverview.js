@@ -68,9 +68,12 @@ export default class TacticalOverview {
     this.gameManager = gameManager;
     this.three = three;
     this.locations = new CreatureLocations(gameManager.campaignWorld);
+    this.updateRevision = 0;
+    this._updateKey = null;
     this.unsubscribe = gameManager.terrainEngine.onChanged(() => {
       this.locations.invalidate();
       this.scope = null;
+      this.updateRevision += 1;
     });
     this.entries = new Map();
     this.pendingFocus = false;
@@ -147,11 +150,42 @@ export default class TacticalOverview {
   }
 
   update(tokens, camera, canvas, scene) {
+    const key = JSON.stringify([
+      this.gameManager.campaignWorld?.mapRevision,
+      this.gameManager.campaignMapId,
+      this.gameManager.campaignViewBusy === true,
+      this.gameManager.campaignMapFailure === true,
+      this.gameManager.sceneAutosave?.ready !== false,
+      this.gameManager.terrainEngine.geometry?.revision,
+      this.updateRevision,
+      this.pendingFocus,
+      canvas.clientWidth,
+      canvas.clientHeight,
+      canvas.offsetLeft,
+      canvas.offsetTop,
+      camera.matrixWorld.elements,
+      camera.projectionMatrix.elements,
+      tokens.map(({ token, mesh }) => [
+        token.id,
+        token.mapId,
+        token.world?.x,
+        token.world?.y,
+        token.world?.z,
+        getTokenDisplayName(token),
+        mesh.position.x,
+        mesh.position.y,
+        mesh.position.z,
+      ]),
+    ]);
+    if (key === this._updateKey) return;
     if (this.locations.world !== this.gameManager.campaignWorld)
       this.locations = new CreatureLocations(this.gameManager.campaignWorld);
     const rect = canvas.getBoundingClientRect();
     this.root.hidden = rect.width <= 0 || rect.height <= 0;
-    if (this.root.hidden) return;
+    if (this.root.hidden) {
+      this._updateKey = key;
+      return;
+    }
     const viewport = {
       left: rect.left,
       top: rect.top,
@@ -284,6 +318,7 @@ export default class TacticalOverview {
     }
     for (const [id, entry] of this.entries) if (!used.has(id)) this._remove(id, entry);
     this._syncFocusButtons();
+    this._updateKey = key;
   }
 
   _remove(id, entry) {

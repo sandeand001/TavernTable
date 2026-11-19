@@ -43,6 +43,10 @@ function overviewFixture() {
   camera.lookAt(1, 0, 1);
   camera.updateMatrixWorld(true);
   const canvas = {
+    clientWidth: 800,
+    clientHeight: 600,
+    offsetLeft: 0,
+    offsetTop: 0,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
   };
   const mesh = new three.Mesh(new three.CircleGeometry(0.46), new three.MeshBasicMaterial());
@@ -57,8 +61,26 @@ function overviewFixture() {
     mesh.material.dispose();
   };
   update();
-  return { overview, gm, actor, mesh, update, dispose };
+  return { overview, gm, actor, mesh, camera, canvas, update, dispose };
 }
+
+test('unchanged overhead layouts skip DOM measurement and projection work', () => {
+  const { actor, camera, canvas, update, dispose } = overviewFixture();
+  const measure = jest.spyOn(canvas, 'getBoundingClientRect');
+  try {
+    for (let frame = 0; frame < 30; frame++) update();
+    expect(measure).not.toHaveBeenCalled();
+    actor.name = 'Relocated scout';
+    update();
+    expect(measure).toHaveBeenCalledTimes(1);
+    camera.position.x += 1;
+    camera.updateMatrixWorld(true);
+    update();
+    expect(measure).toHaveBeenCalledTimes(2);
+  } finally {
+    dispose();
+  }
+});
 
 test('offscreen overview markers do not leave a large unlabelled token at the viewport edge', () => {
   const { overview, actor, mesh, update, dispose } = overviewFixture();
