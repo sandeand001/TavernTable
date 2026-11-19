@@ -90,6 +90,14 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 
+test('settled normal-camera frames skip tactical token membership scans', () => {
+  const { adapter, frame } = fixture();
+  frame();
+  const projectionCheck = jest.spyOn(adapter, 'isTokenProjection');
+  for (let index = 0; index < 30; index++) frame();
+  expect(projectionCheck).not.toHaveBeenCalled();
+});
+
 function addOverviewMaps(gm) {
   const main = { id: 'main', name: 'Town', grid: { cols: 5, rows: 5, tileWorldSize: 1 } };
   const upper = {

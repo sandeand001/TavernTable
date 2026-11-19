@@ -65,6 +65,7 @@ function disposeTacticalTokens() {
   this._tacticalOverview?.dispose();
   this._tacticalOverview = null;
   this._tacticalView = false;
+  this._tacticalViewSynced = false;
   this._tacticalDirection = null;
   this._tacticalTokenFailures = new WeakSet();
 }
@@ -86,6 +87,7 @@ function _syncTacticalTokens() {
   camera.getWorldDirection(this._tacticalDirection);
   const down = -this._tacticalDirection.y;
   this._tacticalView = down + 1e-10 >= (this._tacticalView ? EXIT_DOWN : ENTER_DOWN);
+  if (!this._tacticalView && this._tacticalViewSynced !== true) return;
   const overview = this.isTacticalOverview();
   const overviewTokens = [];
   if (!overview && this._tacticalOverview) {
@@ -154,6 +156,7 @@ function _syncTacticalTokens() {
       scene
     );
   }
+  this._tacticalViewSynced = this._tacticalView;
 }
 
 // -- Token texture and resources --

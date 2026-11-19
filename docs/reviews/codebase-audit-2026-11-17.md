@@ -559,7 +559,9 @@ passing.
 **Progress 2026-11-18:** map projections now use a coalesced invalidation key
 over world, map, observer, actor, visibility, terrain and placeable revisions.
 Forced campaign updates remain synchronous; frame-driven stationary state no
-longer repeats line-of-sight or supporting-terrain reconciliation.
+longer repeats line-of-sight or supporting-terrain reconciliation. Settled
+normal-camera frames also skip tactical membership scans until presentation
+changes.
 
 ### 4. Batch terrain writes and notifications
 

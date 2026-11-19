@@ -79,6 +79,7 @@ export class Token3DAdapter {
     this._tacticalTokens = new Map();
     this._tacticalTokenFailures = new WeakSet();
     this._tacticalView = false;
+    this._tacticalViewSynced = false;
   }
 
   // ── Pathing & Debug Logging (installed via PathingLogger mixin) ──────────
