@@ -148,6 +148,10 @@ function fixture({ cache = null } = {}) {
   const identityListeners = new Set();
   const requests = [];
   const observations = [];
+  let markRequested;
+  const requested = new Promise((resolve) => {
+    markRequested = resolve;
+  });
   let opened;
   const observed = new Promise((resolve) => {
     opened = resolve;
@@ -178,6 +182,7 @@ function fixture({ cache = null } = {}) {
             resolve(new Uint8Array(bytes));
           },
         });
+        markRequested();
       });
     }),
     commitWorldCommand: jest.fn(),
@@ -217,6 +222,7 @@ function fixture({ cache = null } = {}) {
     store,
     requests,
     observations,
+    requested,
     observed,
     events,
     changeIdentity: (next) => {
@@ -256,8 +262,7 @@ test.each(['logout', 'account replacement'])(
       const raw = structuredClone(cached);
       raw.manifest.images[0].reference.generation = '3';
       setup.observations[0].publish(raw);
-      for (let step = 0; step < 100 && !setup.requests.length; step++)
-        await new Promise((resolve) => setImmediate(resolve));
+      await setup.requested;
       expect(setup.requests).toHaveLength(1);
       let loggingOut;
       if (transition === 'logout') loggingOut = setup.connection.logout();
