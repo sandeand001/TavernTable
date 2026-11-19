@@ -33,6 +33,30 @@ describe('BiomeElevationGenerator', () => {
     expect(allWithin(arr, TERRAIN_CONFIG.MIN_HEIGHT, TERRAIN_CONFIG.MAX_HEIGHT)).toBe(true);
   });
 
+  test('builds an unsmoothed field with one height matrix and identical output', () => {
+    const expected = generateBiomeElevationField('hills', 24, 28, { seed: 42 });
+    const allocation = jest.spyOn(TerrainHeightUtils, 'createHeightArray');
+    try {
+      const actual = generateBiomeElevationField('hills', 24, 28, { seed: 42 });
+      expect(actual).toEqual(expected);
+      expect(allocation).toHaveBeenCalledTimes(1);
+    } finally {
+      allocation.mockRestore();
+    }
+  });
+
+  test('uses only one smoothing scratch matrix and preserves the smoothed field', () => {
+    const expected = generateBiomeElevationField('grassland', 24, 28, { seed: 42 });
+    const allocation = jest.spyOn(TerrainHeightUtils, 'createHeightArray');
+    try {
+      const actual = generateBiomeElevationField('grassland', 24, 28, { seed: 42 });
+      expect(actual).toEqual(expected);
+      expect(allocation).toHaveBeenCalledTimes(2);
+    } finally {
+      allocation.mockRestore();
+    }
+  });
+
   test('deterministic with same seed', () => {
     const a1 = generateBiomeElevationField('hills', 12, 12, { seed: 123 });
     const a2 = generateBiomeElevationField('hills', 12, 12, { seed: 123 });

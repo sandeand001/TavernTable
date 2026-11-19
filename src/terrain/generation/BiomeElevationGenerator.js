@@ -359,19 +359,15 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   } else if (typeof profile.quantStep === 'number' && profile.quantStep > 0) {
     step = profile.quantStep;
   }
-  const out = TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT);
-
   if (!(maxAbsRaw > 1e-6)) {
-    // Degenerate case: flat field from recipe; just return zeros (default height)
-    return out;
+    for (let y = 0; y < rows; y++)
+      for (let x = 0; x < cols; x++) raw[y][x] = TERRAIN_CONFIG.DEFAULT_HEIGHT;
+    return raw;
   }
 
-  // Work buffer for scaled floats prior to quantization
-  const work = TerrainHeightUtils.createHeightArray(rows, cols, 0);
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      // Scale relative to 0 to preserve net waterBias and absolute offsets from recipes
-      work[y][x] = (raw[y][x] / maxAbsRaw) * targetAmplitude;
+      raw[y][x] = (raw[y][x] / maxAbsRaw) * targetAmplitude;
     }
   }
 
@@ -382,25 +378,25 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
     profile.smoothIterations &&
     profile.smoothIterations > 0
   ) {
-    smoothHeightsInPlace(work, rows, cols, profile.smoothRadius, profile.smoothIterations);
+    smoothHeightsInPlace(raw, rows, cols, profile.smoothRadius, profile.smoothIterations);
   }
 
   // Optional ridge/soften power curve
   if (profile.ridgePower && profile.ridgePower !== 1) {
-    applyRidgePowerInPlace(work, rows, cols, profile.ridgePower);
+    applyRidgePowerInPlace(raw, rows, cols, profile.ridgePower);
   }
 
   // Optional water shift to bias below or above sea level (0)
   const shift = Number.isFinite(profile.waterShift) ? profile.waterShift : 0;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      const v = work[y][x] + shift;
+      const v = raw[y][x] + shift;
       const quantized = Math.round(v / step) * step;
-      out[y][x] = TerrainHeightUtils.clampHeight(quantized);
+      raw[y][x] = TerrainHeightUtils.clampHeight(quantized);
     }
   }
 
-  return out;
+  return raw;
 }
 
 // applyBiomeElevationIfFlat removed (unused): previously generated biome elevation only if

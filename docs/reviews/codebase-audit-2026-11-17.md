@@ -601,6 +601,12 @@ rollback. No renderer or campaign Module should acquire a second terrain owner.
 history and UI consistency after fault injection at generation, participant
 apply and rollback phases.
 
+**Progress 2026-11-18:** biome elevation now scales, smooths and quantizes its
+first generated field in place. Unsmoothed recipes allocate one height matrix;
+smoothed recipes allocate only that field and one scratch matrix. Exact seeded
+output remains covered, while structure/store rollback copies still exist at
+their commit seam.
+
 ### 6. Contain the obsolete second terrain generation path
 
 **Impact 4 / Complexity 2 / Code-confirmed**
