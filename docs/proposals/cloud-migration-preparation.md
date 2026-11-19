@@ -3250,6 +3250,9 @@ asset files while retaining all 192 referenced files byte-for-byte. The
 resulting package contains **531 versioned files / 234,986,089 bytes** and
 records the selection counts in `frontend-manifest.json`. This is a packaging
 change, not a texture-resolution, polygon, animation or model conversion.
+Subsequent `--previous` builds also retain changed old files physically while
+byte-identical old paths are verified rewrites to the current immutable release,
+so unchanged asset payload is not copied twice.
 
 The actual retained package is
 `build\cloud-frontend\m407-local-20261114-v1`, release

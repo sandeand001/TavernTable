@@ -227,6 +227,27 @@ test('one verified previous release survives an update and unsupported or corrup
     await fs.readFile(disk(f.out('second'), 'public/' + previousFile.path), 'utf8'),
     "export const name = 'first release';\n"
   );
+  const sharedAsset = second.files.find(
+    (file) =>
+      file.source === 'assets/animated-sprites/Fixture.fbx' &&
+      file.path.startsWith(`releases/${first.release}/`)
+  );
+  assert.equal(
+    sharedAsset.rewrite,
+    `releases/${second.release}/assets/animated-sprites/Fixture.fbx`
+  );
+  await assert.rejects(fs.stat(disk(f.out('second'), 'public/' + sharedAsset.path)), {
+    code: 'ENOENT',
+  });
+  assert(
+    JSON.parse(
+      await fs.readFile(path.join(f.out('second'), 'firebase.json'), 'utf8')
+    ).hosting.rewrites.some(
+      (rule) =>
+        rule.source === `/releases/${first.release}/:path*` &&
+        rule.destination === `/releases/${second.release}/:path`
+    )
+  );
   await f.write('src/name.js', "export const name = 'third release';\n");
   const third = await f.build('third', { previous: f.out('second') });
   assert.deepEqual(third.releases, [third.release, second.release]);
@@ -271,6 +292,15 @@ test('one verified previous release survives an update and unsupported or corrup
       }
     );
   const manifestPath = path.join(f.out('second'), 'public', 'frontend-manifest.json');
+  const rewritten = second.files.find((file) => file.rewrite);
+  const brokenRewrite = structuredClone(second);
+  brokenRewrite.files.find((file) => file.path === rewritten.path).rewrite =
+    `releases/${second.release}/index.html`;
+  await fs.writeFile(manifestPath, JSON.stringify(brokenRewrite));
+  await assert.rejects(verifyCloudFrontend(f.out('second')), {
+    code: 'invalid-frontend-package',
+  });
+  await fs.writeFile(manifestPath, JSON.stringify(second));
   await fs.writeFile(manifestPath, JSON.stringify({ ...second, compatibility: { runtime: 99 } }));
   await assert.rejects(f.build('bad-version', { previous: f.out('second') }), {
     code: 'invalid-frontend-package',

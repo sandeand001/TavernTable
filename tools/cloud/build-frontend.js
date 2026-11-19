@@ -374,16 +374,37 @@ async function verifyCloudFrontend(output) {
       !validDigest(file.sha256) ||
       !Number.isSafeInteger(file.bytes) ||
       file.bytes < 0 ||
+      (file.rewrite !== undefined &&
+        (typeof file.rewrite !== 'string' ||
+          file.source === 'index.html' ||
+          file.rewrite !== `releases/${manifest.release}/${file.source}`)) ||
       names.has(file.path)
     )
       throw invalid('A package file is outside the declared public release');
     names.add(file.path);
+  }
+  const filesByPath = new Map(manifest.files.map((file) => [file.path, file]));
+  const physicalNames = new Set();
+  for (const file of manifest.files) {
+    if (file.rewrite) {
+      const target = filesByPath.get(file.rewrite);
+      if (
+        !target ||
+        target.rewrite !== undefined ||
+        target.source !== file.source ||
+        target.sha256 !== file.sha256 ||
+        target.bytes !== file.bytes
+      )
+        throw invalid('A retained package rewrite does not resolve to identical content');
+      continue;
+    }
     const filename = diskPath(publicRoot, file.path);
     if ((await fs.realpath(filename)) !== filename || !(await fs.lstat(filename)).isFile())
       throw invalid('A public package file is not a regular contained file');
     const actual = await fileDigest(filename);
     if (actual.bytes !== file.bytes || actual.sha256 !== file.sha256)
       throw invalid('A public package file failed integrity verification: ' + file.source);
+    physicalNames.add(file.path);
   }
   for (const release of manifest.releases) {
     const entry = `releases/${release}/index.html`;
@@ -407,19 +428,19 @@ async function verifyCloudFrontend(output) {
   }
   const actualNames = await allFiles(publicRoot);
   if (
-    actualNames.length !== names.size + 1 ||
-    actualNames.some((name) => name !== 'frontend-manifest.json' && !names.has(name))
+    actualNames.length !== physicalNames.size + 1 ||
+    actualNames.some((name) => name !== 'frontend-manifest.json' && !physicalNames.has(name))
   )
     throw invalid('The public output contains an undeclared file');
   const hosting = JSON.parse(await fs.readFile(path.join(root, 'firebase.json'), 'utf8'));
-  const expected = hostingConfiguration(manifest.release, retired);
+  const expected = hostingConfiguration(manifest.release, retired, manifest.releases.slice(1));
   if (JSON.stringify(hosting) !== JSON.stringify(expected))
     throw invalid('The Hosting configuration does not match the reviewed static-only package');
   return manifest;
 }
 
-function hostingConfiguration(release, retired = []) {
-  return {
+function hostingConfiguration(release, retired = [], retained = []) {
+  const configuration = {
     hosting: {
       public: 'public',
       ignore: [],
@@ -450,6 +471,13 @@ function hostingConfiguration(release, retired = []) {
       ],
     },
   };
+  if (retained.length) {
+    configuration.hosting.rewrites = retained.map((previous) => ({
+      source: `/releases/${previous}/:path*`,
+      destination: `/releases/${release}/:path`,
+    }));
+  }
+  return configuration;
 }
 
 async function buildCloudFrontend({ root, output, runtime, previous = null }) {
@@ -538,14 +566,20 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
       }
       records.push({ path: relative, source: file.source, ...(await fileDigest(target)) });
     }
+    const currentBySource = new Map(records.map((record) => [record.source, record]));
     if (old && old.release !== release) {
       for (const file of old.files.filter((file) =>
         file.path.startsWith(`releases/${old.release}/`)
       )) {
-        const target = diskPath(publicRoot, file.path);
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.copyFile(diskPath(path.join(previous, 'public'), file.path), target);
-        records.push(file);
+        const current = currentBySource.get(file.source);
+        if (current && current.bytes === file.bytes && current.sha256 === file.sha256) {
+          records.push({ ...file, rewrite: current.path });
+        } else {
+          const target = diskPath(publicRoot, file.path);
+          await fs.mkdir(path.dirname(target), { recursive: true });
+          await fs.copyFile(diskPath(path.join(previous, 'public'), file.path), target);
+          records.push(file);
+        }
       }
     }
     const manifest = {
@@ -566,7 +600,8 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
     );
     await fs.writeFile(
       path.join(staging, 'firebase.json'),
-      JSON.stringify(hostingConfiguration(release, retiredReleases), null, 2) + '\n'
+      JSON.stringify(hostingConfiguration(release, retiredReleases, releases.slice(1)), null, 2) +
+        '\n'
     );
     await verifyCloudFrontend(staging);
     await fs.rename(staging, output);

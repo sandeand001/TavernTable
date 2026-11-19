@@ -527,6 +527,11 @@ files / 263,111,921 bytes**, selected **192 / 208,811,245 bytes**, and excluded
 no texture, model, animation, collision or rendering content is transformed.
 The manifest records the selection arithmetic, tampering is rejected, and
 verified older manifests without the new optional summary remain readable.
+When one previous release is retained, byte-identical old files are recorded as
+verified Firebase Hosting rewrites to the current release instead of copied
+again; changed old files remain physical, and malformed rewrite targets fail
+verification. This preserves old immutable URLs without duplicating unchanged
+model, animation or texture payloads.
 
 ### 3. Replace frame-driven full projection/layout work with invalidation
 
