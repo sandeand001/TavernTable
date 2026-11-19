@@ -518,6 +518,16 @@ This is high-complexity work because it spans build, deployment and visual
 quality. It is not an invitation to lower texture resolution, polygon quality or
 animation fidelity without measured and owner-approved parity.
 
+**Resolved for reachability filtering on 2026-11-19:** the deterministic frontend
+packager now traces exact character/action/model/texture references and excludes
+only unreachable runtime files. A real build measured **271 candidate asset
+files / 263,111,921 bytes**, selected **192 / 208,811,245 bytes**, and excluded
+**79 / 54,300,676 bytes**. The complete no-previous-release package contains
+**531 versioned files / 234,986,089 bytes**. Selected assets are copied byte-for-byte;
+no texture, model, animation, collision or rendering content is transformed.
+The manifest records the selection arithmetic, tampering is rejected, and
+verified older manifests without the new optional summary remain readable.
+
 ### 3. Replace frame-driven full projection/layout work with invalidation
 
 **Impact 4 / Complexity 4 / Code-confirmed; not production-profiled**

@@ -16,6 +16,13 @@ const GROUPS = [
   ['assets/terrain/3d Assets/Tropical/textures', ['.png', '.jpg', '.jpeg']],
   ['assets/images/construction', ['.svg']],
 ];
+const RUNTIME_ASSET_SOURCES = [
+  'src/core/ModelAssetCache.js',
+  'src/core/ModelPostProcessing.js',
+  'src/config/CharacterCatalog.js',
+  'src/config/HumanoidActionCatalog.js',
+  'src/config/token-adapter/CoverMetrics.js',
+];
 const FIXED_ASSETS = [
   'assets/Items/d20-gold.glb',
   'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx',
@@ -102,6 +109,69 @@ function* nodes(value) {
       for (const item of child) yield* nodes(item);
     } else if (child && typeof child === 'object') yield* nodes(child);
   }
+}
+
+function stringReferences(tree) {
+  const references = new Set();
+  for (const node of nodes(tree)) {
+    if (node.type === 'Literal' && typeof node.value === 'string') references.add(node.value);
+    if (node.type === 'TemplateElement') references.add(node.value.cooked);
+  }
+  return references;
+}
+
+async function runtimeAssetSelection(root) {
+  const references = new Set();
+  for (const relative of RUNTIME_ASSET_SOURCES) {
+    const text = await fs.readFile(await sourceFile(root, relative), 'utf8');
+    for (const value of stringReferences(
+      parse(text, { ecmaVersion: 'latest', sourceType: 'module' })
+    ))
+      if (value) references.add(value);
+  }
+  const referenceValues = [...references];
+  const tropicalSource = await sourceFile(
+    root,
+    'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx'
+  );
+  const tropicalBinary = (await fs.readFile(tropicalSource)).toString('latin1').toLowerCase();
+  const selected = new Set();
+  let candidateFiles = 0;
+  let candidateBytes = 0;
+  for (const [directory, extensions] of GROUPS) {
+    for (const entry of await fs.readdir(diskPath(root, directory), {
+      withFileTypes: true,
+    })) {
+      if (!entry.isFile() || !extensions.includes(path.extname(entry.name).toLowerCase())) continue;
+      const source = directory + '/' + entry.name;
+      const filename = diskPath(root, source);
+      candidateFiles++;
+      candidateBytes += (await fs.stat(filename)).size;
+      const stem = path.parse(entry.name).name;
+      const referenced =
+        directory.endsWith('/construction') ||
+        references.has(source) ||
+        references.has(entry.name) ||
+        references.has(stem) ||
+        referenceValues.some((value) => value.endsWith('/' + entry.name)) ||
+        (directory.includes('/Tropical/textures') &&
+          tropicalBinary.includes(entry.name.toLowerCase()));
+      if (referenced) selected.add(source);
+    }
+  }
+  let selectedBytes = 0;
+  for (const source of selected) selectedBytes += (await fs.stat(diskPath(root, source))).size;
+  return {
+    files: selected,
+    summary: {
+      candidateFiles,
+      candidateBytes,
+      selectedFiles: selected.size,
+      selectedBytes,
+      excludedFiles: candidateFiles - selected.size,
+      excludedBytes: candidateBytes - selectedBytes,
+    },
+  };
 }
 
 function externalURL(value) {
@@ -209,17 +279,9 @@ async function applicationSources(root, html) {
 }
 
 async function publicAssets(root) {
+  const runtimeAssets = await runtimeAssetSelection(root);
   const selected = new Set(FIXED_ASSETS);
-  for (const [directory, extensions] of GROUPS) {
-    const folder = diskPath(root, directory);
-    if ((await fs.realpath(folder)) !== folder)
-      throw invalid('An asset family cannot traverse filesystem links');
-    for (const file of await fs.readdir(folder, { withFileTypes: true })) {
-      if (file.isSymbolicLink()) throw invalid('An asset family contains a filesystem link');
-      if (file.isFile() && extensions.includes(path.extname(file.name).toLowerCase()))
-        selected.add(directory + '/' + file.name);
-    }
-  }
+  for (const source of runtimeAssets.files) selected.add(source);
   const manifest = JSON.parse(
     await fs.readFile(await sourceFile(root, 'assets/data/resources/manifest.json'), 'utf8')
   );
@@ -246,7 +308,7 @@ async function publicAssets(root) {
     packs.add(pack.file);
     selected.add(pack.file);
   }
-  return selected;
+  return { files: selected, assetSelection: runtimeAssets.summary };
 }
 
 async function allFiles(root, relative = '') {
@@ -288,6 +350,23 @@ async function verifyCloudFrontend(output) {
   )
     throw invalid('The public package manifest or compatibility version is invalid');
   const names = new Set();
+  if (manifest.assetSelection) {
+    const selection = manifest.assetSelection;
+    const values = [
+      selection.candidateFiles,
+      selection.candidateBytes,
+      selection.selectedFiles,
+      selection.selectedBytes,
+      selection.excludedFiles,
+      selection.excludedBytes,
+    ];
+    if (
+      values.some((value) => !Number.isSafeInteger(value) || value < 0) ||
+      selection.candidateFiles !== selection.selectedFiles + selection.excludedFiles ||
+      selection.candidateBytes !== selection.selectedBytes + selection.excludedBytes
+    )
+      throw invalid('The public package asset-selection summary is invalid');
+  }
   for (const file of manifest.files) {
     if (
       !sourceAllowed(file.source) ||
@@ -396,7 +475,8 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
   const runtimeDigest = digest(JSON.stringify(runtime));
   const html = await fs.readFile(await sourceFile(root, 'index.html'), 'utf8');
   const application = await applicationSources(root, html);
-  const inputs = new Set(['index.html', ...application.sources, ...(await publicAssets(root))]);
+  const assets = await publicAssets(root);
+  const inputs = new Set(['index.html', ...application.sources, ...assets.files]);
   const files = [];
   for (const source of [...inputs].sort()) {
     const filename = await sourceFile(root, source);
@@ -409,6 +489,7 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
       runtimeDigest,
       externals: application.externals,
       files: files.map(({ source, bytes, sha256 }) => ({ source, bytes, sha256 })),
+      assetSelection: assets.assetSelection,
       provenance: PROVENANCE,
     })
   );
@@ -475,6 +556,7 @@ async function buildCloudFrontend({ root, output, runtime, previous = null }) {
       runtimeDigest,
       compatibility: COMPATIBILITY,
       externalModules: application.externals,
+      assetSelection: assets.assetSelection,
       assetProvenance: PROVENANCE,
       files: records.sort((a, b) => a.path.localeCompare(b.path, 'en')),
     };
@@ -542,6 +624,8 @@ async function main() {
       retainedReleases: manifest.releases.length,
       files: manifest.files.length,
       bytes: manifest.files.reduce((sum, file) => sum + file.bytes, 0),
+      excludedAssetFiles: manifest.assetSelection?.excludedFiles ?? 0,
+      excludedAssetBytes: manifest.assetSelection?.excludedBytes ?? 0,
       deploymentApproved: false,
       tropicalLicenseRecorded: false,
     })

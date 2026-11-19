@@ -45,11 +45,29 @@ async function fixture(t) {
   );
   await write('src/name.js', "export const name = 'first release';\n");
   await write('src/style.css', 'body { color: black; }\n');
+  await write(
+    'src/core/ModelAssetCache.js',
+    "const base = 'assets/terrain/3d Assets/OBJ'; export const refs = [`${base}/Fixture.obj`, 'Fixture.png'];\n"
+  );
+  await write('src/core/ModelPostProcessing.js', "export const materialTexture = 'Fixture.png';\n");
+  await write(
+    'src/config/HumanoidActionCatalog.js',
+    "export const action = { animation: 'Fixture' };\n"
+  );
+  await write(
+    'src/config/CharacterCatalog.js',
+    "export const model = 'assets/animated-sprites/Fixture.fbx';\n"
+  );
+  await write('src/config/token-adapter/CoverMetrics.js', 'export const metrics = {};\n');
   for (const relative of [
     'assets/animated-sprites/Fixture.fbx',
+    'assets/animated-sprites/Unused.fbx',
     'assets/terrain/3d Assets/OBJ/Fixture.obj',
+    'assets/terrain/3d Assets/OBJ/Unused.obj',
     'assets/terrain/3d Assets/Textures/Fixture.png',
+    'assets/terrain/3d Assets/Textures/Unused.png',
     'assets/terrain/3d Assets/Tropical/textures/Fixture.png',
+    'assets/terrain/3d Assets/Tropical/textures/Unused.png',
     'assets/images/construction/fixture.svg',
     'assets/Items/d20-gold.glb',
     'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx',
@@ -112,6 +130,34 @@ test('a deterministic static-only package contains only reachable code, approved
   assert.deepEqual(await verifyCloudFrontend(f.out('first')), first);
   assert.ok(first.files.some((file) => file.source === 'src/name.js'));
   assert.ok(first.files.some((file) => file.source.endsWith('MZRa_Pack_M02P.fbx')));
+  assert.equal(first.assetSelection.candidateFiles, 9);
+  assert.equal(first.assetSelection.selectedFiles, 5);
+  assert.equal(first.assetSelection.excludedFiles, 4);
+  assert.equal(
+    first.assetSelection.candidateBytes,
+    first.assetSelection.selectedBytes + first.assetSelection.excludedBytes
+  );
+  for (const source of [
+    'assets/animated-sprites/Fixture.fbx',
+    'assets/terrain/3d Assets/OBJ/Fixture.obj',
+    'assets/terrain/3d Assets/Textures/Fixture.png',
+    'assets/terrain/3d Assets/Tropical/textures/Fixture.png',
+  ])
+    assert.ok(
+      first.files.some((file) => file.source === source),
+      source
+    );
+  for (const source of [
+    'assets/animated-sprites/Unused.fbx',
+    'assets/terrain/3d Assets/OBJ/Unused.obj',
+    'assets/terrain/3d Assets/Textures/Unused.png',
+    'assets/terrain/3d Assets/Tropical/textures/Unused.png',
+  ])
+    assert.equal(
+      first.files.some((file) => file.source === source),
+      false,
+      source
+    );
   assert.equal(first.assetProvenance.deploymentApproved, false);
   assert.match(first.assetProvenance.tropical, /formal-license-unrecorded/);
   const entry = disk(f.out('first'), `public/releases/${first.release}/index.html`);
@@ -167,6 +213,7 @@ test('one verified previous release survives an update and unsupported or corrup
   const first = await f.build('first');
   const legacy = { ...first };
   delete legacy.retiredReleases;
+  delete legacy.assetSelection;
   await fs.writeFile(
     path.join(f.out('first'), 'public', 'frontend-manifest.json'),
     JSON.stringify(legacy)
@@ -250,6 +297,17 @@ test('retired entry metadata rejects malformed history, duplicate redirects and 
       code: 'invalid-frontend-package',
     });
   }
+  const invalidSelection = {
+    ...built,
+    assetSelection: {
+      ...built.assetSelection,
+      excludedFiles: built.assetSelection.excludedFiles + 1,
+    },
+  };
+  await fs.writeFile(manifestPath, JSON.stringify(invalidSelection));
+  await assert.rejects(verifyCloudFrontend(f.out('retired-validation')), {
+    code: 'invalid-frontend-package',
+  });
 });
 
 test('emulator/local/secret-bearing configurations and escaped or computed module imports fail without output', async (t) => {

@@ -2125,6 +2125,8 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
 - Clean full and production-only `npm ci` installs pass with only the intended
   direct production dependencies.
 - Cloud frontend packaging and production-host checks: **9/9 passing**.
+- The frontend packager traces runtime model/action/texture references and
+  excludes unreachable assets without recompressing or modifying selected files.
 - [HANDOFF.md](./HANDOFF.md) contains the current maintenance baseline and
   unfinished-work notes.
 

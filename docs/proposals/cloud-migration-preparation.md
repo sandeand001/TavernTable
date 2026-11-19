@@ -3243,6 +3243,14 @@ For a subsequent local build, pass `--previous` with the preceding verified
 package directory. No dependency installation, cloud deployment, IAM/index/
 billing change or live API request is performed by these commands.
 
+The subsequent 2026-11-19 reachability pass leaves source assets unchanged but
+narrows the runtime copy to exact character/action/model/texture references. A
+real no-previous build excludes **79 / 54,300,676 bytes** from 271 candidate
+asset files while retaining all 192 referenced files byte-for-byte. The
+resulting package contains **531 versioned files / 234,986,089 bytes** and
+records the selection counts in `frontend-manifest.json`. This is a packaging
+change, not a texture-resolution, polygon, animation or model conversion.
+
 The actual retained package is
 `build\cloud-frontend\m407-local-20261114-v1`, release
 **c4f0402a35145ee8e7b9b765ac6889001d7f2279618fa49a0c5e56af4aa9bee9**.

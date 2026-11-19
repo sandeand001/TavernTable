@@ -42,6 +42,9 @@ npm run lint:all
   high-severity vulnerabilities; moderate dev-tool advisories remain tracked.
 - Cloud frontend packaging and production-host checks pass 9/9 without emulator
   credentials. Cloud emulator integration remains a separate release gate.
+- The current measured frontend package is 531 files / 234,986,089 bytes.
+  Runtime tracing excludes 79 unreachable asset files / 54,300,676 bytes without
+  changing any retained model, animation or texture bytes.
 - Repository-wide `format:check` passes. The
   [lint configuration](./tools/.eslintrc.json) is unchanged.
 
