@@ -987,6 +987,14 @@ many helpers that merely expose the parent's entire `this` state.
    suites/1,032 passing tests, while this revision contains 254 suites/3,438
    tests and does not currently pass.
 
+**Resolved 2026-11-19:** the 2D terrain-painter subtree, obsolete experimental
+3D palette/design modules, retired depth/container compatibility helpers and the
+test-only terrain brush descriptor were traced to zero production or dynamic
+entry points and removed. The active biome test now asserts only the palette
+used by `TerrainMaterialFactory` and `TerrainRebuilder`. The focused terrain and
+scene regression set passed 70 suites / 963 tests; current docs no longer link
+the removed container helper.
+
 ### Not yet confirmed dead code
 
 `find-unused-exports.js` listed candidates such as

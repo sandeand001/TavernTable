@@ -193,7 +193,7 @@ Rejected. Its 78-method interface is nearly as complex as its implementation. Fa
 ## Consequences
 
 - `TerrainManager` is absorbed into `TerrainEngine` and ceases to exist as a public module.
-- `TerrainDataStore`, `TerrainBrushController`, `terrain/generation/`, `terrain/painting/` become private internals.
+- `TerrainDataStore`, `TerrainBrushController`, `terrain/generation/`, and `terrain/flora/` become private internals.
 - `TerrainCoordinator` is rewritten from scratch as a wiring-only layer (~20-30 lines).
 - PIXI removal from terrain proceeds incrementally as 3D equivalents are completed (side faces, elevation shadows, placeable sprites).
 - `BiomeCanvasPainter` procedural painting is deferred — tracked as a future enhancement.

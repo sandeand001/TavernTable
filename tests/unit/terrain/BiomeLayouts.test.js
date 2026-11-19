@@ -5,7 +5,6 @@ import { wallStairLayout } from '../../../src/terrain/WallStairs.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 import { ALL_BIOMES } from '../../../src/config/biome/BiomeConstants.js';
 import { getBiomeColorHex } from '../../../src/config/biome/BiomePalettes.js';
-import { getBiomeColor3DHex } from '../../../src/config/biome/BiomePalettes3D.js';
 import { getConstructionPalette } from '../../../src/config/biome/ConstructionPalettes.js';
 import { BIOME_FLORA_PROFILES } from '../../../src/config/terrain/FloraProfiles.js';
 import { getBiomeStructureBudget } from '../../../src/config/biome/SettlementProfiles.js';
@@ -59,7 +58,6 @@ test.each(['ruinedTown', 'ruinedCastle'])(
   (key) => {
     expect(ALL_BIOMES.some((biome) => biome.key === key)).toBe(true);
     expect(getBiomeColorHex(key, 0, 7, 9)).not.toBe(getBiomeColorHex('grassland', 0, 7, 9));
-    expect(getBiomeColor3DHex(key, 0, 7, 9)).not.toBe(getBiomeColor3DHex('grassland', 0, 7, 9));
     expect(getConstructionPalette(key).masonry).not.toBe(getConstructionPalette('town').masonry);
     const flora = BIOME_FLORA_PROFILES.find((profile) => profile.re.test(key));
     expect(flora?.density).toBeGreaterThan(0);
