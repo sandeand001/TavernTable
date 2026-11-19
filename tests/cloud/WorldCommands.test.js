@@ -3130,9 +3130,8 @@ test(
       snapshots++;
       return readSnapshot(...args);
     };
-    const { default: CloudPlayerSessionConnection } = await import(
-      '../../src/campaigns/CloudPlayerSessionConnection.js'
-    );
+    const { default: CloudPlayerSessionConnection } =
+      await import('../../src/campaigns/CloudPlayerSessionConnection.js');
     const connection = f.track(
       new CloudPlayerSessionConnection({
         store: f.member.client,

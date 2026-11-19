@@ -431,9 +431,8 @@ class ModelAssetCache {
       OBJLoaderMod = await import('three/examples/jsm/loaders/OBJLoader.js');
     } catch (e) {
       try {
-        OBJLoaderMod = await import(
-          'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js'
-        );
+        OBJLoaderMod =
+          await import('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/OBJLoader.js');
         logModelDebug('OBJLoader CDN fallback used');
       } catch (e2) {
         logger.error(
@@ -527,9 +526,8 @@ class ModelAssetCache {
         return mod.FBXLoader || mod.default || null;
       } catch (err) {
         try {
-          const fallback = await import(
-            'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js'
-          );
+          const fallback =
+            await import('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/FBXLoader.js');
           if (logger.isInfoEnabled()) {
             logger.info('FBXLoader CDN fallback used', {}, MODEL_LOG_CATEGORY);
           }

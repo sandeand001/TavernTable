@@ -2121,7 +2121,7 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
   production-install, parallel test and Firebase-emulator gates; the latest
   complete run passed 262 unit suites, 44 integration suites and 270 cloud
   emulator tests.
-- Production-only `npm audit`: **0 vulnerabilities** at the high severity gate.
+- Full and production-only `npm audit`: **0 high-severity vulnerabilities**.
 - Clean full and production-only `npm ci` installs pass with only the intended
   direct production dependencies.
 - Cloud frontend packaging and production-host checks: **9/9 passing**.

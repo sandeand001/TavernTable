@@ -149,9 +149,8 @@ describe('Token3DAdapter (Phase 3)', () => {
     jest.spyOn(mesh.material, 'dispose');
 
     // Use removal path
-    const { removeToken } = await import(
-      '../../../src/managers/token-manager/internals/removal.js'
-    );
+    const { removeToken } =
+      await import('../../../src/managers/token-manager/internals/removal.js');
     removeToken(c, token);
 
     expect(fakeScene.remove).toHaveBeenCalledWith(mesh);

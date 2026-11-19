@@ -38,7 +38,8 @@ npm run lint:all
   845 tests and 270 cloud emulator tests pass.
 - Clean full and production-only `npm ci` installs resolve, including the seven
   intentional production dependencies and development-only build tooling.
-- Production-only `npm audit --audit-level=high` reports zero vulnerabilities.
+- Full and production-only `npm audit --audit-level=high` report zero
+  high-severity vulnerabilities; moderate dev-tool advisories remain tracked.
 - Cloud frontend packaging and production-host checks pass 9/9 without emulator
   credentials. Cloud emulator integration remains a separate release gate.
 - Repository-wide `format:check` passes. The

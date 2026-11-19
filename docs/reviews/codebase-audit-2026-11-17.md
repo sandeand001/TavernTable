@@ -723,8 +723,12 @@ deduplicates onto the version already used by Firebase Admin. A fresh
 production-only `npm ci`, `npm ls`, and `npm audit --omit=dev --audit-level=high`
 pass with zero vulnerabilities. The prepare hook now skips Husky when dev
 dependencies are omitted without masking a normal development-install failure.
-Dev-tool advisories remain a separate upgrade concern rather than a reason for
-an unreviewed bulk major update.
+Compatible direct tools were then refreshed in place (Babel 7.29, Jest 30.5,
+Canvas 3.2, Prettier 3.10, Stylelint 16.26 and Firebase-tools 15.37), followed
+by non-forced npm lockfile patches. Full and production-only
+`npm audit --audit-level=high` now report zero high-severity vulnerabilities;
+30 moderate dev-tool findings remain, with the registry's remaining force fixes
+requiring unrelated major/downgrade decisions.
 
 ### 9. Reduce full character-sheet reconstruction and fix listener ownership
 

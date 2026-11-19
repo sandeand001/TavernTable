@@ -470,9 +470,9 @@ export default class CloudParticipantCache {
     const { pins } = this.coordinator;
     return Boolean(
       pins.has('view:' + entry.viewId) ||
-        pins.has(entry.kind + ':' + entry.id) ||
-        protectedKeys?.has('view:' + entry.viewId) ||
-        protectedKeys?.has(entry.kind + ':' + entry.id)
+      pins.has(entry.kind + ':' + entry.id) ||
+      protectedKeys?.has('view:' + entry.viewId) ||
+      protectedKeys?.has(entry.kind + ':' + entry.id)
     );
   }
 

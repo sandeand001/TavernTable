@@ -28,6 +28,7 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint:all
+      - run: npm audit --audit-level=high
 
   production-install:
     name: Production dependency install

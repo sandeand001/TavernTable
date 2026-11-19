@@ -93,12 +93,12 @@ export function samePlacement(left, right) {
   const b = right?.pose?.world || right?.world;
   return Boolean(
     a &&
-      b &&
-      left.mapId === right.mapId &&
-      left.gridX === right.gridX &&
-      left.gridY === right.gridY &&
-      (!left.pose || !right.pose || left.pose.kind === right.pose.kind) &&
-      ['x', 'y', 'z'].every((axis) => Math.abs(a[axis] - b[axis]) < 1e-6)
+    b &&
+    left.mapId === right.mapId &&
+    left.gridX === right.gridX &&
+    left.gridY === right.gridY &&
+    (!left.pose || !right.pose || left.pose.kind === right.pose.kind) &&
+    ['x', 'y', 'z'].every((axis) => Math.abs(a[axis] - b[axis]) < 1e-6)
   );
 }
 

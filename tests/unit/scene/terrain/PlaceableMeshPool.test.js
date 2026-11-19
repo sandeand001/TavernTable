@@ -36,9 +36,8 @@ jest.mock('three', () => {
 
 describe('PlaceableMeshPool (Phase 4 scaffold)', () => {
   test('adds a placeable and records metrics', async () => {
-    const { PlaceableMeshPool } = await import(
-      '../../../../src/scene/terrain/PlaceableMeshPool.js'
-    );
+    const { PlaceableMeshPool } =
+      await import('../../../../src/scene/terrain/PlaceableMeshPool.js');
     const scene = { add: jest.fn(), remove: jest.fn() };
     const gm = {
       renderMode: '3d-hybrid',

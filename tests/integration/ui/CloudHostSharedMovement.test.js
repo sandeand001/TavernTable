@@ -24,9 +24,8 @@ beforeAll(() => {
 afterAll(() => restoreFiles());
 
 async function fixture({ coverWall = false } = {}) {
-  const { default: CloudHostSessionUpdates } = await import(
-    '../../../src/ui/sessions/CloudHostSessionUpdates.js'
-  );
+  const { default: CloudHostSessionUpdates } =
+    await import('../../../src/ui/sessions/CloudHostSessionUpdates.js');
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const store = new CampaignStore({

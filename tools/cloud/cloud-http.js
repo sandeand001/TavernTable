@@ -100,7 +100,7 @@ async function streamBackup(response, id, text, headers) {
     Vary: 'Origin',
   });
   const chunks = function* () {
-    for (let start = 0; start < text.length; ) {
+    for (let start = 0; start < text.length;) {
       let end = Math.min(start + 64 * 1024, text.length);
       const last = text.charCodeAt(end - 1);
       // Keep UTF-16 pairs together before encoding each buffer as UTF-8.
