@@ -2114,12 +2114,12 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
 
 ### Verification snapshot: November 19, 2026
 
-- Last full Jest baseline: **308 suites, 4,096 tests passing**.
+- Last full Jest baseline: **307 suites, 4,093 tests passing**.
 - JavaScript lint, stylesheet lint and the architecture-layer check: **passing
   with zero warnings**.
 - [.github/workflows/ci.yml](./.github/workflows/ci.yml) mirrors the quality,
-  production-install, parallel test and Firebase-emulator gates; the first
-  complete run passed 264 unit suites, 44 integration suites and 270 cloud
+  production-install, parallel test and Firebase-emulator gates; the latest
+  complete run passed 263 unit suites, 44 integration suites and 270 cloud
   emulator tests.
 - Production-only `npm audit`: **0 vulnerabilities** at the high severity gate.
 - Clean full and production-only `npm ci` installs pass with only the intended

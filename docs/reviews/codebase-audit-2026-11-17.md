@@ -672,7 +672,7 @@ green baseline.
 runs formatting/lint/layering, a clean production install plus high-severity
 production audit, parallel unit/integration Jest jobs with retained JSON results,
 and the real Firebase emulator suite under Java 21. The local full Jest baseline
-remains 308 suites / 4,096 tests; the workflow's first complete run also passed
+remains 307 suites / 4,093 tests; the workflow's latest complete run also passed
 270 cloud emulator tests, and the frontend/production-host release checks remain
 9/9. The initial emulator run also caught an unbound native-motion metadata path;
 scene presentations now require the existing per-campaign live-owner readiness
@@ -767,7 +767,7 @@ recalculated on each refresh, and local/campaign/player library adapters expose
 the same invalidation interface. A settled sheet refresh now performs one
 persisted-character read, no saved-character rescan and no redundant derived-stat
 calculation while preserving the focused DOM control. The focused character/UI
-set passed 68 suites and 760 tests, followed by the full **308-suite / 4,096-test**
+set passed 68 suites and 760 tests, followed by the full **307-suite / 4,093-test**
 baseline; lint, layering and repository formatting checks also pass.
 
 ### 10. Semantically validate campaign imports before commit

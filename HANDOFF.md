@@ -29,12 +29,12 @@ npm test -- --runInBand --ci
 npm run lint:all
 ```
 
-- Latest complete Jest run (2026-11-19): 308 suites and 4,096 tests pass.
+- Latest complete Jest run (2026-11-19): 307 suites and 4,093 tests pass.
 - JavaScript and stylesheet lint and the architecture-layer check pass with no
   errors or warnings.
 - [.github/workflows/ci.yml](./.github/workflows/ci.yml) runs quality,
   production-install/audit, parallel Jest and Java 21 Firebase-emulator jobs.
-- First complete CI run: 264 unit suites / 3,251 tests, 44 integration suites /
+- Latest complete CI run: 263 unit suites / 3,248 tests, 44 integration suites /
   845 tests and 270 cloud emulator tests pass.
 - Clean full and production-only `npm ci` installs resolve, including the seven
   intentional production dependencies and development-only build tooling.
