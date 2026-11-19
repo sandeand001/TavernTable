@@ -647,7 +647,9 @@ export function mountCampaignControls(gameManager, services) {
     });
   });
   services.autosave?.subscribe((state) => {
-    status.textContent = state.text;
+    const routine = state.state === 'saving' || state.state === 'saved';
+    status.textContent = routine ? '' : state.text;
+    status.hidden = routine;
     status.dataset.saveState = state.state;
     retry.hidden = state.state !== 'error' || !services.autosave.ready;
     bar.setAttribute('aria-busy', String(state.state === 'loading' || state.state === 'saving'));

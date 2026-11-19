@@ -78,9 +78,9 @@ test('Settings contains campaign/session options while the floating region conta
     'JSON backups',
   ]);
   expect(button(controls, 'Discard local changes and refresh').hidden).toBe(true);
-  expect(controls.querySelector('[aria-label="Campaign save status"]').textContent).toBe(
-    'Saved to host'
-  );
+  const saveStatus = controls.querySelector('[aria-label="Campaign save status"]');
+  expect(saveStatus.textContent).toBe('');
+  expect(saveStatus.hidden).toBe(true);
   expect(controls.querySelector('[aria-label="Shared session status"]')).not.toBeNull();
   await Promise.resolve();
   expect(
@@ -115,13 +115,15 @@ test('Settings save status and Retry save continue following autosave updates', 
   expect(retry.hidden).toBe(true);
   saveState({ state: 'error', text: 'Disk unavailable' });
   expect(retry.hidden).toBe(false);
-  expect(controls.querySelector('[aria-label="Campaign save status"]').textContent).toBe(
-    'Disk unavailable'
-  );
+  const status = controls.querySelector('[aria-label="Campaign save status"]');
+  expect(status.textContent).toBe('Disk unavailable');
+  expect(status.hidden).toBe(false);
   retry.click();
   expect(services.autosave.retry).toHaveBeenCalledTimes(1);
   saveState({ state: 'saving', text: 'Saving to host...' });
   expect(controls.getAttribute('aria-busy')).toBe('true');
+  expect(status.textContent).toBe('');
+  expect(status.hidden).toBe(true);
   expect(retry.hidden).toBe(true);
 });
 

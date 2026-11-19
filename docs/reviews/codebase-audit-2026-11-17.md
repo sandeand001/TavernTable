@@ -239,6 +239,15 @@ terrain, actor and committed rules state still save; routine success is silent
 and nonmodal; failure and uncertain durability remain visible; a dirty camera
 change cannot cause a cloud conflict or keep a second command pending.
 
+**Resolved 2026-11-19:** camera, zoom and token selection no longer call the
+autosave dirty seam; a zoom/selection plus incoming-player-move regression proves
+no conflict or scene revision change, while later meaningful scene saves may
+still capture the current per-map camera value. Campaign Settings now suppresses
+both routine “Saving” and “Saved” output, leaving initial loading plus explicit
+failure/uncertain-recovery feedback visible. Cloud feedback already leaves
+normal saves nonmodal and reserves blocking UI for offline, uncertain or failed
+states. Focused camera/cloud-save coverage passed 50/50 tests.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted
