@@ -359,9 +359,9 @@ export default class CombatSession {
   }
 
   // -- Action reservations --
-  _actionOptions(token, choices = {}) {
-    const actions = characterActionOptions(this.library, token, choices);
-    const character = this.library.get(token.characterSheetId);
+  _actionOptions(token, choices = {}, snapshot = null) {
+    const actions = characterActionOptions(this.library, token, choices, snapshot);
+    const character = snapshot?.character ?? this.library.get(token.characterSheetId);
     const movable = this.effects.filter(
       (effect) =>
         effect.movement &&
@@ -378,11 +378,18 @@ export default class CombatSession {
     return [...actions, ...movable.map((effect) => effectMoveAction(effect, tileSize))];
   }
 
-  availableActions(token, choices = {}, { includeQueued = false } = {}) {
-    this._character(token);
+  availableActions(token, choices = {}, { includeQueued = false, snapshot = null } = {}) {
+    const resolved =
+      snapshot === null
+        ? null
+        : {
+            ...snapshot,
+            movementCharacter: this._characterFor(token, snapshot.character),
+          };
+    if (resolved === null) this._character(token);
     this.targeting?.beginQuery();
-    return this._actionOptions(token, choices).filter((action) =>
-      this._available(token, action, includeQueued, includeQueued)
+    return this._actionOptions(token, choices, resolved).filter((action) =>
+      this._available(token, action, includeQueued, includeQueued, resolved)
     );
   }
 
@@ -845,7 +852,7 @@ export default class CombatSession {
     };
   }
 
-  _available(token, action, ignorePending = false, includeQueued = false) {
+  _available(token, action, ignorePending = false, includeQueued = false, snapshot = null) {
     if (
       !includeQueued &&
       (this.library.isSaving ||
@@ -858,20 +865,25 @@ export default class CombatSession {
       (this._exclusivePending || (this.active ? this.pending : this.pendingActions.has(token)))
     )
       return false;
-    if (this.library.rules.cannotTakeActions(this._character(token))) return false;
+    const character = snapshot?.movementCharacter ?? this._characterFor(token, snapshot?.character);
+    if (this.library.rules.cannotTakeActions(character)) return false;
     if (action.targeting && this.targeting && !this.targeting.availability(token, action).allowed)
       return false;
     if (action.spellReady === false) return false;
     if (action.resourceId) {
-      const resource = this.library.rest
-        .status(token.characterSheetId)
-        .resources.find((entry) => entry.id === action.resourceId);
+      const status = snapshot?.readRestStatus
+        ? snapshot.readRestStatus()
+        : this.library.rest.status(
+            snapshot?.character ?? token.characterSheetId,
+            snapshot ?? undefined
+          );
+      const resource = status.resources.find((entry) => entry.id === action.resourceId);
       if (!resource || (resource.maximum !== null && resource.remaining < action.resourceCost))
         return false;
     }
     if (action.customId && action.maximum !== null) {
       const entry = this.library.actions
-        .list(token.characterSheetId)
+        .list(snapshot?.character ?? token.characterSheetId, snapshot?.actions ?? null)
         .find((candidate) => candidate.id === action.customId);
       if (!entry || (entry.reset !== 'turn' && entry.remaining < 1)) return false;
       if (

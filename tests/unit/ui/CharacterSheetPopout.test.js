@@ -270,6 +270,21 @@ describe('Character sheet pop-out windows', () => {
     expect(popout.document.activeElement).toBe(speed);
   });
 
+  test('a settled play refresh shares the saved character across live action availability', async () => {
+    await sheets.open(hero);
+    sheets.popOut();
+    sheets.root.querySelector('[data-sheet-section="combat"]').click();
+    const content = sheets.characterContent;
+    const stats = jest.spyOn(library, 'stats');
+    const get = jest.spyOn(library, 'get');
+
+    content.render();
+
+    expect(stats).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(control('Actions remaining').textContent).toBe('1');
+  });
+
   test('switching map creatures blurs the old pop-out field before changing characters', async () => {
     await sheets.open(hero);
     sheets.popOut();

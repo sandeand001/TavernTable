@@ -191,12 +191,25 @@ function actionCards(actions, context) {
 
 // -- Play sections --
 function playSections(context, available, options) {
-  const { library, token, mode, stats, status, layout, editingLayout, opened } = context;
+  const {
+    library,
+    token,
+    character,
+    snapshot,
+    mode,
+    stats,
+    status,
+    layout,
+    editingLayout,
+    opened,
+  } = context;
   const combat = mode === 'combat';
   const publicView = !!context.playerGameplay;
   const ready = new Set(available.map((action) => action.id));
   const definitions =
-    publicView || editingLayout ? characterActionOptions(library, token, options) : available;
+    publicView || editingLayout
+      ? characterActionOptions(library, token, options, snapshot)
+      : available;
   const home = (action) =>
     ['action', 'attack'].includes(action.cost)
       ? 'action'
@@ -227,7 +240,7 @@ function playSections(context, available, options) {
       })),
     ...checkCards(stats),
     ...(!combat
-      ? library.get(token.characterSheetId).equipment.map((item) => ({
+      ? character.equipment.map((item) => ({
           id: `reference:${item.id}`,
           kind: 'reference',
           home: 'items',
@@ -326,8 +339,10 @@ export function renderPlayView(context) {
     opened = {},
     editingLayout = false,
   } = context;
-  const status = playerGameplay ? null : session.status(token);
-  const stats = library.stats(token.characterSheetId);
+  const character = context.character ?? library.get(token.characterSheetId);
+  const snapshot = context.snapshot ?? null;
+  const status = playerGameplay ? null : session.status(token, undefined, character);
+  const stats = snapshot?.stats ?? library.stats(character);
   const options = {};
   for (const [id, choice] of Object.entries(choices)) {
     if (choice.slotLevel !== undefined) {
@@ -337,13 +352,18 @@ export function renderPlayView(context) {
   }
   const available = playerGameplay
     ? playerGameplay.availableActions(token)
-    : session.availableActions(token, options, { includeQueued: true });
+    : session.availableActions(token, options, {
+        includeQueued: true,
+        snapshot,
+      });
   const combat = mode === 'combat';
   const activeName =
     !playerGameplay && session.activeToken
-      ? library.get(session.activeToken.characterSheetId).name
+      ? session.activeToken === token
+        ? character.name
+        : library.get(session.activeToken.characterSheetId).name
       : null;
-  const layout = library.layouts.page(token.characterSheetId, mode);
+  const layout = library.layouts.page(character, mode);
   const publicBudget = playerGameplay?.movementBudget(token);
   const playerState = playerGameplay?.commands.getState();
   const publicTurn = playerState?.gameplay.turn;
@@ -359,8 +379,12 @@ export function renderPlayView(context) {
     stats,
     status,
     layout,
-    resources: library.rest.status(token.characterSheetId).resources,
-    customs: library.actions.list(token.characterSheetId),
+    character,
+    snapshot,
+    resources: snapshot?.readRestStatus
+      ? snapshot.readRestStatus().resources
+      : library.rest.status(character, snapshot ?? undefined).resources,
+    customs: library.actions.list(character, snapshot?.actions ?? null),
   };
   return `<section class="sheet-play-view ${editingLayout ? 'sheet-layout-editing' : ''}" aria-label="${combat ? 'Combat play' : 'Non-combat play'}">
     <div class="sheet-layout-toolbar">

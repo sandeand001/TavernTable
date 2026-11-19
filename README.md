@@ -2114,7 +2114,7 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
 
 ### Verification snapshot: November 19, 2026
 
-- Last full Jest baseline: **308 suites, 4,094 tests passing**.
+- Last full Jest baseline: **308 suites, 4,095 tests passing**.
 - JavaScript lint, stylesheet lint and the architecture-layer check: **passing
   with zero warnings**.
 - Clean full and production-only `npm ci` installs pass with only the intended

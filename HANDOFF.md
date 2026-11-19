@@ -29,7 +29,7 @@ npm test -- --runInBand --ci
 npm run lint:all
 ```
 
-- Latest complete Jest run (2026-11-19): 308 suites and 4,094 tests pass.
+- Latest complete Jest run (2026-11-19): 308 suites and 4,095 tests pass.
 - JavaScript and stylesheet lint and the architecture-layer check pass with no
   errors or warnings.
 - Clean full and production-only `npm ci` installs resolve, including the seven

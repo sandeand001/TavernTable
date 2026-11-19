@@ -361,6 +361,8 @@ export default class CharacterSheetContent {
     this.gameManager.token3DAdapter?.refreshTokenAppearance?.(this.token, character);
     const derived = this._characterDerivedSections(library, id, character);
     const { stats } = derived;
+    const readRestStatus = this._restStatusReader(library, character, derived);
+    const renderSnapshot = { character, stats, actions: derived.actions, readRestStatus };
     const movement = getTokenMovementSettings(this.token, character);
     const playerBudget = this.services.playerGameplay?.movementBudget(this.token);
     const previous = this.movementView;
@@ -455,6 +457,8 @@ export default class CharacterSheetContent {
               session: this.services.combat,
               playerGameplay: this.services.playerGameplay,
               token: this.token,
+              character,
+              snapshot: renderSnapshot,
               mode: this.section,
               choices: this.playChoices,
               opened: this.playOpened,
@@ -487,7 +491,6 @@ export default class CharacterSheetContent {
     if (this.restControls.root.parentNode !== healthHost) healthHost.append(this.restControls.root);
     this.healthBar.update(character);
     this.imageEditor.update(character);
-    const readRestStatus = this._restStatusReader(library, character, derived);
     this.restControls.update(character, this.services.library, readRestStatus);
     const customHost = this.main.querySelector('[data-sheet-island="custom-editor"]');
     if (this.customActions.root.parentNode !== customHost)

@@ -49,9 +49,9 @@ export default class CharacterPlayLayout {
     return `${PLAY_LAYOUT_STORAGE_PREFIX}${id}`;
   }
 
-  page(id, mode) {
+  page(idOrCharacter, mode) {
     if (!PLAY_LAYOUT_MODES.includes(mode)) throw new Error('Choose a supported play page');
-    return this.snapshot(id).pages[mode];
+    return this.snapshot(idOrCharacter).pages[mode];
   }
 
   savePage(id, mode, page) {
@@ -68,8 +68,10 @@ export default class CharacterPlayLayout {
     this.savePage(id, mode, emptyPage());
   }
 
-  snapshot(id) {
-    this.library.get(id);
+  snapshot(idOrCharacter) {
+    const id = typeof idOrCharacter === 'string' ? idOrCharacter : idOrCharacter?.id;
+    if (typeof idOrCharacter === 'string') this.library.get(id);
+    else if (typeof id !== 'string' || !id) throw new Error('A saved character is required');
     const raw = this.storage.getItem(this.key(id));
     if (raw !== null && raw.length > 1000000) throw new Error('The saved play layout is too large');
     const state = raw === null ? emptyState(id) : JSON.parse(raw);
