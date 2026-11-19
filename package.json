@@ -30,7 +30,7 @@
     "serve:alt4": "node tools/local-host.js --port 3004",
     "start": "npm run serve",
     "serve:open": "start \"\" http://localhost:3000 && npm run serve",
-    "prepare": "husky",
+    "prepare": "node tools/install-git-hooks.js",
     "test:cloud": "node tools/cloud/run-emulator-tests.js",
     "dev:cloud": "node tools/cloud/run-emulator-tests.js --serve",
     "build:cloud:frontend": "node tools/cloud/build-frontend.js"
@@ -93,6 +93,7 @@
   "homepage": "https://github.com/sandeand001/TavernTable#readme",
   "overrides": {
     "@firebase/app": "0.16.2",
-    "@firebase/app-compat": "0.5.18"
+    "@firebase/app-compat": "0.5.18",
+    "@grpc/grpc-js": "1.14.7"
   }
 }

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.4.1
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint:all
+
+  production-install:
+    name: Production dependency install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.4.1
+          cache: npm
+      - run: npm ci --omit=dev
+      - run: npm ls --omit=dev --depth=0
+      - run: npm audit --omit=dev --audit-level=high
+
+  tests:
+    name: ${{ matrix.name }} tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Unit
+            command: npm run test:unit -- --runInBand --ci --json --outputFile=test-results/unit.json
+            artifact: unit
+          - name: Integration
+            command: npm run test:integration -- --runInBand --ci --json --outputFile=test-results/integration.json
+            artifact: integration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.4.1
+          cache: npm
+      - run: npm ci
+      - run: mkdir -p test-results
+      - run: ${{ matrix.command }}
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-test-results
+          path: test-results/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  cloud-integration:
+    name: Cloud emulator integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.4.1
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run test:cloud

@@ -32,8 +32,11 @@ npm run lint:all
 - Latest complete Jest run (2026-11-19): 308 suites and 4,095 tests pass.
 - JavaScript and stylesheet lint and the architecture-layer check pass with no
   errors or warnings.
+- [.github/workflows/ci.yml](./.github/workflows/ci.yml) runs quality,
+  production-install/audit, parallel Jest and Java 21 Firebase-emulator jobs.
 - Clean full and production-only `npm ci` installs resolve, including the seven
   intentional production dependencies and development-only build tooling.
+- Production-only `npm audit --audit-level=high` reports zero vulnerabilities.
 - Cloud frontend packaging and production-host checks pass 9/9 without emulator
   credentials. Cloud emulator integration remains a separate release gate.
 - Repository-wide `format:check` passes. The

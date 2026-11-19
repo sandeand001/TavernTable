@@ -668,6 +668,14 @@ Keep slow real-animation/geometry suites, but parallelize them rather than
 silently excluding them. Publish one canonical JSON/JUnit result and require a
 green baseline.
 
+**Resolved for validation CI on 2026-11-19:** [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
+runs formatting/lint/layering, a clean production install plus high-severity
+production audit, parallel unit/integration Jest jobs with retained JSON results,
+and the real Firebase emulator suite under Java 21. The local full Jest baseline
+remains 308 suites / 4,095 tests, and the frontend/production-host release
+checks remain 9/9. Automatic production deployment remains intentionally absent
+because owner approval and a release credential policy are still separate gates.
+
 ### 8. Correct the package manifest and address registry advisories
 
 **Impact 4 / Complexity 3 / Registry-confirmed; compatibility untested**
@@ -703,6 +711,17 @@ revalidated before any package work.
 classify each package as runtime or dev-only, then remove unnecessary direct
 entries. Run one upgrade family at a time against the full test/build and visual
 regressions. Avoid `npm audit fix` as an unreviewed bulk action.
+
+**Resolved for the production manifest on 2026-11-19:** the direct runtime
+manifest is limited to seven intentional dependencies, with tool/build packages
+under `devDependencies`. The verified Firebase pin remains 12.19.0; a targeted
+`@grpc/grpc-js` 1.14.7 override removes the vulnerable transitive 1.9 line and
+deduplicates onto the version already used by Firebase Admin. A fresh
+production-only `npm ci`, `npm ls`, and `npm audit --omit=dev --audit-level=high`
+pass with zero vulnerabilities. The prepare hook now skips Husky when dev
+dependencies are omitted without masking a normal development-install failure.
+Dev-tool advisories remain a separate upgrade concern rather than a reason for
+an unreviewed bulk major update.
 
 ### 9. Reduce full character-sheet reconstruction and fix listener ownership
 

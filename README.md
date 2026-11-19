@@ -2117,6 +2117,9 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
 - Last full Jest baseline: **308 suites, 4,095 tests passing**.
 - JavaScript lint, stylesheet lint and the architecture-layer check: **passing
   with zero warnings**.
+- [.github/workflows/ci.yml](./.github/workflows/ci.yml) mirrors the quality,
+  production-install, parallel test and Firebase-emulator gates.
+- Production-only `npm audit`: **0 vulnerabilities** at the high severity gate.
 - Clean full and production-only `npm ci` installs pass with only the intended
   direct production dependencies.
 - Cloud frontend packaging and production-host checks: **9/9 passing**.
