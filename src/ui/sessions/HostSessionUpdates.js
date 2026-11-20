@@ -112,6 +112,7 @@ export function attachHostSessionUpdates({
     }
     if (JSON.stringify(state.campaign.sourcePacks) !== JSON.stringify(library.campaign.sourcePacks))
       throw new Error('Campaign sources changed in another host window. Reopen this campaign.');
+    if (options.rebaseShared) await services.autosave.rebaseSharedUpdate(state);
     if (
       !options.discardLocal &&
       state.sceneRevision !== library.sceneRevision &&
@@ -155,7 +156,15 @@ export function attachHostSessionUpdates({
       output.textContent = services.autosave.status.text;
       return;
     }
-    if (conflictingWork()) {
+    if (isCampaignActionInProgress(gameManager)) {
+      pending = true;
+      output.textContent =
+        'Waiting for the current DM action to finish before applying the player update.';
+      timer = setTimeout(() => void refresh(), 100);
+      return;
+    }
+    const canRebase = services.autosave.canRebaseSharedUpdate?.() === true;
+    if (conflictingWork() && !canRebase) {
       pauseConflict();
       return;
     }
@@ -169,11 +178,17 @@ export function attachHostSessionUpdates({
     try {
       const state = await store.readCharacters(services.campaign.id);
       if (closed) return;
-      if (conflictingWork()) {
+      if (isCampaignActionInProgress(gameManager)) {
+        pending = true;
+        return;
+      }
+      if (conflictingWork() && services.autosave.canRebaseSharedUpdate?.() !== true) {
         pauseConflict();
         return;
       }
-      await applyState(state);
+      await applyState(state, {
+        rebaseShared: services.autosave.canRebaseSharedUpdate?.() === true,
+      });
     } catch (error) {
       output.textContent = error.message;
       GameErrors.gameState(error, { component: 'HostSessionUpdates', operation: 'refresh' });

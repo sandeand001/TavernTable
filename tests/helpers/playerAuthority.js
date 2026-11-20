@@ -132,7 +132,10 @@ export async function createPlayerAuthorityTable({
   spells = [],
   visibleNPC = false,
   liveUpdates = false,
+  playerCount = 1,
 } = {}) {
+  if (!Number.isInteger(playerCount) || playerCount < 1 || playerCount > 10)
+    throw new Error('Player authority fixtures support between one and ten players');
   const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'taverntable-client-interop-'));
   let child;
   const close = async () => {
@@ -202,12 +205,16 @@ export async function createPlayerAuthorityTable({
     let records;
     let scene;
     let characterId;
+    let characterIds;
     let catalog;
     try {
       const campaign = await workspace.create({ name: 'Native client interop', ruleset: '2024' });
       const opened = await workspace.open(campaign.id);
       catalog = await workspace.resources.catalog(campaign);
       characterId = await opened.library.create('Assigned scout');
+      characterIds = [characterId];
+      for (let index = 1; index < playerCount; index++)
+        characterIds.push(await opened.library.create(`Assigned scout ${index + 1}`));
       if (Object.keys(characterUpdates).length)
         await opened.library.edit(characterId, characterUpdates);
       for (const entryId of spells) {
@@ -217,19 +224,42 @@ export async function createPlayerAuthorityTable({
       const privateId = await opened.library.create('DM-only record');
       await opened.library.edit(privateId, { notes: 'PRIVATE AUTHORITY FIXTURE NOTES' });
       scene = sceneState({ ruleset: '2024', characterId, name: 'Assigned scout' });
-      scene.terrain.heights = Array.from({ length: 5 }, () => Array(5).fill(0));
+      const dimension = Math.max(5, playerCount + 3);
+      scene.grid.cols = dimension;
+      scene.grid.rows = dimension;
+      scene.terrain.heights = Array.from({ length: dimension }, () => Array(dimension).fill(0));
+      for (let index = 1; index < playerCount; index++)
+        scene.creatures.push({
+          ...structuredClone(scene.creatures[0]),
+          id: `token-${index + 1}`,
+          instanceNumber: index + 1,
+          name: `Assigned scout ${index + 1}`,
+          characterId: characterIds[index],
+          gridX: index + 1,
+          pose: { kind: 'ground', world: { x: index + 1.5, y: 0, z: 1.5 } },
+        });
+      scene.tokenCounters = {
+        nextId: playerCount,
+        types: [[scene.creatures[0].type, playerCount]],
+      };
       if (visibleNPC) {
         scene.creatures.push({
           ...scene.creatures[0],
-          id: 'token-2',
-          instanceNumber: 2,
+          id: `token-${playerCount + 1}`,
+          instanceNumber: playerCount + 1,
           characterId: privateId,
           name: opened.library.get(privateId).name,
-          gridX: 2,
+          gridX: playerCount + 1,
           gridY: 1,
-          pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+          pose: {
+            kind: 'ground',
+            world: { x: playerCount + 1.5, y: 0, z: 1.5 },
+          },
         });
-        scene.tokenCounters = { nextId: 2, types: [['mannequin', 2]] };
+        scene.tokenCounters = {
+          nextId: playerCount + 1,
+          types: [[scene.creatures[0].type, playerCount + 1]],
+        };
       }
       const token = { id: 'token-1', world: { ...scene.creatures[0].pose.world } };
       linkTokenCharacter(token, opened.library, characterId);
@@ -260,24 +290,39 @@ export async function createPlayerAuthorityTable({
         scene: { revision: 0, value: JSON.stringify(scene) },
       },
     ]);
-    const invitation = await dm.connection.call('createInvite', [campaign.id, { name: 'Player' }]);
-    await dm.connection.call('assignCharacter', [campaign.id, invitation.id, characterId, true]);
-    const joined = await request(
-      url + '/api/session/join',
-      { invite: invitation.invite },
-      { 'Content-Type': 'application/json' }
-    );
-    if (joined.status !== 200) throw new Error('The isolated player invitation did not join');
-    const playerCookie = joined.headers['set-cookie'][0].split(';')[0];
-    const session = await request(url + '/api/session', null, { Cookie: playerCookie });
-    const player = participant(url, playerCookie, session.body.csrf, liveUpdates);
+    const players = [];
+    for (let index = 0; index < playerCount; index++) {
+      const invitation = await dm.connection.call('createInvite', [
+        campaign.id,
+        { name: `Player ${index + 1}` },
+      ]);
+      await dm.connection.call('assignCharacter', [
+        campaign.id,
+        invitation.id,
+        characterIds[index],
+        true,
+      ]);
+      const joined = await request(
+        url + '/api/session/join',
+        { invite: invitation.invite },
+        { 'Content-Type': 'application/json' }
+      );
+      if (joined.status !== 200) throw new Error('The isolated player invitation did not join');
+      const playerCookie = joined.headers['set-cookie'][0].split(';')[0];
+      const session = await request(url + '/api/session', null, { Cookie: playerCookie });
+      players.push({
+        ...participant(url, playerCookie, session.body.csrf, liveUpdates),
+        identity: session.body,
+        playerId: invitation.id,
+        characterId: characterIds[index],
+        tokenId: `token-${index + 1}`,
+      });
+    }
     return {
-      ...player,
-      identity: session.body,
+      ...players[0],
       dm,
       campaign,
-      playerId: invitation.id,
-      characterId,
+      players,
       catalog,
       close,
     };

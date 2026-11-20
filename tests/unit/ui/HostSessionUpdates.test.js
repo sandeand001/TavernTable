@@ -11,17 +11,31 @@ import {
   disposeConnectedTravelBoard,
 } from '../../helpers/connectedTravelBoard.js';
 
-async function fixture({ startAutosave = true } = {}) {
+async function fixture({ startAutosave = true, extraActor = false } = {}) {
   const store = new CampaignStore({
     indexedDB: testIndexedDB(),
     packs: [{ id: 'srd-2014', ruleset: '2014', version: '5.1', core: true }],
   });
+  store.storageInfo = { kind: 'host' };
   const campaign = await store.create({ name: 'Shared movement', ruleset: '2014' });
   const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
   const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
   const characterId = await library.create('Scout');
+  const extraCharacterId = extraActor ? await library.create('Guard') : null;
   const saved = sceneState({ characterId, name: 'Scout' });
   saved.terrain.heights = Array.from({ length: 5 }, () => Array(5).fill(0));
+  if (extraActor) {
+    saved.creatures.push({
+      ...JSON.parse(JSON.stringify(saved.creatures[0])),
+      id: 'token-2',
+      instanceNumber: 2,
+      name: 'Guard',
+      characterId: extraCharacterId,
+      gridX: 3,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    });
+    saved.tokenCounters = { nextId: 2, types: [[saved.creatures[0].type, 2]] };
+  }
   const world = CampaignWorld.fromScene(saved, {
     ruleset: '2014',
     library,
@@ -111,6 +125,141 @@ test('the DM live-notice path reconciles an accepted player move without requiri
         library,
       }).creatures[0].pose.world.x
     ).toBe(2.5);
+  } finally {
+    close();
+  }
+});
+
+test('a local DM movement rebases over a simultaneous player move on a different actor', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  try {
+    const local = gm.placedTokens[1];
+    local.gridX = 4;
+    local.world = { x: 4.5, y: 0, z: 1.5 };
+    gm.token3DAdapter.recordStablePlacement(local);
+    expect(autosave.canRebaseSharedUpdate()).toBe(true);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (
+      let check = 0;
+      check < 100 &&
+      (gm.placedTokens[0].world.x !== 2.5 || !parent.textContent.includes('up to date'));
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).not.toMatch(/conflict|paused|reopen/i);
+    expect(gm.placedTokens[0].world.x).toBe(2.5);
+    expect(gm.placedTokens[1].world.x).toBe(4.5);
+    await autosave.flush();
+    const saved = decodeScene((await store.readScene(campaign.id)).scene, {
+      ruleset: library.ruleset,
+      library,
+    });
+    expect(saved.creatures.map(({ pose }) => pose.world.x)).toEqual([2.5, 4.5]);
+  } finally {
+    close();
+  }
+});
+
+test('a local DM facing change rebases over a simultaneous player move on another actor', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  try {
+    const local = gm.placedTokens[1];
+    local.facingAngle = Math.PI / 2;
+    gm.token3DAdapter.recordStablePlacement(local);
+    expect(autosave.canRebaseSharedUpdate()).toBe(true);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (
+      let check = 0;
+      check < 100 &&
+      (gm.placedTokens[0].world.x !== 2.5 || !parent.textContent.includes('up to date'));
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).not.toMatch(/conflict|paused|reopen/i);
+    expect(gm.placedTokens[0].world.x).toBe(2.5);
+    expect(gm.placedTokens[1].facingAngle).toBe(Math.PI / 2);
+    await autosave.flush();
+    const saved = decodeScene((await store.readScene(campaign.id)).scene, {
+      ruleset: library.ruleset,
+      library,
+    });
+    expect(saved.creatures[1].facingAngle).toBe(Math.PI / 2);
+  } finally {
+    close();
+  }
+});
+
+test('a simultaneous local and shared change to the same actor remains a recoverable conflict', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture();
+  try {
+    const local = gm.placedTokens[0];
+    local.gridX = 3;
+    local.world = { x: 3.5, y: 0, z: 1.5 };
+    gm.token3DAdapter.recordStablePlacement(local);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (
+      let check = 0;
+      check < 100 && !parent.textContent.match(/shared|conflict|paused/i);
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).toMatch(/shared|conflict|paused/i);
+    expect(gm.placedTokens[0].world.x).toBe(3.5);
+    await expect(autosave.flush()).rejects.toThrow(/shared|conflict|discard/i);
+    const saved = decodeScene((await store.readScene(campaign.id)).scene, {
+      ruleset: library.ruleset,
+      library,
+    });
+    expect(saved.creatures[0].pose.world.x).toBe(2.5);
   } finally {
     close();
   }

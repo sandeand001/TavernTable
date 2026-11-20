@@ -6,7 +6,11 @@ import {
   isCampaignActionInProgress,
 } from './SceneWorld.js';
 import { decodeScene, encodeScene } from './CampaignScene.js';
-import { SceneNotReadyError } from '../scene/token-adapter/SavedPlacements.js';
+import {
+  SceneNotReadyError,
+  samePlacement,
+  sceneActorPlacement,
+} from '../scene/token-adapter/SavedPlacements.js';
 import { notifyCreatureNames } from '../entities/creatures/CreatureNames.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import CampaignWorld from './CampaignWorld.js';
@@ -35,6 +39,7 @@ export default class CampaignAutosave {
     this.writing = null;
     this.timer = null;
     this.firstDirtyAt = null;
+    this.changeKinds = new Set();
     this.closed = false;
     gameManager.sceneAutosave = this;
   }
@@ -131,8 +136,9 @@ export default class CampaignAutosave {
     }
   }
 
-  changed() {
+  changed(reason = 'scene') {
     if (!this.ready || this.closed) return;
+    this.changeKinds.add(reason);
     this.generation++;
     this.firstDirtyAt ??= performance.now();
     this._publish();
@@ -161,7 +167,84 @@ export default class CampaignAutosave {
     return this.sharedConflict;
   }
 
-  async reconcile(state, { discardLocal = false, expectedGeneration = null } = {}) {
+  canRebaseSharedUpdate() {
+    return !!(
+      this.dirty &&
+      this.ready &&
+      !this.closed &&
+      !this.writing &&
+      !this.library.isSaving &&
+      !this.library.pendingScenes &&
+      !this.sharedConflict &&
+      !isCampaignActionInProgress(this.gameManager) &&
+      this.changeKinds.size === 1 &&
+      this.changeKinds.has('movement checkpoint') &&
+      this.gameManager.token3DAdapter.hasSharedActorPatches?.()
+    );
+  }
+
+  async rebaseSharedUpdate(state) {
+    if (!this.canRebaseSharedUpdate()) {
+      throw this.pauseForSharedUpdate();
+    }
+    const conflict = (reason) => {
+      const error = this.pauseForSharedUpdate();
+      error.cause = new Error(reason);
+      throw error;
+    };
+    const captured = await this._capture(this.library, { completedActionsOnly: true });
+    const remote = decodeScene(state.scene, {
+      ruleset: this.library.ruleset,
+      library: this.library,
+    });
+    if (JSON.stringify(captured.scene.combat) !== JSON.stringify(remote.combat))
+      conflict('The local and shared combat state both changed');
+    const patches = this.gameManager.token3DAdapter.getSharedActorPatches(captured.scene);
+    if (!patches.length) conflict('No exact local actor patch is available');
+    for (const patch of patches) {
+      const local = captured.scene.creatures.find(({ id }) => id === patch.tokenId);
+      const remoteIndex = remote.creatures.findIndex(({ id }) => id === patch.tokenId);
+      const canonical = remote.creatures[remoteIndex];
+      if (
+        !local ||
+        !canonical ||
+        !samePlacement(sceneActorPlacement(remote, canonical), patch.from) ||
+        Math.abs(canonical.facingAngle - patch.from.facingAngle) >= 1e-6 ||
+        !samePlacement(sceneActorPlacement(captured.scene, local), patch.placement) ||
+        Math.abs(local.facingAngle - patch.placement.facingAngle) >= 1e-6
+      )
+        conflict(`The shared actor changed concurrently: ${patch.tokenId}`);
+      remote.creatures[remoteIndex] = {
+        ...canonical,
+        ...(remote.version === 3 ? { mapId: patch.placement.mapId } : {}),
+        gridX: patch.placement.gridX,
+        gridY: patch.placement.gridY,
+        facingAngle: patch.placement.facingAngle,
+        pose: JSON.parse(JSON.stringify(patch.placement.pose)),
+      };
+    }
+    const merged = {
+      ...state,
+      scene: encodeScene(remote, {
+        ruleset: this.library.ruleset,
+        library: this.library,
+      }),
+    };
+    const expectedGeneration = this.generation;
+    await this.reconcile(merged, {
+      discardLocal: true,
+      expectedGeneration,
+      preserveSharedPresentations: true,
+    });
+    this.library.savedScene = state.scene;
+    this.changed('movement checkpoint');
+    return merged;
+  }
+
+  async reconcile(
+    state,
+    { discardLocal = false, expectedGeneration = null, preserveSharedPresentations = false } = {}
+  ) {
     const gm = this.gameManager;
     if (gm.characterServices?.sessionRole === 'player')
       throw new Error('Canonical scene reconciliation requires the DM workspace');
@@ -187,7 +270,7 @@ export default class CampaignAutosave {
     this.ready = false;
     gm.campaignViewBusy = true;
     try {
-      gm.token3DAdapter.clearSharedPresentations?.();
+      if (!preserveSharedPresentations) gm.token3DAdapter.clearSharedPresentations?.();
       this.library.reload(state);
       const scene = decodeScene(state.scene, {
         ruleset: this.library.ruleset,
@@ -203,6 +286,7 @@ export default class CampaignAutosave {
         this.waiting = null;
         this.error = null;
         this.sharedConflict = null;
+        this.changeKinds.clear();
         gm.campaignMapFailure = null;
         clearTimeout(this.timer);
         this.timer = null;
@@ -286,9 +370,11 @@ export default class CampaignAutosave {
       );
     this.gameManager.campaignWorld?.acceptCheckpoint(captured.scene);
     this.gameManager.token3DAdapter.acknowledgeSharedPresentations?.(captured.presentations);
+    this.gameManager.token3DAdapter.clearSharedActorPatches?.();
     this.acknowledged = Math.max(this.acknowledged, captured.generation);
     this.firstDirtyAt = this.generation > this.acknowledged ? captured.capturedAt : null;
     if (this.firstDirtyAt === null) {
+      this.changeKinds.clear();
       clearTimeout(this.timer);
       this.timer = null;
     }

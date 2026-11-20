@@ -266,6 +266,7 @@ function recordStablePlacement(token) {
   this._savedPlacements.set(token, checkpoint);
   if (!this._getManualAnimationState(token)?.coverPlacement)
     recordSharedPlacement(this, token, previous, checkpoint);
+  recordSharedActorPatch(this, token, previous, checkpoint);
   if (
     !previous ||
     JSON.stringify(previous.placement) !== JSON.stringify(placement) ||
@@ -273,6 +274,47 @@ function recordStablePlacement(token) {
   )
     this.gameManager.sceneAutosave?.changed('movement checkpoint');
   return true;
+}
+
+function recordSharedActorPatch(adapter, token, previous, checkpoint) {
+  const autosave = adapter.gameManager.sceneAutosave;
+  const library = autosave?.library;
+  const store = library?.store;
+  if (
+    !previous ||
+    !autosave?.ready ||
+    (store?.storageInfo?.kind !== 'host' &&
+      store?.wantsSharedPresentations?.(library.campaign.id) !== true)
+  )
+    return;
+  if (
+    previous.mapId === checkpoint.mapId &&
+    JSON.stringify(previous.placement) === JSON.stringify(checkpoint.placement)
+  )
+    return;
+  adapter._sharedActorPatches ??= new Map();
+  const pending = adapter._sharedActorPatches.get(token);
+  const placement = { mapId: checkpoint.mapId, ...clone(checkpoint.placement) };
+  if (pending) pending.placement = placement;
+  else
+    adapter._sharedActorPatches.set(token, {
+      tokenId: token.id,
+      from: { mapId: previous.mapId ?? checkpoint.mapId, ...clone(previous.placement) },
+      placement,
+    });
+}
+
+function getSharedActorPatches(scene) {
+  const result = [];
+  for (const [token, patch] of this._sharedActorPatches || []) {
+    const actor = scene.creatures.find(({ id }) => id === token.id);
+    if (!actor || !samePlacement(patch.placement, sceneActorPlacement(scene, actor))) {
+      this._sharedActorPatches.delete(token);
+      continue;
+    }
+    result.push(clone({ ...patch, tokenId: actor.id }));
+  }
+  return result;
 }
 
 function recordSharedPlacement(adapter, token, previous, checkpoint) {
@@ -700,11 +742,22 @@ export function installSavedPlacementMethods(prototype) {
   prototype.getStablePlacement = getStablePlacement;
   prototype.restoreStablePlacement = restoreStablePlacement;
   prototype.getSharedPresentations = getSharedPresentations;
+  prototype.hasSharedPresentations = function () {
+    return !!(this._sharedMovementPresentations?.size || this._sharedVisualPresentations?.size);
+  };
+  prototype.getSharedActorPatches = getSharedActorPatches;
+  prototype.hasSharedActorPatches = function () {
+    return !!this._sharedActorPatches?.size;
+  };
+  prototype.clearSharedActorPatches = function () {
+    this._sharedActorPatches?.clear();
+  };
   prototype.recordSharedVisual = recordSharedVisual;
   prototype.acknowledgeSharedPresentations = acknowledgeSharedPresentations;
   prototype.clearSharedPresentations = function () {
     this._sharedMovementPresentations?.clear();
     this._sharedVisualPresentations?.clear();
+    this._sharedActorPatches?.clear();
   };
   prototype.recordGroundCheckpoint = function (state) {
     if (state.groundTransition || state.wallMotion || state.traversal) return;

@@ -229,6 +229,37 @@ test('routine public updates retain loaded actors, the player camera and selecte
   await runtime.destroy();
 });
 
+test('unrelated snapshots preserve a visible peer position that is still animating', async () => {
+  const { gameManager, runtime, state } = fixture();
+  await runtime.update(state);
+  const scout = gameManager.placedTokens[0];
+  const guard = gameManager.placedTokens[1];
+  guard.gridX = 3;
+  guard.world.x = 3.75;
+  const moving = jest
+    .spyOn(gameManager.token3DAdapter, 'isMovementInProgress')
+    .mockImplementation((token) => token === guard);
+  const restore = jest.spyOn(gameManager.token3DAdapter, 'restoreStablePlacement');
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision++;
+  next.publicScene.assets = null;
+  Object.assign(next.publicScene.actors[0], {
+    gridX: 2,
+    pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+  });
+  Object.assign(next.publicScene.actors[1], {
+    gridX: 4,
+    pose: { kind: 'ground', world: { x: 4.5, y: 0, z: 1.5 } },
+  });
+  await runtime.update(next);
+  expect(scout.world.x).toBe(2.5);
+  expect(guard.world.x).toBe(3.75);
+  expect(restore.mock.calls.some(([token]) => token === guard)).toBe(false);
+  moving.mockRestore();
+  restore.mockRestore();
+  await runtime.destroy();
+});
+
 test('a host appearance change replaces the old visual without changing actor identity or player selection', async () => {
   const { gameManager, runtime, state } = fixture();
   await runtime.update(state);

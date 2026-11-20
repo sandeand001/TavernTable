@@ -258,6 +258,29 @@ tests, including `PlayerAuthorityInterop`. This removes a confirmed local
 rebuild on the player-command response path but does not replace the native
 ten-client `M5-06` visual/intermediate-motion acceptance gate.
 
+**Progress 2026-11-20 (C1 concurrent-play path):** the interactive player command
+adapter now rebases bounded overlapping `stale-revision` responses only after a
+fresh authoritative snapshot proves that its own actor, owned gameplay, turn and
+arrival grant remain unchanged. A true same-actor conflict still fails with the
+original 409 instead of being merged. Host command receipts release the SQLite
+write transaction before player projection work, and the local integration
+regression submits nine independent player moves together; every command commits
+and the local acknowledgement p95 is gated at 2 seconds (one measured sample
+was 380 ms without network RTT). This is not the checklist's 200 ms RTT
+acceptance measurement.
+
+Player receipt hydration now starts own and visible-peer locomotion in the same
+presentation turn, continues live peer refresh while an unrelated local command
+is pending, preserves a peer's intermediate pose during unrelated snapshots,
+and retains accepted movement, emote and dice feedback across rebased receipts.
+On the DM path, recorded disjoint actor movement/facing patches now rebase onto
+new canonical state before autosave; same-actor changes remain an explicit
+recoverable conflict. Verification passed 108 focused multiplayer tests, the
+complete 262-suite/3,251-test unit run, 44 integration suites/847 tests and
+271/271 cloud-emulator cases. `M5-06` remains open until the owner runs the
+native one-DM/nine-player rehearsal and confirms intermediate motion, facing
+order, full-session convergence and the 200 ms RTT latency target.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

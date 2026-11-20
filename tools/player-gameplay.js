@@ -123,15 +123,14 @@ class PlayerGameplay {
               status: 409,
               code: 'command-id-conflict',
             });
-          const state = await authorizedState(store, previous.receipt.receipt, scene);
-          state.publicScene.updates = [];
           return {
             response: {
               ...previous.receipt,
-              receipt: scopedReceipt(previous.receipt.receipt, state),
+              receipt: previous.receipt.receipt,
               outcome: 'duplicate',
-              state,
             },
+            snapshot: scene,
+            duplicate: true,
           };
         }
         if (
@@ -187,9 +186,9 @@ class PlayerGameplay {
           receipt
         );
         const { tokens: nextUndo, reset } = advancePlayerUndo(undo, scene, result, command);
-        const state = await authorizedState(store, receipt.receipt, result.scene, nextUndo);
         return {
-          response: { ...receipt, receipt: scopedReceipt(receipt.receipt, state), state },
+          response: { ...receipt, receipt: receipt.receipt },
+          snapshot: result.scene,
           profile: finalProfile,
           undo: {
             previous: { sceneRevision: current.sceneRevision, revision: current.revision },
@@ -202,7 +201,17 @@ class PlayerGameplay {
       }
     );
     if (committed.undo) this.players.rememberUndo(committed.profile, committed.undo);
-    return committed.response;
+    const state = await authorizedState(
+      this.players.store,
+      committed.response.receipt,
+      committed.snapshot
+    );
+    if (committed.duplicate) state.publicScene.updates = [];
+    return {
+      ...committed.response,
+      receipt: scopedReceipt(committed.response.receipt, state),
+      state,
+    };
   }
 }
 

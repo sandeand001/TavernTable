@@ -191,6 +191,24 @@ export default class PublicPlayerRuntime {
         gm.token3DAdapter.onTokenRemoved(token);
         token.creature = gm.tokenManager.createCreatureByType(actor.type);
       }
+      if (
+        token.type === actor.type &&
+        !movements.has(actor.id) &&
+        gm.token3DAdapter.isMovementInProgress(token)
+      ) {
+        Object.assign(token, {
+          name: actor.name,
+          nameMode: actor.owned ? 'character' : 'custom',
+          movementSettings: { ...actor.movement },
+          conditions: actor.flags.prone ? ['prone'] : [],
+          publicPortraitImage: actor.portraitImage,
+          owned: actor.owned,
+        });
+        if (actor.owned && actor.characterId)
+          linkTokenCharacter(token, gm.characterServices.library, actor.characterId);
+        else unlinkTokenCharacter(token, actor.movement);
+        continue;
+      }
       Object.assign(token, {
         name: actor.name,
         nameMode: actor.owned ? 'character' : 'custom',

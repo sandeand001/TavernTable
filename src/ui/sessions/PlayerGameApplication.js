@@ -10,6 +10,13 @@ import { validatePlayerState } from '../../campaigns/PlayerPublicProtocol.js';
 import { isCloudWorldCommandReceipt } from '../../campaigns/CloudProtocol.js';
 import AuthoritativeDiceReplay from '../../systems/dice/AuthoritativeDiceReplay.js';
 import CampaignTraversalPopup from '../campaigns/CampaignTraversalPopup.js';
+import { samePlacement } from '../../scene/token-adapter/SavedPlacements.js';
+
+const samePresentedPlacement = (left, right) =>
+  samePlacement(left, right) &&
+  Number.isFinite(left?.facingAngle) &&
+  Number.isFinite(right?.facingAngle) &&
+  Math.abs(left.facingAngle - right.facingAngle) < 1e-6;
 
 function assertObserverSelection(state, cachedAssets) {
   validatePlayerState(state, { cachedAssets });
@@ -363,17 +370,22 @@ export default class PlayerGameApplication {
     }
     if (this.observerId !== null && !this.traversalPopup)
       this.traversalPopup = new CampaignTraversalPopup({ gameManager: this.gameManager }).attach();
-    if (result.sharedMovements?.length || result.sharedVisuals?.length) {
+    if (result.sharedMovements?.length || result.sharedVisuals?.length || presentation.movement) {
       this.presentationRevision = state.sceneRevision;
       try {
-        await Promise.all(
-          (result.sharedMovements || []).map((motion) =>
+        const movements = [...(result.sharedMovements || [])];
+        const ownMovement = presentation.movement;
+        const ownIndex = ownMovement ? movements.length : -1;
+        if (ownMovement) movements.push(ownMovement);
+        const movementResults = await Promise.all(
+          movements.map((motion) =>
             this.gameManager.token3DAdapter.playApprovedMovement(
               this.gameManager.placedTokens.find(({ id }) => id === motion.tokenId),
               motion
             )
           )
         );
+        if (ownIndex >= 0) result.movementPresentation = movementResults[ownIndex];
         for (const entry of result.sharedVisuals || []) {
           if (this.destroyed || this.accessEnded || version !== this.selectionVersion) break;
           await this.gameManager.token3DAdapter.playApprovedVisual(
@@ -415,12 +427,14 @@ export default class PlayerGameApplication {
     if (this.observerId !== command.observerTokenId || this.destroyed)
       return { applied: false, reason: 'superseded-selection' };
     if (command.kind === 'place') this.placementGrantId = null;
+    const before = this.state.publicScene.actors.find(({ id }) => id === command.tokenId);
+    const after = receipt.state.publicScene.actors.find(({ id }) => id === command.tokenId);
     const canAnimate =
       animate &&
       receipt.receipt.motion &&
       this.runtime.assetKey === receipt.state.publicScene.assetKey &&
-      this.state.sceneRevision === command.sceneRevision &&
-      receipt.state.sceneRevision === receipt.applied.sceneRevision;
+      samePresentedPlacement(before, receipt.receipt.motion.from) &&
+      samePresentedPlacement(after, receipt.receipt.motion.route.at(-1));
     const movement = canAnimate
       ? {
           tokenId: command.tokenId,
@@ -438,20 +452,11 @@ export default class PlayerGameApplication {
       ? { applied: true, reason: 'already-rendered' }
       : await this.showState(receipt.state, this.selectionVersion, { movement });
     if (!result.applied) return result;
-    if (movement) {
-      const token = this.gameManager.placedTokens.find(({ id }) => id === command.tokenId);
-      this.presentationRevision = receipt.applied.sceneRevision;
-      try {
-        return await this.gameManager.token3DAdapter.playApprovedMovement(token, movement);
-      } finally {
-        if (this.presentationRevision === receipt.applied.sceneRevision)
-          this.presentationRevision = undefined;
-      }
-    }
+    if (movement) return result.movementPresentation;
     if (
       animate &&
       receipt.receipt.kind === 'emote' &&
-      receipt.state.sceneRevision === receipt.applied.sceneRevision
+      samePresentedPlacement(after, receipt.receipt.placement || after)
     ) {
       const actor = receipt.state.publicScene.actors.find((actor) => actor.id === command.tokenId);
       return this.gameManager.token3DAdapter.playApprovedVisual(
@@ -476,7 +481,7 @@ export default class PlayerGameApplication {
     if (
       animate &&
       receipt.receipt.roll &&
-      receipt.state.sceneRevision === receipt.applied.sceneRevision
+      receipt.state.sceneRevision >= receipt.applied.sceneRevision
     ) {
       this.presentationRevision = receipt.applied.sceneRevision;
       let presentation;
@@ -493,7 +498,7 @@ export default class PlayerGameApplication {
         !this.destroyed &&
         !this.accessEnded &&
         this.observerId === command.observerTokenId &&
-        this.state.sceneRevision === receipt.applied.sceneRevision
+        this.state.sceneRevision >= receipt.applied.sceneRevision
       ) {
         const roll = receipt.receipt.roll;
         if (this.controls.diceResult) this.controls.diceResult.textContent = roll.text;
@@ -525,7 +530,7 @@ export default class PlayerGameApplication {
     for (let read = 0; read < 2 && this.refreshQueued; read++) {
       this.refreshQueued = false;
       const version = this.selectionVersion;
-      await this.commands.idle;
+      if (!this.commands.submitting) await this.commands.idle;
       await this.sheets.library.flush();
       if (this.destroyed || this.accessEnded)
         return { applied: false, reason: 'application-closed' };

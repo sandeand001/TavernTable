@@ -609,6 +609,54 @@ test('bursts of authorized revision notices coalesce into one read and one fresh
   await app.destroy();
 });
 
+test('a live peer snapshot refreshes while the local player command is still pending', async () => {
+  let notify;
+  const { app, state } = fixture({
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+  });
+  await app.start();
+  const fresh = JSON.parse(JSON.stringify(state));
+  fresh.sceneRevision++;
+  fresh.publicScene.assets = null;
+  let release;
+  let reads = 0;
+  app.connection.call = async (operation) => {
+    if (operation === 'playerState') {
+      reads++;
+      return fresh;
+    }
+    if (operation === 'playerCommand')
+      return new Promise((_resolve, reject) => {
+        release = () => reject(Object.assign(new Error('Lost acknowledgement'), { status: 503 }));
+      });
+    throw new Error(`Unexpected operation: ${operation}`);
+  };
+  const command = app.commands.move(state.observerTokenId, {
+    mapId: state.publicScene.presentation.mapId,
+    gridX: 2,
+    gridY: 1,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  notify({
+    type: 'campaign',
+    campaignId: state.campaign.id,
+    kind: 'playerCommand',
+    version: 1,
+    sceneRevision: fresh.sceneRevision,
+    charactersRevision: fresh.revision,
+    hasPresentations: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(reads).toBe(1);
+  expect(app.state.sceneRevision).toBe(fresh.sceneRevision);
+  release();
+  await expect(command).rejects.toThrow('Lost acknowledgement');
+  await app.destroy();
+});
+
 test('a changed authorized map scope applies the host destination without replaying motion in the replacement terrain', async () => {
   const { app, state, gameManager } = fixture();
   await app.start();
@@ -659,6 +707,261 @@ test('a changed authorized map scope applies the host destination without replay
   expect(gameManager.placedTokens[0].world).toEqual({ x: 2.5, y: 0, z: 1.5 });
   expect(gameManager.threeSceneManager.scene.visible).toBe(true);
   await app.destroy();
+});
+
+test('a rebased receipt animates when the assigned actor origin and destination still match', async () => {
+  const { app, state, gameManager } = fixture();
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision += 2;
+  next.publicScene.assets = null;
+  const motion = {
+    kind: 'walk',
+    completed: true,
+    from: {
+      mapId: state.publicScene.presentation.mapId,
+      gridX: 1,
+      gridY: 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    },
+    route: [
+      {
+        mapId: state.publicScene.presentation.mapId,
+        gridX: 2,
+        gridY: 1,
+        facingAngle: 0,
+        pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+      },
+    ],
+  };
+  Object.assign(next.publicScene.actors[0], motion.route[0]);
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockResolvedValue({ completed: true });
+  await app.receiveReceipt(
+    {
+      state: next,
+      applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+      receipt: { kind: 'move', tokenId: state.observerTokenId, motion },
+    },
+    {
+      animate: true,
+      command: {
+        kind: 'move',
+        tokenId: state.observerTokenId,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision + 1,
+      },
+    }
+  );
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(play.mock.calls[0][1]).toEqual({
+    tokenId: state.observerTokenId,
+    commandId: undefined,
+    ...motion,
+  });
+  await app.destroy();
+});
+
+test('a rebased emote still plays when its final assigned placement matches', async () => {
+  const { app, state, gameManager } = fixture();
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision += 2;
+  next.publicScene.assets = null;
+  const placement = {
+    mapId: state.publicScene.actors[0].mapId,
+    gridX: state.publicScene.actors[0].gridX,
+    gridY: state.publicScene.actors[0].gridY,
+    facingAngle: state.publicScene.actors[0].facingAngle,
+    pose: state.publicScene.actors[0].pose,
+  };
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedVisual')
+    .mockResolvedValue({ completed: true });
+  await app.receiveReceipt(
+    {
+      state: next,
+      applied: {
+        sceneRevision: next.sceneRevision - 1,
+        charactersRevision: next.revision,
+      },
+      receipt: {
+        kind: 'emote',
+        tokenId: state.observerTokenId,
+        actionId: 'action-wave',
+        animationKey: 'actionWave',
+        placement,
+      },
+    },
+    {
+      animate: true,
+      command: {
+        commandId: '00000000-0000-4000-8000-0000000000ac',
+        kind: 'emote',
+        tokenId: state.observerTokenId,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision + 1,
+      },
+    }
+  );
+  expect(play).toHaveBeenCalledTimes(1);
+  await app.destroy();
+});
+
+test('a rebased authoritative roll still presents its accepted face and log entry', async () => {
+  const { app, state } = fixture();
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision += 2;
+  next.publicScene.assets = null;
+  const roll = {
+    version: 1,
+    expression: '1d20',
+    values: [14],
+    total: 14,
+    summary: 'd20 14',
+    text: '14',
+  };
+  const play = jest.spyOn(app.dice, 'play').mockResolvedValue({ completed: true });
+  const previousSidebar = window.sidebarController;
+  const log = jest.fn();
+  window.sidebarController = { addDiceLogEntry: log };
+  await app.receiveReceipt(
+    {
+      state: next,
+      applied: {
+        sceneRevision: next.sceneRevision - 1,
+        charactersRevision: next.revision,
+      },
+      receipt: { kind: 'roll', tokenId: state.observerTokenId, roll },
+    },
+    {
+      animate: true,
+      command: {
+        commandId: '00000000-0000-4000-8000-0000000000ad',
+        kind: 'roll',
+        tokenId: state.observerTokenId,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision + 1,
+      },
+    }
+  );
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(log).toHaveBeenCalledWith('14', 'roll', 'd20 14');
+  expect(app.controls.diceResult.textContent).toBe('14');
+  if (previousSidebar) window.sidebarController = previousSidebar;
+  else delete window.sidebarController;
+  await app.destroy();
+});
+
+test('an own rebased move starts alongside a visible peer movement', async () => {
+  const { app, state, gameManager } = fixture();
+  const own = state.publicScene.actors[0];
+  const peer = {
+    ...JSON.parse(JSON.stringify(own)),
+    id: 'visible-peer',
+    name: 'Peer',
+    owned: false,
+    characterId: null,
+    gridX: 3,
+    pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+  };
+  state.publicScene.actors.push(peer);
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision += 2;
+  next.publicScene.assets = null;
+  const ownMotion = {
+    kind: 'walk',
+    completed: true,
+    from: JSON.parse(
+      JSON.stringify({
+        mapId: own.mapId,
+        gridX: own.gridX,
+        gridY: own.gridY,
+        facingAngle: own.facingAngle,
+        pose: own.pose,
+      })
+    ),
+    route: [
+      {
+        mapId: own.mapId,
+        gridX: 2,
+        gridY: 1,
+        facingAngle: 0,
+        pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+      },
+    ],
+  };
+  const peerMotion = {
+    kind: 'walk',
+    completed: true,
+    from: {
+      mapId: peer.mapId,
+      gridX: peer.gridX,
+      gridY: peer.gridY,
+      facingAngle: peer.facingAngle,
+      pose: JSON.parse(JSON.stringify(peer.pose)),
+    },
+    route: [
+      {
+        mapId: peer.mapId,
+        gridX: 4,
+        gridY: 1,
+        facingAngle: 0,
+        pose: { kind: 'ground', world: { x: 4.5, y: 0, z: 1.5 } },
+      },
+    ],
+  };
+  Object.assign(next.publicScene.actors[0], ownMotion.route[0]);
+  Object.assign(next.publicScene.actors[1], peerMotion.route[0]);
+  next.publicScene.updates = [
+    {
+      commandId: '00000000-0000-4000-8000-0000000000aa',
+      tokenId: peer.id,
+      kind: 'move',
+      sceneRevision: state.sceneRevision + 1,
+      charactersRevision: state.revision,
+      motion: peerMotion,
+    },
+  ];
+  let releasePeer;
+  const peerFinished = new Promise((resolve) => {
+    releasePeer = resolve;
+  });
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockImplementation((token) =>
+      token.id === peer.id ? peerFinished : Promise.resolve({ completed: true })
+    );
+  const receiving = app.receiveReceipt(
+    {
+      state: next,
+      applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+      receipt: { kind: 'move', tokenId: own.id, motion: ownMotion },
+    },
+    {
+      animate: true,
+      command: {
+        commandId: '00000000-0000-4000-8000-0000000000ab',
+        kind: 'move',
+        tokenId: own.id,
+        observerTokenId: own.id,
+        sceneRevision: state.sceneRevision + 1,
+      },
+    }
+  );
+  for (let check = 0; check < 20 && play.mock.calls.length < 2; check++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    expect(play.mock.calls.map(([token]) => token.id).sort()).toEqual([own.id, peer.id].sort());
+  } finally {
+    releasePeer({ completed: true });
+    await receiving;
+    await app.destroy();
+  }
 });
 
 test('the normal shared d20 button sends an owned host roll intent and never rolls a local face while awaiting acknowledgement', async () => {

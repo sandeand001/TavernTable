@@ -54,6 +54,69 @@ test('the shared player entry requests the actual versioned authority projection
   }
 }, 30000);
 
+test('nine overlapping player commands commit independent intents without waiting for other animations', async () => {
+  const table = await createPlayerAuthorityTable({ activeTurn: false, playerCount: 9 });
+  try {
+    const before = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const states = await Promise.all(
+      table.players.map(({ connection }) =>
+        connection.call('playerState', [{ presentationVersion: 1 }])
+      )
+    );
+    const acknowledgementMs = [];
+    const outcomes = await Promise.allSettled(
+      table.players.map(async ({ connection, tokenId }, index) => {
+        const startedAt = performance.now();
+        const receipt = await new PlayerCommandAdapter({
+          connection,
+          getState: () => states[index],
+        }).move(tokenId, { mapId: 'map-main', gridX: index + 1, gridY: 2 });
+        acknowledgementMs.push(performance.now() - startedAt);
+        return receipt;
+      })
+    );
+    expect(
+      outcomes.map((result) => (result.status === 'fulfilled' ? 'applied' : result.reason.code))
+    ).toEqual(Array(table.players.length).fill('applied'));
+    const orderedAcknowledgements = acknowledgementMs.sort((left, right) => left - right);
+    expect(
+      orderedAcknowledgements[Math.max(0, Math.ceil(orderedAcknowledgements.length * 0.95) - 1)]
+    ).toBeLessThanOrEqual(2000);
+    const committed = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(committed.scene);
+    expect(committed.sceneRevision).toBe(before.sceneRevision + table.players.length);
+    for (let index = 0; index < table.players.length; index++)
+      expect(scene.creatures.find(({ id }) => id === `token-${index + 1}`)).toMatchObject({
+        gridY: 2,
+        pose: { kind: 'ground', world: { x: index + 1.5, z: 2.5 } },
+      });
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
+test('an overlapping command that changed the same assigned actor remains a stale conflict', async () => {
+  const table = await createPlayerAuthorityTable({ activeTurn: false });
+  try {
+    const state = await table.connection.call('playerState', [{ presentationVersion: 1 }]);
+    const outcomes = await Promise.allSettled(
+      [2, 3].map((gridX) =>
+        new PlayerCommandAdapter({
+          connection: table.connection,
+          getState: () => state,
+        }).move('token-1', { mapId: 'map-main', gridX, gridY: 1 })
+      )
+    );
+    expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = outcomes.find(({ status }) => status === 'rejected');
+    expect(rejected.reason).toMatchObject({ status: 409, code: 'stale-revision' });
+    const committed = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    expect(committed.sceneRevision).toBe(state.sceneRevision + 1);
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
 test('a player-first completed move survives a stale DM scene-save attempt without an extra cost or pose overwrite', async () => {
   const table = await createPlayerAuthorityTable();
   try {

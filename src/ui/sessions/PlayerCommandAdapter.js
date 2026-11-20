@@ -4,6 +4,9 @@ import { validatePlayerCommandResult } from '../../campaigns/PlayerPublicProtoco
 import { validateAuthoritativeRoll } from '../../systems/dice/AuthoritativeDiceReplay.js';
 import { getCharacterDefinition } from '../../config/CharacterCatalog.js';
 
+const STALE_REBASE_LIMIT = 16;
+const STALE_REBASE_WINDOW_MS = 3000;
+
 export default class PlayerCommandAdapter {
   constructor({
     connection,
@@ -22,6 +25,7 @@ export default class PlayerCommandAdapter {
     this.onFailure = onFailure;
     this.onChanged = onChanged;
     this.pending = false;
+    this.submitting = false;
     this.idle = Promise.resolve();
     this.failure = null;
     this.stateError = null;
@@ -53,6 +57,26 @@ export default class PlayerCommandAdapter {
 
   move(tokenId, target) {
     return this.send('move', tokenId, { target });
+  }
+
+  _commandBaseline(state, command) {
+    const actor = state.publicScene.actors.find(({ id }) => id === command.tokenId);
+    const owned = state.gameplay.ownedTokens.find(({ tokenId }) => tokenId === command.tokenId);
+    const grant =
+      command.kind === 'place'
+        ? state.placementGrants?.find(
+            (entry) =>
+              entry.id === command.payload.grantId &&
+              entry.characterId === command.payload.characterId
+          )
+        : null;
+    return JSON.stringify({
+      observerTokenId: state.observerTokenId,
+      actor,
+      owned,
+      turn: state.gameplay.turn,
+      grant,
+    });
   }
 
   place(characterId, { appearance, grantId }) {
@@ -180,7 +204,13 @@ export default class PlayerCommandAdapter {
               facingAngle: actor.facingAngle,
             })
           );
-    this.lastRequest = { campaignId: state.campaign.id, command, origin };
+    this.lastRequest = {
+      campaignId: state.campaign.id,
+      command,
+      origin,
+      baseline: this._commandBaseline(state, command),
+      startedAt: Date.now(),
+    };
     return this._submit(this.lastRequest);
   }
 
@@ -214,8 +244,43 @@ export default class PlayerCommandAdapter {
     }
   }
 
-  async _submit({ campaignId, command, origin }) {
+  async _rebaseStale(request, error) {
+    const { command } = request;
+    if (
+      error?.status !== 409 ||
+      error?.code !== 'stale-revision' ||
+      Date.now() - request.startedAt >= STALE_REBASE_WINDOW_MS
+    )
+      return false;
+    const current = await this.connection.call('playerState', [
+      {
+        presentationVersion: 1,
+        observerTokenId: command.observerTokenId,
+        mapId: command.view.mapId,
+        assetKey: command.view.assetKey,
+        sinceSceneRevision: command.sceneRevision,
+      },
+    ]);
+    if (this._commandBaseline(current, command) !== request.baseline) return false;
+    if (
+      current.sceneRevision <= command.sceneRevision &&
+      current.revision <= command.charactersRevision
+    )
+      return false;
+    request.command = {
+      ...command,
+      sceneRevision: current.sceneRevision,
+      charactersRevision: current.revision,
+    };
+    validatePlayerCommand(request.command);
+    this.lastRequest = request;
+    return true;
+  }
+
+  async _submit(request) {
+    const { campaignId } = request;
     this.pending = true;
+    this.submitting = true;
     let finishIdle;
     this.idle = new Promise((resolve) => {
       finishIdle = resolve;
@@ -223,40 +288,53 @@ export default class PlayerCommandAdapter {
     this.failure = null;
     this._publish();
     try {
-      const receipt = await this.connection.call('playerCommand', [campaignId, command]);
-      validatePlayerCommandResult(receipt, { cachedAssets: this.getCachedAssets() });
-      if (
-        receipt.receipt.kind === 'roll' &&
-        (receipt.outcome === 'applied' || receipt.receipt.roll !== undefined)
-      )
-        validateAuthoritativeRoll(receipt.receipt.roll);
-      if (
-        receipt?.version !== 1 ||
-        receipt.commandId !== command.commandId ||
-        !['applied', 'duplicate'].includes(receipt.outcome) ||
-        receipt.receipt?.kind !== command.kind ||
-        (command.kind === 'place'
-          ? receipt.receipt.characterId !== command.payload.characterId
-          : receipt.receipt.tokenId !== command.tokenId) ||
-        !Number.isSafeInteger(receipt.applied?.sceneRevision) ||
-        !Number.isSafeInteger(receipt.applied?.charactersRevision) ||
-        receipt.state?.publicScene?.version !== 1
-      )
-        throw new Error('The host returned an invalid player command receipt');
-      const animate =
-        receipt.outcome === 'applied' &&
-        !this.seen.has(command.commandId) &&
-        this.connection.canAnimateReceipt?.(receipt) !== false;
-      this.seen.add(command.commandId);
-      if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value);
-      await this.onReceipt(receipt, { animate, command, origin });
-      return receipt;
+      for (let rebase = 0; rebase <= STALE_REBASE_LIMIT; rebase++) {
+        const { command, origin } = request;
+        try {
+          const receipt = await this.connection.call('playerCommand', [campaignId, command]);
+          validatePlayerCommandResult(receipt, { cachedAssets: this.getCachedAssets() });
+          if (
+            receipt.receipt.kind === 'roll' &&
+            (receipt.outcome === 'applied' || receipt.receipt.roll !== undefined)
+          )
+            validateAuthoritativeRoll(receipt.receipt.roll);
+          if (
+            receipt?.version !== 1 ||
+            receipt.commandId !== command.commandId ||
+            !['applied', 'duplicate'].includes(receipt.outcome) ||
+            receipt.receipt?.kind !== command.kind ||
+            (command.kind === 'place'
+              ? receipt.receipt.characterId !== command.payload.characterId
+              : receipt.receipt.tokenId !== command.tokenId) ||
+            !Number.isSafeInteger(receipt.applied?.sceneRevision) ||
+            !Number.isSafeInteger(receipt.applied?.charactersRevision) ||
+            receipt.state?.publicScene?.version !== 1
+          )
+            throw new Error('The host returned an invalid player command receipt');
+          const animate =
+            receipt.outcome === 'applied' &&
+            !this.seen.has(command.commandId) &&
+            this.connection.canAnimateReceipt?.(receipt) !== false;
+          this.seen.add(command.commandId);
+          if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value);
+          await this.onReceipt(receipt, { animate, command, origin });
+          return receipt;
+        } catch (error) {
+          if (rebase < STALE_REBASE_LIMIT && (await this._rebaseStale(request, error))) {
+            await new Promise((resolve) => setTimeout(resolve, Math.min(rebase * 4, 16)));
+            continue;
+          }
+          throw error;
+        }
+      }
+      throw new Error('The host command could not be rebased after concurrent updates');
     } catch (error) {
       this.failure = error;
-      await this.onFailure(error, { command });
+      await this.onFailure(error, { command: request.command });
       throw error;
     } finally {
       this.pending = false;
+      this.submitting = false;
       finishIdle();
       this._publish();
     }
