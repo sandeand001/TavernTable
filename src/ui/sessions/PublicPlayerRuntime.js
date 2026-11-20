@@ -146,6 +146,14 @@ export default class PublicPlayerRuntime {
     gm.publicPlayerPresentation = this;
     for (const token of [...gm.placedTokens])
       if (!visible.has(token.id)) gm.tokenManager.removeToken(token);
+    const adapter = gm.token3DAdapter;
+    const lagged = new Set();
+    if (!assetsChanged && !changingMap && !changedObserver)
+      for (const actor of snapshot.actors) {
+        const token = gm.placedTokens.find(({ id }) => id === actor.id);
+        if (token?.type === actor.type && adapter.isLaggedMovementCheckpoint(token, actor))
+          lagged.add(actor.id);
+      }
     const sharedMovements = snapshot.updates
       .filter((update) => {
         const token = gm.placedTokens.find(({ id }) => id === update.tokenId);
@@ -155,8 +163,11 @@ export default class PublicPlayerRuntime {
           !assetsChanged &&
           update.sceneRevision > this.revision &&
           movement?.tokenId !== update.tokenId &&
-          (samePlacement(token, update.motion.from) ||
-            gm.token3DAdapter.canContinueApprovedMovement?.(token, update.motion) === true)
+          !lagged.has(update.tokenId) &&
+          (adapter.canContinueApprovedMovement?.(token, update.motion) === true ||
+            (token &&
+              !adapter.isMovementInProgress(token) &&
+              samePlacement(token, update.motion.from)))
         );
       })
       .map((update) => ({
@@ -195,10 +206,11 @@ export default class PublicPlayerRuntime {
         gm.token3DAdapter.reconcileApprovedMovement?.(token, actor);
       if (
         token.type === actor.type &&
-        (!movements.has(actor.id) ||
-          gm.token3DAdapter.canContinueApprovedMovement?.(token, movements.get(actor.id)) ===
-            true) &&
-        gm.token3DAdapter.isMovementInProgress(token)
+        (lagged.has(actor.id) ||
+          ((!movements.has(actor.id) ||
+            gm.token3DAdapter.canContinueApprovedMovement?.(token, movements.get(actor.id)) ===
+              true) &&
+            gm.token3DAdapter.isMovementInProgress(token)))
       ) {
         Object.assign(token, {
           name: actor.name,

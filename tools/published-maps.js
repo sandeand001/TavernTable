@@ -101,6 +101,7 @@ class PublishedMaps {
     scene,
     library,
     ownedIds,
+    queryWorld = null,
     mapId = null,
     terrainKey = null,
     observerTokenId = null,
@@ -133,7 +134,7 @@ class PublishedMaps {
     const [{ playerCreatureVisibility }] = await Promise.all([
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href),
     ]);
-    const world = await this.world(scene, library, sourceKey);
+    const world = queryWorld ?? (await this.world(scene, library, sourceKey));
     if (placementGrant) {
       if (presentationVersion !== 1 || observerTokenId !== null)
         throw Object.assign(

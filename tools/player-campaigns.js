@@ -15,6 +15,11 @@ const reject = (message) => Object.assign(new Error(message), { status: 403 });
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const presentationError = (message) =>
   Object.assign(new Error(message), { status: 422, code: 'invalid-scene-presentation' });
+const liveActorConflict = () =>
+  Object.assign(new Error('Refresh the live actor before continuing movement'), {
+    status: 409,
+    code: 'live-actor-conflict',
+  });
 const MAX_LIVE_CHECKPOINTS = 512;
 
 class PlayerCampaigns {
@@ -84,10 +89,12 @@ class PlayerCampaigns {
           state,
           scene,
         });
+    const world = scene ? await this.published.world(scene, library) : null;
     const view = await this.published.view({
       scene,
       library,
       ownedIds: profile.characterIds,
+      queryWorld: world,
       mapId: options.mapId || null,
       terrainKey: options.terrainKey || null,
       observerTokenId: options.observerTokenId ?? null,
@@ -138,14 +145,16 @@ class PlayerCampaigns {
             });
         }
       });
-    view.publicScene.updates = await this.visiblePresentations(
+    view.publicScene.updates = await visibleMovementPresentations({
+      root: this.root,
       scene,
       library,
       view,
       updates,
       state,
-      options.sinceSceneRevision
-    );
+      sinceSceneRevision: options.sinceSceneRevision,
+      world,
+    });
     const currentProfile = this.authority.profile(session);
     if (
       currentProfile.campaignId !== profile.campaignId ||
@@ -156,7 +165,8 @@ class PlayerCampaigns {
       scene,
       library,
       profile.characterIds,
-      undo || this.undoFor(profile, state)
+      undo || this.undoFor(profile, state),
+      { world }
     );
     const visible = new Set(
       view.publicScene.actors.filter((actor) => actor.owned).map((actor) => actor.id)
@@ -247,16 +257,35 @@ class PlayerCampaigns {
       live = { sequence: 0, actors: new Map() };
       this.liveCampaigns.set(campaignId, live);
     }
+    const changedActors = new Map();
     for (const entry of presentations) {
       validateLivePlayerPresentation(entry);
       if (entry.kind === 'move' && entry.motion.completed !== false)
         throw presentationError('Host live movement must be provisional and continuable');
       const actor = scene.creatures.find(({ id }) => id === entry.tokenId);
       if (!actor) throw presentationError('Live movement must reference a real campaign actor');
+      let tracked = changedActors.get(entry.tokenId) ?? live.actors.get(entry.tokenId);
+      if (entry.kind === 'move-finish') {
+        if (!tracked || !same(entry.placement, tracked.endpoint))
+          throw presentationError('Live movement must finish at its last published pose');
+        changedActors.set(entry.tokenId, { ...tracked, finished: true });
+        continue;
+      }
       const canonical = sceneActorPlacement(scene, actor);
       const combatState =
         scene.combat?.states.find(({ tokenId }) => tokenId === entry.tokenId) || null;
-      const tracked = live.actors.get(entry.tokenId);
+      if (tracked?.finished && tracked.commandId === entry.commandId) throw liveActorConflict();
+      // Reloads and canonical corrections can leave an abandoned provisional endpoint behind.
+      if (
+        tracked &&
+        tracked.commandId !== entry.commandId &&
+        packet.sceneRevision === state.sceneRevision &&
+        packet.charactersRevision === state.revision &&
+        same(entry.motion.from, canonical)
+      )
+        tracked = null;
+      if (!same(entry.motion.from, tracked?.endpoint ?? canonical)) throw liveActorConflict();
+      let checkpoints = [canonical];
       if (tracked) {
         const actorIdentity = (value) => {
           const identity = { ...value };
@@ -278,7 +307,8 @@ class PlayerCampaigns {
         let checkpointIndex = matchesActor
           ? tracked.checkpoints.findLastIndex(
               (placement) =>
-                same(canonical, placement) && isDeepStrictEqual(canonical.pose, placement.pose)
+                same(canonical, placement) &&
+                isDeepStrictEqual(poseShape(canonical.pose), poseShape(placement.pose))
             )
           : -1;
         let segmentIndex = -1;
@@ -329,48 +359,18 @@ class PlayerCampaigns {
           });
           if (segmentIndex >= 0) checkpointIndex = segmentIndex;
         }
-        if (checkpointIndex < 0)
-          throw Object.assign(new Error('Refresh the live actor before continuing movement'), {
-            status: 409,
-            code: 'live-actor-conflict',
-          });
-        const matchesEndpoint =
-          segmentIndex < 0 && checkpointIndex === tracked.checkpoints.length - 1;
-        tracked.baseActor = copy(actor);
-        tracked.baseCombat = copy(combatState);
-        tracked.base = canonical;
-        tracked.checkpoints =
-          segmentIndex >= 0
-            ? [copy(canonical), ...tracked.checkpoints.slice(segmentIndex + 1)]
-            : tracked.checkpoints.slice(checkpointIndex);
-        if (matchesEndpoint) {
-          tracked.checkpoints = [copy(canonical)];
-        }
+        if (checkpointIndex < 0) throw liveActorConflict();
+        checkpoints = [canonical, ...tracked.checkpoints.slice(checkpointIndex + 1)];
       }
-      const expected = tracked?.endpoint || canonical;
-      if (entry.kind === 'move') {
-        if (!same(entry.motion.from, expected))
-          throw Object.assign(new Error('Refresh the live actor before continuing movement'), {
-            status: 409,
-            code: 'live-actor-conflict',
-          });
-        const next = {
-          base: tracked?.base || canonical,
-          baseActor: tracked?.baseActor || copy(actor),
-          baseCombat: tracked ? copy(tracked.baseCombat) : copy(combatState),
-          endpoint: entry.motion.route.at(-1),
-          checkpoints: tracked?.checkpoints.length
-            ? [...tracked.checkpoints, ...entry.motion.route.map(copy)]
-            : [copy(canonical), ...entry.motion.route.map(copy)],
-        };
-        if (next.checkpoints.length > MAX_LIVE_CHECKPOINTS)
-          next.checkpoints.splice(0, next.checkpoints.length - MAX_LIVE_CHECKPOINTS);
-        live.actors.set(entry.tokenId, next);
-      } else {
-        if (!tracked || !same(entry.placement, tracked.endpoint))
-          throw presentationError('Live movement must finish at its last published pose');
-      }
+      changedActors.set(entry.tokenId, {
+        commandId: entry.commandId,
+        baseActor: actor,
+        baseCombat: combatState,
+        endpoint: entry.motion.route.at(-1),
+        checkpoints: [...checkpoints, ...entry.motion.route].slice(-MAX_LIVE_CHECKPOINTS),
+      });
     }
+    for (const [id, tracked] of changedActors) live.actors.set(id, tracked);
     live.sequence++;
     return {
       version: 1,
@@ -543,18 +543,6 @@ class PlayerCampaigns {
       [...(this.presentations.get(campaignId) || []), ...updates].slice(-256)
     );
     return updates;
-  }
-
-  async visiblePresentations(scene, library, view, updates, state, sinceSceneRevision) {
-    return visibleMovementPresentations({
-      root: this.root,
-      scene,
-      library,
-      view,
-      updates,
-      state,
-      sinceSceneRevision,
-    });
   }
 
   async doorState(session, campaignId, command) {

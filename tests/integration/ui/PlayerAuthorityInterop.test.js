@@ -510,7 +510,7 @@ test('live DM continuations reject a canonical actor moved outside the streamed 
   }
 }, 30000);
 
-test('live DM continuations tolerate packet revisions older than the tracked endpoint checkpoint', async () => {
+test('live DM continuations tolerate old packet revisions and a rounded saved endpoint', async () => {
   const table = await createPlayerAuthorityTable({ liveUpdates: true });
   try {
     const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
@@ -559,11 +559,14 @@ test('live DM continuations tolerate packet revisions older than the tracked end
         presentations: [presentation(from, first)],
       },
     ]);
+    const savedPose = structuredClone(first.pose);
+    // Saving a step through the physical scale conversion can round its world position.
+    savedPose.world.x += 1e-8;
     Object.assign(actor, {
       gridX: first.gridX,
       gridY: first.gridY,
       facingAngle: first.facingAngle,
-      pose: structuredClone(first.pose),
+      pose: savedPose,
     });
     await table.dm.connection.call('commitScene', [
       table.campaign.id,
@@ -584,6 +587,77 @@ test('live DM continuations tolerate packet revisions older than the tracked end
       },
     ]);
     expect(continued.sequence).toBe(2);
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
+test('a fresh DM journey starts at the saved actor after the preceding live route ends', async () => {
+  const table = await createPlayerAuthorityTable();
+  try {
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const { gridX, gridY, facingAngle, pose } = actor;
+    const from = { mapId: 'map-main', gridX, gridY, facingAngle, pose };
+    const step = (origin) => ({
+      ...origin,
+      gridX: origin.gridX + 1,
+      pose: { ...origin.pose, world: { ...origin.pose.world, x: origin.pose.world.x + 1 } },
+    });
+    const publish = (revision, ...presentations) =>
+      table.dm.connection.call('publishLivePresentations', [
+        table.campaign.id,
+        { sceneRevision: revision, charactersRevision: state.revision, presentations },
+      ]);
+    const move = (commandId, origin) => ({
+      commandId,
+      tokenId: actor.id,
+      kind: 'move',
+      motion: {
+        kind: 'walk',
+        completed: false,
+        continuing: true,
+        from: origin,
+        route: [step(origin)],
+      },
+    });
+    const first = move('dm-live-finished-route', from);
+    const endpoint = first.motion.route.at(-1);
+    await publish(state.sceneRevision, first, {
+      commandId: 'dm-live-finish-notice',
+      tokenId: actor.id,
+      kind: 'move-finish',
+      placement: endpoint,
+    });
+    const saved = { ...endpoint, facingAngle: Math.PI / 2 };
+    Object.assign(actor, {
+      gridX: saved.gridX,
+      gridY: saved.gridY,
+      facingAngle: saved.facingAngle,
+      pose: saved.pose,
+    });
+    scene.combat.states.find(({ tokenId }) => tokenId === actor.id).movementSpent = 5;
+    const checkpoint = await table.dm.connection.call('commitScene', [
+      table.campaign.id,
+      {
+        ruleset: state.campaign.ruleset,
+        revision: state.sceneRevision,
+        charactersRevision: state.revision,
+        scene: JSON.stringify(scene),
+      },
+    ]);
+
+    await expect(
+      publish(checkpoint.revision, move(first.commandId, endpoint))
+    ).rejects.toMatchObject({ status: 409, code: 'live-actor-conflict' });
+    await expect(
+      publish(state.sceneRevision, move('dm-live-stale-restart', saved))
+    ).rejects.toMatchObject({ status: 409, code: 'live-actor-conflict' });
+    const next = move('dm-live-next-journey', saved);
+    await expect(publish(checkpoint.revision, next)).resolves.toMatchObject({
+      presentations: [next],
+    });
   } finally {
     await table.close();
   }

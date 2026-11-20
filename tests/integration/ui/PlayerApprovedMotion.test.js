@@ -342,6 +342,50 @@ test('streamed tile checkpoints wait in idle instead of running in place', async
   }
 });
 
+test('a late live walking waypoint does not stop the visible creature at the tile boundary', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const step = (origin) => ({
+      ...origin,
+      gridX: origin.gridX + 1,
+      pose: { ...origin.pose, world: { ...origin.pose.world, x: origin.pose.world.x + 1 } },
+    });
+    const first = step(from);
+    const last = step(first);
+    const rawStepTime = 1 / f.data.profile.walkSpeed;
+    const finished = f.adapter.playApprovedMovement(f.token, {
+      from,
+      route: [first],
+      kind: 'walk',
+      completed: false,
+      continuing: true,
+    });
+    for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    f.adapter.advanceApprovedMovement(rawStepTime / 3);
+    expect(f.token.world.x).toBeGreaterThan(from.pose.world.x);
+    f.adapter.advanceApprovedMovement((rawStepTime * 2) / 3 + 0.16);
+    expect(f.token.world.x).toBeLessThan(first.pose.world.x);
+    expect(f.data.current).toBe('walk');
+    const continued = f.adapter.playApprovedMovement(f.token, {
+      from: first,
+      route: [last],
+    });
+    f.adapter.advanceApprovedMovement(rawStepTime * 2);
+    await Promise.all([finished, continued]);
+    expect(f.token.world).toEqual(last.pose.world);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
 test('a continued live route survives a one-second transport gap', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
   try {

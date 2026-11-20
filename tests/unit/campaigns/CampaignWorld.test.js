@@ -7,6 +7,7 @@ import CombatSession from '../../../src/entities/characters/CombatSession.js';
 import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
 import { clearSegment } from '../../../src/rules/targeting/geometry.js';
 import { boundsIntersectSolid } from '../../../src/terrain/ConvexGeometry.js';
+import { executePlayerCommand } from '../../../src/campaigns/ServerGameplay.js';
 
 function context() {
   localStorage.clear();
@@ -42,6 +43,45 @@ test('connected-map checkpoints round-trip through the campaign scene format', (
   const validation = context();
   const saved = CampaignWorld.fromScene(sceneState(), validation).save();
   expect(decodeScene(encodeScene(saved, validation), validation)).toEqual(saved);
+});
+
+test('warm scene validation reuses static geometry but still checks each actor against current terrain', () => {
+  const validation = context();
+  const checkpoint = CampaignWorld.fromScene(sceneState(), validation).save();
+  const terrain = checkpoint.maps[0].terrain;
+  terrain.heights[1][2] = 0;
+  const geometry = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    getTerrainHeightFeet: () => 0,
+  });
+  geometry.addSolid({
+    id: 'round-tower',
+    bounds: { min: { x: 15, y: 0, z: 15 }, max: { x: 25, y: 20, z: 25 } },
+    shape: { kind: 'cylinder', axis: 'y' },
+  });
+  terrain.geometry = geometry.save();
+  const saved = encodeScene(checkpoint, validation);
+  const actor = checkpoint.creatures[0];
+  actor.gridX = 2;
+  actor.pose.world.x = 2.5;
+  const load = jest.spyOn(TerrainGeometry.prototype, 'load');
+  try {
+    expect(decodeScene(JSON.stringify(checkpoint), validation).creatures[0]).toEqual(actor);
+    expect(load).not.toHaveBeenCalled();
+
+    actor.pose.world.y = 1;
+    expect(() => encodeScene(checkpoint, validation)).toThrow(/floor support/i);
+    expect(load).not.toHaveBeenCalled();
+
+    actor.pose.world.y = 0;
+    terrain.heights[1][2] = 8;
+    expect(() => encodeScene(checkpoint, validation)).toThrow(/floor support/i);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(decodeScene(saved, validation).creatures[0].pose.world.x).toBe(1.5);
+  } finally {
+    load.mockRestore();
+  }
 });
 
 test('actor-only checkpoints retain map geometry and its revision while real terrain edits invalidate them', () => {
@@ -151,6 +191,48 @@ test('location obstacle snapshots resist caller mutation while edits and preview
   });
   expect(world.hasLineOfSight(origin, target, { mapId: 'map-main', geometry: preview })).toBe(true);
   expect(world.hasLineOfSight(origin, target)).toBe(false);
+});
+
+test('a player move on a curved board reuses compiled collision cells from the current query world', async () => {
+  const validation = context();
+  const scene = sceneState({
+    characterId: validation.library.create('Scout'),
+    name: 'Scout',
+  });
+  scene.version = 2;
+  scene.terrain.heights = scene.terrain.heights.map((row) => row.map(() => 0));
+  const geometry = new TerrainGeometry({
+    widthFeet: 25,
+    depthFeet: 25,
+    getTerrainHeightFeet: () => 0,
+  });
+  geometry.addSolid({
+    id: 'round-tower',
+    bounds: { min: { x: 15, y: 0, z: 15 }, max: { x: 25, y: 20, z: 25 } },
+    shape: { kind: 'cylinder', axis: 'y' },
+  });
+  scene.terrain.geometry = geometry.save();
+  const previous = CampaignWorld.fromScene(scene, validation);
+  const cells = previous.getMapGeometry('map-main').getSolidCells();
+  const world = previous.forkQuery(scene, validation);
+  const read = jest.spyOn(TerrainGeometry.prototype, 'getSolidCells');
+  try {
+    const outcome = await executePlayerCommand(
+      scene,
+      validation.library,
+      {
+        kind: 'move',
+        tokenId: 'token-1',
+        payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+      },
+      { world }
+    );
+    expect(outcome.scene.creatures[0].pose.world.x).toBe(2.5);
+    expect(read).toHaveBeenCalled();
+    expect(read.mock.results.every(({ value }) => value === cells)).toBe(true);
+  } finally {
+    read.mockRestore();
+  }
 });
 
 function floorMap(id, originFeet, quarterTurns = 0) {

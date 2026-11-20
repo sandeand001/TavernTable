@@ -1,7 +1,11 @@
 import { normalizeCreatureType } from '../config/CharacterCatalog.js';
 import * as TokenMovement from '../entities/creatures/TokenMovement.js';
 import { getAutomaticCreatureName } from '../entities/creatures/CreatureNames.js';
-import { readStablePlacement, SceneNotReadyError } from '../scene/token-adapter/SavedPlacements.js';
+import {
+  readStablePlacement,
+  sceneActorPlacement,
+  SceneNotReadyError,
+} from '../scene/token-adapter/SavedPlacements.js';
 import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapshotReaders.js';
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
@@ -95,6 +99,10 @@ export function captureReadyCampaignScene(
   const characterIds = new Set(library.list().map((character) => character.id));
   const creatures = gm.placedTokens.map((token) => {
     const staged = placements?.get(token.id);
+    // A reconciled player move is durable even while the DM is still rendering it.
+    const approved = gm.token3DAdapter.getApprovedMovementCheckpoint?.(token);
+    const { gridX, gridY, facingAngle, pose } =
+      staged?.placement ?? approved ?? readStablePlacement(gm.token3DAdapter, token);
     let characterId = token.characterSheetId || null;
     if (change?.type === 'replace' && characterId === change.oldId) characterId = result;
     if (change?.linkTokenId === token.id) characterId = result;
@@ -105,7 +113,7 @@ export function captureReadyCampaignScene(
     const automaticName = token.nameMode === 'automatic';
     return {
       id: token.id,
-      ...(gm.campaignWorld ? { mapId: staged ? staged.mapId : token.mapId } : {}),
+      ...(gm.campaignWorld ? { mapId: staged?.mapId ?? approved?.mapId ?? token.mapId } : {}),
       type,
       instanceNumber: token.instanceNumber,
       name:
@@ -130,7 +138,10 @@ export function captureReadyCampaignScene(
       ...(character || !token.fallTraits
         ? {}
         : { fallTraits: TokenMovement.getTokenFallTraits(token) }),
-      ...(staged ? staged.placement : readStablePlacement(gm.token3DAdapter, token)),
+      gridX,
+      gridY,
+      facingAngle,
+      pose,
     };
   });
   const links = new Map(creatures.map((creature) => [creature.id, creature.characterId]));
@@ -385,7 +396,7 @@ export async function reconcileCampaignScene(
   combat,
   { preserveMovingActors = false } = {}
 ) {
-  validateScene(scene, { ruleset: library.ruleset, library });
+  const context = { ruleset: library.ruleset, library };
   const camera = gm.threeSceneManager.snapshotView();
   const selectedId = gm.token3DAdapter.getSelectedToken()?.id || null;
   const focusId = gm.campaignView?.focusTokenId || selectedId;
@@ -394,10 +405,13 @@ export async function reconcileCampaignScene(
   const protectedActors = preserveMovingActors
     ? new Set(gm.placedTokens.filter((token) => gm.token3DAdapter.isMovementInProgress(token)))
     : new Set();
-  const world =
-    scene.version === 3
-      ? CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
-      : null;
+  let world = null;
+  if (scene.version === 3) {
+    if (gm.campaignWorld instanceof CampaignWorld) {
+      world = gm.campaignWorld;
+      world.acceptCheckpoint(scene);
+    } else world = CampaignWorld.fromScene(scene, context);
+  } else validateScene(scene, context);
   const mapId = world ? previousMapId || scene.view.mapId : null;
   const map = world ? world.getMap(mapId) : scene;
   const assetsChanged = !previousMap || JSON.stringify(previousMap) !== JSON.stringify(map);
@@ -416,6 +430,15 @@ export async function reconcileCampaignScene(
   const typeCounts = new Map(scene.tokenCounters.types);
   for (const creature of scene.creatures) {
     let token = gm.placedTokens.find(({ id }) => id === creature.id);
+    if (
+      token &&
+      preserveMovingActors &&
+      gm.token3DAdapter.retainApprovedMovementCheckpoint?.(
+        token,
+        sceneActorPlacement(scene, creature)
+      )
+    )
+      continue;
     if (token && protectedActors.has(token)) continue;
     if (!token) {
       const model = gm.tokenManager.createCreatureByType(creature.type);

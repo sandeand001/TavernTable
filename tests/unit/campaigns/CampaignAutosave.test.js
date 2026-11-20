@@ -95,6 +95,7 @@ test('a saved external player step reconciles at an idle checkpoint and cannot b
   const camera = { ...gm.threeSceneManager.snapshotView(), zoom: 1.6 };
   gm.threeSceneManager.restoreView(camera);
   const visual = actor.__threeMesh;
+  const geometry = gm.campaignWorld.getMapGeometry(actor.mapId);
   await store.commitScene(campaign.id, {
     ruleset: library.ruleset,
     revision: before.sceneRevision,
@@ -105,6 +106,7 @@ test('a saved external player step reconciles at an idle checkpoint and cannot b
   await autosave.reconcile(accepted);
   expect(gm.placedTokens[0]).toBe(actor);
   expect(actor.__threeMesh).toBe(visual);
+  expect(gm.campaignWorld.getMapGeometry(actor.mapId)).toBe(geometry);
   expect(actor.world.x).toBe(2.5);
   expect(gm.threeSceneManager.snapshotView()).toEqual(camera);
   expect(library.sceneRevision).toBe(accepted.sceneRevision);
@@ -217,6 +219,44 @@ test('a shared DM move publishes live checkpoints while coalescing durable write
     },
   });
   expect(adapter.isMovementInProgress(actor)).toBe(true);
+});
+
+test('live movement keeps the order of notices queued behind an in-flight packet', async () => {
+  const { autosave, actor, liveWrites } = await fixture({ shared: true });
+  let release;
+  liveWrites.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+  const point = (gridX) => ({
+    mapId: 'map-main',
+    gridX,
+    gridY: 1,
+    facingAngle: 0,
+    pose: { kind: 'ground', world: { x: gridX + 0.5, y: 0, z: 1.5 } },
+  });
+  const publish = (name, x) =>
+    autosave.publishLivePresentation({
+      tokenId: actor.id,
+      commandId: `live-order-${name}`,
+      kind: 'move',
+      motion: {
+        kind: 'walk',
+        completed: false,
+        continuing: true,
+        from: point(x),
+        route: [point(x + 1)],
+      },
+    });
+  publish('first', 1);
+  await Promise.resolve();
+  publish('second', 2);
+  publish('third', 3);
+  release();
+  await autosave.liveTask;
+  await autosave.liveTask;
+  expect(
+    liveWrites.mock.calls.map(([, packet]) =>
+      packet.presentations.map(({ commandId }) => commandId)
+    )
+  ).toEqual([['live-order-first'], ['live-order-second', 'live-order-third']]);
 });
 
 test('same-journey live checkpoints coalesce into one bounded presentation', async () => {

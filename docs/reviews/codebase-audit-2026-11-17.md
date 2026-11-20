@@ -396,8 +396,40 @@ streamed endpoint, stale global revisions, a one-second presentation gap and a
 third refresh queued during the final follow-up. The focused multiplayer matrix
 passed 135/135 tests, including five repeated native DM/player convergence runs;
 the complete GitHub integration command passed 44/44 suites and 866/866 tests,
-and formatting/lint remained clean. `M5-06` remains open pending owner native
-acceptance and a green post-change GitHub CI run.
+and formatting/lint remained clean. The
+[GitHub CI run for `ac64d63`](https://github.com/sandeand001/TavernTable/actions/runs/44794978863)
+passed all jobs. `M5-06` remains open pending native acceptance.
+
+**Follow-up 2026-11-20 (measured castle movement and save rewind):** running the
+DM and an assigned player in separate Chrome windows reproduced a 5.58-second
+wait for the DM sprite to start in the player view. Obsolete live journey state
+caused the host to reject the provisional packets, leaving the durable save as
+the only source of movement. A later overlapping run reproduced a different
+failure: the DM autosave wrote the player sprite's old rendered position over
+an already committed move. Keeping the DM animation clock paused reproduced
+the overwrite in a test. Capture now takes the reconciled player placement
+independently of the sprite's playback; the player also retains a finished
+provisional route long enough to ignore an unrelated, lagging checkpoint.
+
+The host can restart a journey from the current canonical pose and accepts
+ordinary coordinate rounding at a saved waypoint without relaxing checks on
+the actor's pose or support. Live packets drain in order, and supported level
+and ordinary stepped castle legs publish when they start. A small playout
+reserve absorbs short delays without rendering beyond a received waypoint.
+Movement and projection reuse compiled map geometry, and DM scene validation
+reuses unchanged geometry while continuing to validate actor placements and
+actual terrain edits.
+
+In the final two-window localhost overlap replays, the Knight started in the
+player view in about 25 ms, and Ari began moving in 347–612 ms. Both reached their
+destinations and kept them through the next DM autosave (revisions 189 and 191).
+The measured DM reconciliation dropped from 396 ms to 128–136 ms. One replay
+had no player waypoint stall; the other had a roughly 360 ms stall while a live
+packet was delayed. DM frame gaps of 133–139 ms remained. These are individual
+localhost runs, not a latency guarantee. The focused regression matrix passed
+287 tests in 13 suites, and the 29-test authority suite passed again with the
+rounded-waypoint regression. `M5-06` stays open for the remaining hitches and a
+native one-DM/nine-player rehearsal at 200 ms RTT.
 
 ### C3 and C10. Player camera follows the selected assigned creature
 

@@ -11,7 +11,33 @@ import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const CONTINUATION_GRACE_SECONDS = 0.5;
 const LIVE_CONTINUATION_TIMEOUT_SECONDS = 10;
+const LIVE_GROUND_PLAYOUT_MARGIN_SECONDS = 0.2;
 const MAX_PRESENTATION_FINGERPRINTS = 512;
+
+function rememberProvisionalRoute(adapter, token, motion) {
+  if (motion.completed !== false) return;
+  adapter._provisionalMovementRoutes ??= new WeakMap();
+  const previous = adapter._provisionalMovementRoutes.get(token);
+  const points = samePlacement(previous?.points.at(-1), motion.from)
+    ? previous.points
+    : [motion.from];
+  adapter._provisionalMovementRoutes.set(token, {
+    points: [...points, ...motion.route].slice(-MAX_PRESENTATION_FINGERPRINTS),
+    expiresAt: performance.now() + LIVE_CONTINUATION_TIMEOUT_SECONDS * 1000,
+  });
+}
+
+function isLaggedMovementCheckpoint(token, canonical) {
+  const route = this._provisionalMovementRoutes?.get(token);
+  if (!route) return false;
+  const index = route.points.findLastIndex((point) => samePlacement(point, canonical));
+  if (index < 0 || index === route.points.length - 1 || route.expiresAt <= performance.now()) {
+    this._provisionalMovementRoutes.delete(token);
+    return false;
+  }
+  route.points = route.points.slice(index);
+  return true;
+}
 
 function presentationFingerprint(motion) {
   if (typeof motion?.commandId !== 'string') return null;
@@ -84,24 +110,35 @@ function beginSegment(adapter, job) {
   const speed = job.state.activeSpeed * (flying ? FLIGHT_PACE_MULTIPLIER : 1);
   if (!(speed > 0) || !Number.isFinite(speed) || !data?.actions[key])
     throw new Error('The approved movement animation is not available');
+  const gravity =
+    (FALL_GRAVITY_FEET_PER_SECOND_SQUARED * adapter.gameManager.spatial.tileWorldSize) /
+    FEET_PER_GRID_SQUARE;
+  const duration = Math.max(
+    job.falling ? Math.sqrt((2 * Math.abs(dy)) / gravity) : Math.hypot(dx, dy, dz) / speed,
+    1e-6
+  );
+  // Build a small timing reserve while already moving, without ever extrapolating past a waypoint.
+  const pad =
+    job.provisional &&
+    job.index === 0 &&
+    job.route.length === 1 &&
+    job.kind === 'walk' &&
+    job.sourceKind === 'ground' &&
+    target.pose.kind === 'ground' &&
+    target.mapId === token.mapId &&
+    Math.abs(dy) < 1e-6
+      ? Math.min(LIVE_GROUND_PLAYOUT_MARGIN_SECONDS, duration / 2)
+      : 0;
+  job.duration = duration + pad;
+  if (!Number.isFinite(job.duration)) throw new Error('The approved movement duration is invalid');
+  const timeScale = duration / job.duration;
   token.flightActive = flying || job.falling;
-  adapter._setAnimation(token, key, {
-    force: data.current !== key,
-    fadeIn: 0.2,
-    fadeOut: 0.2,
-  });
+  if (data.current === key) data.actions[key].setEffectiveTimeScale(timeScale);
+  else adapter._setAnimation(token, key, { force: true, fadeIn: 0.2, fadeOut: 0.2, timeScale });
   adapter._applyOrientationImmediate(token, target.facingAngle);
   job.start = start;
   job.target = { ...endpoint };
   job.elapsed = 0;
-  const gravity =
-    (FALL_GRAVITY_FEET_PER_SECOND_SQUARED * adapter.gameManager.spatial.tileWorldSize) /
-    FEET_PER_GRID_SQUARE;
-  job.duration = Math.max(
-    job.falling ? Math.sqrt((2 * Math.abs(dy)) / gravity) : Math.hypot(dx, dy, dz) / speed,
-    1e-6
-  );
-  if (!Number.isFinite(job.duration)) throw new Error('The approved movement duration is invalid');
 }
 
 function canContinueApprovedMovement(token, motion) {
@@ -130,6 +167,7 @@ function appendApprovedMovement(adapter, token, motion) {
     active.waitingForContinuation = null;
     beginSegment(adapter, active);
   }
+  rememberProvisionalRoute(adapter, token, motion);
   return active.done;
 }
 
@@ -145,6 +183,22 @@ function reconcileApprovedMovement(token, placement) {
     return false;
   endpoint.facingAngle = placement.facingAngle;
   return true;
+}
+
+function retainApprovedMovementCheckpoint(token, placement) {
+  if (
+    !this._approvedMovements?.has(token) &&
+    !this._approvedMovementRequests?.has(token) &&
+    !this._restoringApprovedMovements?.has(token)
+  )
+    return false;
+  this._approvedMovementCheckpoints ??= new WeakMap();
+  this._approvedMovementCheckpoints.set(token, copy(placement));
+  return true;
+}
+
+function getApprovedMovementCheckpoint(token) {
+  return this._approvedMovementCheckpoints?.get(token);
 }
 
 async function playApprovedMovement(token, motion) {
@@ -256,6 +310,7 @@ async function playApprovedMovement(token, motion) {
       resolve,
       reject,
       done,
+      provisional: motion.completed === false,
       continuing: motion.continuing === true,
       holdUntilFinish: motion.holdUntilFinish === true,
       waitingForContinuation: null,
@@ -272,6 +327,7 @@ async function playApprovedMovement(token, motion) {
       request.readyResolve(false);
       throw error;
     }
+    rememberProvisionalRoute(this, token, motion);
     request.job = job;
     for (const queued of request.queue) {
       try {
@@ -286,6 +342,7 @@ async function playApprovedMovement(token, motion) {
     return done;
   } catch (error) {
     forgetPresentation(this, token, remembered.fingerprint);
+    if (!replaced()) this._approvedMovementCheckpoints?.delete(token);
     request.readyResolve(false);
     throw error;
   } finally {
@@ -303,6 +360,9 @@ async function finishMovement(adapter, token, job) {
   job.state.pathActive = false;
   adapter._unlockTokenWorldAuthority(job.state);
   const placement = job.route.at(-1);
+  const provisional = adapter._provisionalMovementRoutes?.get(token);
+  if (provisional && samePlacement(provisional.points.at(-1), placement))
+    provisional.expiresAt = performance.now() + LIVE_CONTINUATION_TIMEOUT_SECONDS * 1000;
   adapter._setAnimation(token, placement.pose.kind === 'flight' ? 'hover' : 'idle', {
     force: true,
     fadeIn: 0.2,
@@ -314,6 +374,7 @@ async function finishMovement(adapter, token, job) {
     await adapter.restoreStablePlacement(token, placement);
   } finally {
     adapter._restoringApprovedMovements.delete(token);
+    adapter._approvedMovementCheckpoints?.delete(token);
   }
   job.resolve({ completed: true });
 }
@@ -453,6 +514,8 @@ async function playApprovedVisual(token, entry) {
 }
 
 function cancelApprovedMovement(token, error = null) {
+  this._provisionalMovementRoutes?.delete(token);
+  this._approvedMovementCheckpoints?.delete(token);
   const request = this._approvedMovementRequests?.get(token);
   if (request) {
     request.readyResolve(false);
@@ -469,8 +532,11 @@ function cancelApprovedMovement(token, error = null) {
 }
 
 export function installApprovedMotionMethods(prototype) {
+  prototype.isLaggedMovementCheckpoint = isLaggedMovementCheckpoint;
   prototype.canContinueApprovedMovement = canContinueApprovedMovement;
   prototype.reconcileApprovedMovement = reconcileApprovedMovement;
+  prototype.retainApprovedMovementCheckpoint = retainApprovedMovementCheckpoint;
+  prototype.getApprovedMovementCheckpoint = getApprovedMovementCheckpoint;
   prototype.playApprovedVisual = playApprovedVisual;
   prototype.playApprovedMovement = playApprovedMovement;
   prototype.advanceApprovedMovement = advanceApprovedMovement;

@@ -420,7 +420,7 @@ function canPublishSharedMovement(adapter) {
   );
 }
 
-function publishPlannedSharedMovement(token, goal, { kind = 'ground' } = {}) {
+function publishPlannedSharedMovement(token, goal, { kind = 'ground', surfaceId = null } = {}) {
   if (
     !canPublishSharedMovement(this) ||
     !goal?.world ||
@@ -443,6 +443,7 @@ function publishPlannedSharedMovement(token, goal, { kind = 'ground' } = {}) {
     pose: {
       kind,
       world: { ...goal.world },
+      ...(surfaceId ? { surfaceId } : {}),
     },
   };
   const dx = destination.pose.world.x - origin.pose.world.x;
@@ -450,7 +451,7 @@ function publishPlannedSharedMovement(token, goal, { kind = 'ground' } = {}) {
   if (Math.hypot(dx, dz) <= 1e-6) return false;
   destination.facingAngle = facingAngleFromDirection(dx, dz);
   if (!journey) {
-    journey = { commandId: globalThis.crypto.randomUUID(), endpoint: origin, planned: true };
+    journey = { commandId: globalThis.crypto.randomUUID(), endpoint: origin };
     this._liveMovementJourneys.set(token, journey);
   }
   const presentation = {
@@ -465,6 +466,7 @@ function publishPlannedSharedMovement(token, goal, { kind = 'ground' } = {}) {
       route: [clone(destination)],
     },
   };
+  journey.planned = true;
   journey.endpoint = clone(destination);
   this.gameManager.sceneAutosave.publishLivePresentation(presentation);
   return true;
@@ -474,8 +476,11 @@ function publishStableSharedMovement(adapter, token, from, next, kind = 'walk') 
   if (!canPublishSharedMovement(adapter)) return false;
   adapter._liveMovementJourneys ??= new Map();
   let journey = adapter._liveMovementJourneys.get(token);
+  if (journey && samePlacement(journey.endpoint, next)) {
+    journey.planned = false;
+    return false;
+  }
   if (journey?.planned) return false;
-  if (journey && samePlacement(journey.endpoint, next)) return false;
   if (!journey) {
     journey = {
       commandId:

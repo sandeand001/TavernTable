@@ -11,6 +11,9 @@ import { captureCampaignScene } from '../../../src/campaigns/SceneWorld.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { TerrainEngineSceneAdapter } from '../../../src/scene/terrain/TerrainEngineSceneAdapter.js';
 import { getTokenConditions } from '../../../src/entities/creatures/TokenMovement.js';
+import { MAX_STEP_HEIGHT_FEET } from '../../../src/config/TokenMovementConfig.js';
+import { samePlacement } from '../../../src/scene/token-adapter/SavedPlacements.js';
+import { getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
 import * as dice from '../../../src/systems/dice/dice.js';
 
@@ -20,7 +23,13 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function fixture(key, seed = 42, cliffStart = false, size = 60) {
+async function fixture(
+  key,
+  seed = 42,
+  cliffStart = false,
+  size = 60,
+  { elevationUnit = 0.5, startCell = null } = {}
+) {
   let actor;
   const gm = await createConnectedTravelBoard({
     sceneFactory: (options) => {
@@ -35,7 +44,7 @@ async function fixture(key, seed = 42, cliffStart = false, size = 60) {
         heights: engine.save().heights,
         geometry: engine.geometry.save(),
         biome: key,
-        worldElevationUnit: 0.5,
+        worldElevationUnit: elevationUnit,
         seed,
       });
       base.creatures[0].gridX = 0;
@@ -44,7 +53,7 @@ async function fixture(key, seed = 42, cliffStart = false, size = 60) {
         kind: 'ground',
         world: {
           x: 0.5,
-          y: engine.getHeightAt(0, 0) * 0.5,
+          y: engine.getHeightAt(0, 0) * elevationUnit,
           z: 0.5,
         },
       };
@@ -59,7 +68,10 @@ async function fixture(key, seed = 42, cliffStart = false, size = 60) {
       };
       const scene = reconcileBuildingScene(base, context);
       let point;
-      if (cliffStart) {
+      if (startCell) {
+        const [x, z] = startCell;
+        point = { x: x + 0.5, y: engine.getHeightAt(x, z) * elevationUnit, z: z + 0.5 };
+      } else if (cliffStart) {
         const heights = engine.save().heights;
         const plateau = Math.max(...heights.flat());
         outer: for (let z = 2; z < size - 2; z++)
@@ -74,7 +86,7 @@ async function fixture(key, seed = 42, cliffStart = false, size = 60) {
               if (heights[z + dz][x + dx] <= -4) {
                 point = {
                   x: x + 0.5,
-                  y: plateau * 0.5,
+                  y: plateau * elevationUnit,
                   z: z + 0.5,
                   targetX: x + dx,
                   targetZ: z + dz,
@@ -178,6 +190,67 @@ test.each([
     } finally {
       if (reopened) disposeConnectedTravelBoard(reopened);
       editor?.detach();
+      disposeConnectedTravelBoard(gm);
+    }
+  },
+  60000
+);
+
+test.each([
+  ['level', false],
+  ['stepped', true],
+])(
+  'a DM castle run sends each %s leg as it starts, not after reaching the tile',
+  async (_, stepped) => {
+    const { gm, token, adapter } = stepped
+      ? await fixture('cliffsideCastle', 394435781, false, 60, {
+          elevationUnit: 0.3,
+          startCell: [56, 29],
+        })
+      : await fixture('cliffsideCastle', 42);
+    const published = [];
+    gm.sceneAutosave = {
+      ready: true,
+      library: { store: { storageInfo: { kind: 'host' }, publishLivePresentations() {} } },
+      publishLivePresentation: (entry) => published.push({ entry, position: { ...token.world } }),
+      changed() {},
+      dispose() {},
+    };
+    try {
+      const range = adapter.getTokenSurfaceRange(token);
+      const route = stepped
+        ? getSurfaceRoute(range, 57, 26)
+        : [...range.tiles.values()]
+            .filter((point) => point.cost >= 15 && point.heightFeet === range.start.heightFeet)
+            .map((point) => getSurfaceRoute(range, point.gridX, point.gridY))
+            .find((steps) => steps?.every((point) => point.heightFeet === range.start.heightFeet));
+      expect(route?.length).toBeGreaterThanOrEqual(3);
+      if (stepped) {
+        const drop = route.at(-2).heightFeet - route.at(-1).heightFeet;
+        expect(drop).toBeGreaterThan(0);
+        expect(drop).toBeLessThanOrEqual(MAX_STEP_HEIGHT_FEET + 1e-7);
+      }
+      const target = route.at(-1);
+      expect(adapter.requestMoveToGrid(token, target.gridX, target.gridY)?.cost).toBe(target.cost);
+      expect(published[0]?.entry.motion.route[0]).toMatchObject({
+        gridX: route[0].gridX,
+        gridY: route[0].gridY,
+        pose: { kind: 'ground', surfaceId: route[0].surfaceId, world: route[0].world },
+      });
+      for (let frame = 0; frame < 900 && adapter.isMovementInProgress(token); frame++)
+        stepHumanoid({ adapter, token, mesh: token.__threeMesh }, 1 / 60);
+      expect(adapter.isMovementInProgress(token)).toBe(false);
+      const legs = published.filter(({ entry }) => entry.kind === 'move');
+      expect(legs).toHaveLength(route.length);
+      expect(new Set(legs.map(({ entry }) => entry.commandId)).size).toBe(1);
+      for (const { entry, position } of legs) {
+        expect(position).toEqual(entry.motion.from.pose.world);
+        expect(position).not.toEqual(entry.motion.route[0].pose.world);
+      }
+      const finish = published.at(-1).entry;
+      expect(finish.kind).toBe('move-finish');
+      expect(samePlacement(finish.placement, token)).toBe(true);
+    } finally {
       disposeConnectedTravelBoard(gm);
     }
   },

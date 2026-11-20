@@ -907,8 +907,14 @@
   replay or rewind an already-presented live route. Durable saves may catch any
   accepted waypoint or the interior of its straight live segment without
   conflicting with a farther provisional endpoint. Provisional render jobs
-  retain continuity across bounded transport gaps, and a player refresh promise
-  drains revisions queued during hydration before reporting convergence.
+  retain continuity across bounded transport gaps. Level and ordinary stepped
+  ground legs on layered maps can start live playback before the DM reaches
+  their endpoint; curves and falls still publish completed safe checkpoints.
+  The player may hold a known live endpoint through a lagging snapshot, but
+  canonical corrections outside that route still apply. During approved
+  playback on the DM, a reconciled canonical player placement, not the sprite's
+  interpolated position, supplies the durable checkpoint. A player refresh
+  promise drains revisions queued during hydration before reporting convergence.
   Player commands similarly publish a compact durable acknowledgement to their
   origin and an authorized route to visible peers before private projection
   hydration completes. Preserve local cameras, per-actor shared-draft merging,

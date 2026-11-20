@@ -156,6 +156,92 @@ test('a compact committed command starts own motion without waiting for full pro
   }
 });
 
+test('a finished live Knight move survives an unrelated saved update until its own checkpoint arrives', async () => {
+  const { app, state, gameManager } = fixture();
+  const restoreFiles = installHumanoidAssetFiles();
+  delete gameManager.__threeTestDouble;
+  const actor = {
+    ...copy(state.publicScene.actors[0]),
+    id: 'visible-dm-knight',
+    name: 'Knight',
+    owned: false,
+    characterId: null,
+    gridX: 2,
+    pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+  };
+  state.publicScene.actors.push(actor);
+  try {
+    await app.start();
+    const adapter = gameManager.token3DAdapter;
+    const knight = gameManager.placedTokens.find(({ id }) => id === actor.id);
+    const from = {
+      mapId: actor.mapId,
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: 0,
+      pose: copy(actor.pose),
+    };
+    const destination = {
+      ...from,
+      gridX: 3,
+      pose: { ...from.pose, world: { ...from.pose.world, x: 3.5 } },
+    };
+    const receipt = {
+      commandId: 'live-knight-journey',
+      tokenId: actor.id,
+      kind: 'move',
+      motion: { kind: 'walk', completed: false, continuing: true, from, route: [destination] },
+    };
+    const deliver = (presentation) =>
+      app.receiveLivePresentations({
+        campaignId: state.campaign.id,
+        presentations: [presentation],
+      });
+    await deliver(receipt);
+    await waitFor(() => adapter.isMovementInProgress(knight));
+    await deliver({
+      commandId: 'live-knight-finish',
+      tokenId: actor.id,
+      kind: 'move-finish',
+      placement: destination,
+    });
+    for (let frame = 0; frame < 300 && adapter.isMovementInProgress(knight); frame++)
+      adapter.advanceApprovedMovement(1 / 60);
+    await Promise.all(app.presentationTasks);
+    expect(knight.world.x).toBe(3.5);
+
+    const unrelated = copy(state);
+    unrelated.sceneRevision++;
+    unrelated.publicScene.assets = null;
+    await app.showState(unrelated);
+    expect(knight.world.x).toBe(3.5);
+
+    const committed = copy(unrelated);
+    committed.sceneRevision++;
+    Object.assign(committed.publicScene.actors[1], destination);
+    committed.publicScene.updates = [
+      {
+        ...receipt,
+        sceneRevision: committed.sceneRevision,
+        charactersRevision: committed.revision,
+        motion: { ...receipt.motion, completed: true, continuing: false },
+      },
+    ];
+    await app.showState(committed);
+    expect(knight.world.x).toBe(3.5);
+    expect(adapter.isMovementInProgress(knight)).toBe(false);
+    const correction = copy(committed);
+    correction.sceneRevision++;
+    correction.publicScene.updates = [];
+    Object.assign(correction.publicScene.actors[1], from);
+    await app.showState(correction);
+    expect(knight.world.x).toBe(2.5);
+  } finally {
+    await app.destroy();
+    restoreFiles();
+  }
+});
+
 test('selecting a visible unowned creature exposes no player gameplay actions', async () => {
   const { app, state } = fixture();
   const token = { id: 'visible-dm-knight' };

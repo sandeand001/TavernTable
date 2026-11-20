@@ -6,6 +6,8 @@ import { decodeScene, encodeScene } from '../../../src/campaigns/CampaignScene.j
 import { attachHostSessionUpdates } from '../../../src/ui/sessions/HostSessionUpdates.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { sceneState } from '../../helpers/sceneState.js';
+import { installHumanoidAssetFiles } from '../../helpers/humanoid-fixture.js';
+import { sceneActorPlacement } from '../../../src/scene/token-adapter/SavedPlacements.js';
 import {
   createConnectedTravelBoard,
   disposeConnectedTravelBoard,
@@ -443,6 +445,81 @@ test('a player move applies while a different DM movement is still animating', a
     close();
   }
 });
+
+test('a DM checkpoint saves the committed player destination while its sprite is still moving', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  const restoreFiles = installHumanoidAssetFiles();
+  const [player, local] = gm.placedTokens;
+  const adapter = gm.token3DAdapter;
+  const waitFor = async (condition, message) => {
+    const deadline = Date.now() + 5000;
+    while (!condition()) {
+      if (Date.now() >= deadline) throw new Error(message);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+  const context = { ruleset: library.ruleset, library };
+  try {
+    delete gm.__threeTestDouble;
+    adapter.releaseTokenVisual(player);
+    await adapter.onTokenAdded(player);
+    await player.__threeMeshPromise;
+
+    local.gridX = 4;
+    local.world = { x: 4.5, y: 0, z: 1.5 };
+    adapter.recordStablePlacement(local);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, context);
+    const actor = canonical.creatures[0];
+    const from = structuredClone(sceneActorPlacement(canonical, actor));
+    actor.gridX = 2;
+    actor.pose.world.x = 2.5;
+    const destination = sceneActorPlacement(canonical, actor);
+    const saved = await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, context),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+      presentations: [
+        {
+          commandId: 'player-move-before-dm-checkpoint',
+          tokenId: player.id,
+          kind: 'move',
+          sceneRevision: saved.revision,
+          charactersRevision: before.revision,
+          motion: { kind: 'walk', completed: true, from, route: [destination] },
+        },
+      ],
+    });
+    await waitFor(
+      () => library.sceneRevision >= saved.revision && autosave.ready,
+      'The DM did not reconcile the player move'
+    );
+    expect(parent.textContent).not.toMatch(/conflict|error/i);
+    expect(player.world.x).toBe(from.pose.world.x);
+    expect(adapter.isMovementInProgress(player)).toBe(true);
+
+    // Keep the DM's animation clock paused until after its own background checkpoint.
+    await waitFor(
+      () => library.sceneRevision > saved.revision && !autosave.writing,
+      'The DM did not save its independent movement'
+    );
+    expect(player.world.x).toBe(from.pose.world.x);
+    const checkpoint = decodeScene((await store.readScene(campaign.id)).scene, context);
+    expect(checkpoint.creatures.map(({ pose }) => pose.world.x)).toEqual([2.5, 4.5]);
+  } finally {
+    close();
+    restoreFiles();
+  }
+}, 15000);
 
 test('a clean DM animation does not delay an unrelated player move', async () => {
   const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({

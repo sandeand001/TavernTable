@@ -18,6 +18,7 @@ import {
 } from '../terrain/BuildingModel.js';
 import { mapFeetToCampaign } from './CampaignCoordinates.js';
 import { normalizeCavernRecipe, CAVERN_SIDES } from '../terrain/generation/CavernInteriors.js';
+import { sameJsonValue } from '../utils/JsonValue.js';
 import {
   TARGET_ALLEGIANCES,
   TARGET_CREATURE_TYPES,
@@ -35,6 +36,7 @@ const name = (value) => typeof value === 'string' && !!value.trim() && value.len
 const failure = (part) => {
   throw new Error(`The saved campaign scene has invalid ${part}; it was not reset`);
 };
+const sceneGeometryByLibrary = new WeakMap();
 
 function jsonSettings(value, depth = 0) {
   if (depth > 5) return false;
@@ -71,7 +73,7 @@ function validateCamera(camera) {
     failure('camera');
 }
 
-function validateBoard(grid, terrain, version, base = 'ground') {
+function validateBoard(grid, terrain, version, base = 'ground', previousGeometry = null) {
   if (
     !record(grid) ||
     !integer(grid.cols, GRID_CONFIG.MIN_COLS, GRID_CONFIG.MAX_COLS) ||
@@ -101,7 +103,7 @@ function validateBoard(grid, terrain, version, base = 'ground') {
     terrain.placeables.length > 50000
   )
     failure('terrain');
-  let geometry = null;
+  let physical = null;
   if (terrain.cavern !== undefined) {
     normalizeCavernRecipe(terrain.cavern);
     if (terrain.cavern.version === 1 && !terrain.geometry) failure('cavern geometry');
@@ -110,16 +112,34 @@ function validateBoard(grid, terrain, version, base = 'ground') {
   if (terrain.geometry !== undefined || base === 'floor') {
     if (terrain.geometry !== undefined && version !== 2) failure('geometry version');
     if (terrain.geometry === undefined && version === 2) failure('map geometry');
-    geometry = new TerrainGeometry({
-      widthFeet: grid.cols * 5,
-      depthFeet: grid.rows * 5,
-      terrainThicknessFeet: base === 'floor' ? 0.5 : null,
-      getTerrainHeightFeet: (x, z) =>
-        terrain.heights[Math.floor(z / 5)][Math.floor(x / 5)] *
-        terrain.worldElevationUnit *
-        feetPerWorld,
-    });
-    if (terrain.geometry !== undefined) geometry.load(terrain.geometry);
+    const elevationUnit = terrain.worldElevationUnit;
+    const source = {
+      cols: grid.cols,
+      rows: grid.rows,
+      base,
+      feetPerWorld,
+      elevationUnit,
+      heights: terrain.heights,
+      volumes: terrain.geometry,
+    };
+    if (previousGeometry && sameJsonValue(previousGeometry.source, source)) {
+      physical = previousGeometry;
+    } else {
+      // Validation geometry owns its heights; later edits to the input cannot alter cached support.
+      const heights = terrain.heights.map((row) => row.slice());
+      const geometry = new TerrainGeometry({
+        widthFeet: grid.cols * 5,
+        depthFeet: grid.rows * 5,
+        terrainThicknessFeet: base === 'floor' ? 0.5 : null,
+        getTerrainHeightFeet: (x, z) =>
+          heights[Math.floor(z / 5)][Math.floor(x / 5)] * elevationUnit * feetPerWorld,
+      });
+      if (terrain.geometry !== undefined) geometry.load(terrain.geometry);
+      physical = {
+        geometry,
+        source: { ...source, heights, volumes: terrain.geometry && geometry.save() },
+      };
+    }
   } else if (version === 2) failure('map geometry');
   for (const placement of terrain.placeables) {
     if (
@@ -155,7 +175,7 @@ function validateBoard(grid, terrain, version, base = 'ground') {
     )
       failure(key === 'coverBounds' ? 'structure cover bounds' : 'physical sight bounds');
   }
-  return { grid, terrain, inside, geometry, feetPerWorld };
+  return { grid, terrain, inside, geometry: physical?.geometry ?? null, feetPerWorld, physical };
 }
 
 export { validateBoard as validateMapBoard };
@@ -171,6 +191,7 @@ export function validateScene(scene, { ruleset, library }) {
   if (!record(scene) || ![1, 2, 3].includes(scene.version) || scene.ruleset !== ruleset)
     failure('version or ruleset');
   const boards = new Map();
+  const previousGeometry = sceneGeometryByLibrary.get(library);
   let legacyBoard = null;
   if (scene.version === 3) {
     if (!Array.isArray(scene.maps) || !scene.maps.length || scene.maps.length > 128)
@@ -188,7 +209,13 @@ export function validateScene(scene, { ruleset, library }) {
         failure('map identity or physical anchor');
       boards.set(
         map.id,
-        validateBoard(map.grid, map.terrain, map.terrain?.geometry ? 2 : 1, map.base)
+        validateBoard(
+          map.grid,
+          map.terrain,
+          map.terrain?.geometry ? 2 : 1,
+          map.base,
+          previousGeometry?.get(map.id)
+        )
       );
       if (
         map.terrain.placeables.some((entry) => ['structure', 'building'].includes(entry.type)) &&
@@ -479,6 +506,13 @@ export function validateScene(scene, { ruleset, library }) {
       )
         failure('spell effect location');
   }
+  if (scene.version === 3 && library && typeof library === 'object')
+    sceneGeometryByLibrary.set(
+      library,
+      new Map(
+        [...boards].filter(([, board]) => board.physical).map(([id, board]) => [id, board.physical])
+      )
+    );
   return scene;
 }
 

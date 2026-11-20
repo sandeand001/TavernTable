@@ -136,6 +136,10 @@ class PlayerGameplay {
         }
         let effectiveCommand = command;
         const undo = this.players.undoFor(currentProfile, current);
+        const world =
+          command.kind === 'move'
+            ? await this.players.published.world(scene, currentLibrary)
+            : undefined;
         if (
           command.sceneRevision !== current.sceneRevision ||
           command.charactersRevision !== current.revision
@@ -144,7 +148,8 @@ class PlayerGameplay {
             scene,
             currentLibrary,
             currentProfile.characterIds,
-            undo
+            undo,
+            { world }
           );
           if (
             !this.players.canRebaseCommand(
@@ -189,6 +194,7 @@ class PlayerGameplay {
           ownedIds: currentProfile.characterIds,
           placementGrant,
           undo,
+          world,
         });
         const saved = await store.commitScene(campaignId, {
           ruleset: current.campaign.ruleset,

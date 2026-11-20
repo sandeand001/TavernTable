@@ -256,24 +256,27 @@ export default class CampaignAutosave {
     this.livePresentations.push(JSON.parse(JSON.stringify(presentation)));
     if (this.livePresentations.length > 256)
       this.livePresentations.splice(0, this.livePresentations.length - 256);
-    if (!this.liveTask)
-      this.liveTask = Promise.resolve()
-        .then(() => this._publishLivePresentations())
-        .finally(() => {
-          this.liveTask = null;
-          const next = this.livePresentations.shift();
-          if (next) this.publishLivePresentation(next);
-        });
+    this._scheduleLivePublication();
+  }
+
+  _scheduleLivePublication() {
+    if (this.closed || this.liveTask || !this.livePresentations.length) return;
+    this.liveTask = Promise.resolve()
+      .then(() => this._publishLivePresentations())
+      .finally(() => {
+        this.liveTask = null;
+        this._scheduleLivePublication();
+      });
   }
 
   async _publishLivePresentations() {
-    const presentations = coalesceLiveMovementPresentations(this.livePresentations.splice(0));
-    if (!presentations.length) return;
+    const queued = this.livePresentations.splice(0);
+    if (this.closed || !queued.length) return;
     try {
       await this.library.store.publishLivePresentations(this.library.campaign.id, {
         sceneRevision: this.library.sceneRevision,
         charactersRevision: this.library.revision,
-        presentations,
+        presentations: coalesceLiveMovementPresentations(queued),
       });
     } catch (error) {
       GameErrors.gameState(error, {

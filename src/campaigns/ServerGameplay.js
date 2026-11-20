@@ -352,9 +352,9 @@ export async function movePlayerActor(
   library,
   tokenId,
   target,
-  { dice, id, useSlowFall, closest = false } = {}
+  { dice, id, useSlowFall, closest = false, world } = {}
 ) {
-  const runtime = gameplayRuntime(scene, library);
+  const runtime = gameplayRuntime(scene, library, undefined, world);
   const actor = runtime.actors.find((entry) => entry.id === tokenId);
   const saved = scene.creatures.find((entry) => entry.id === tokenId);
   if (
@@ -911,7 +911,7 @@ export async function executePlayerCommand(
   scene,
   library,
   command,
-  { dice, ownedIds = [], placementGrant, undo = new Map() } = {}
+  { dice, ownedIds = [], placementGrant, undo = new Map(), world } = {}
 ) {
   if (command.kind === 'place')
     return placePlayerCharacter(scene, library, command.payload, placementGrant);
@@ -921,6 +921,7 @@ export async function executePlayerCommand(
       id: command.commandId,
       useSlowFall: command.payload.useSlowFall,
       closest: command.payload.closest,
+      world,
     });
   const runtime = gameplayRuntime(scene, library, undo);
   const actor = runtime.actors.find((entry) => entry.id === command.tokenId);

@@ -8,7 +8,7 @@ import {
   getSurfaceRoute,
   isFloorSurface,
 } from '../../../terrain/SurfaceNavigation.js';
-import { MAX_STEP_HEIGHT_FEET } from '../../../config/TokenMovementConfig.js';
+import { FEET_PER_GRID_SQUARE, MAX_STEP_HEIGHT_FEET } from '../../../config/TokenMovementConfig.js';
 import {
   boundsIntersectSolid,
   sweptBodyCell,
@@ -281,6 +281,9 @@ function beginSurfaceSegment(state, job) {
   job.segmentCharged = false;
   const dx = point.world.x - start.x,
     dz = point.world.z - start.z;
+  const riseFeet =
+    ((point.world.y - start.y) * FEET_PER_GRID_SQUARE) / this.gameManager.spatial.tileWorldSize;
+  const stepLimit = MAX_STEP_HEIGHT_FEET + 1e-7;
   this._applyOrientationImmediate(state.token, facingAngleFromDirection(dx, dz));
   state.surfaceMotion = {
     start,
@@ -292,12 +295,12 @@ function beginSurfaceSegment(state, job) {
       job.range.geometry.isCurvedSupport?.(
         job.index === 1 ? job.range.start.surfaceId : job.points[job.index - 2].surfaceId
       ),
-    fall:
-      ((start.y - point.world.y) * 5) / this.gameManager.spatial.tileWorldSize >
-      MAX_STEP_HEIGHT_FEET + 1e-7,
+    fall: riseFeet < -stepLimit,
   };
   state.phase = 'surface';
   this._setAnimation(state.token, clip, { fadeIn: 0.2, fadeOut: 0.2 });
+  if (!state.surfaceMotion.followSurface && Math.abs(riseFeet) <= stepLimit)
+    this.publishPlannedSharedMovement?.(state.token, point, { surfaceId: point.surfaceId });
 }
 
 function advanceSurfaceMotion(state, delta) {
