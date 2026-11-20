@@ -248,6 +248,16 @@ failure/uncertain-recovery feedback visible. Cloud feedback already leaves
 normal saves nonmodal and reserves blocking UI for offline, uncertain or failed
 states. Focused camera/cloud-save coverage passed 50/50 tests.
 
+**Progress 2026-11-20 (C1 local path):** host player projections now cache sealed
+static map assets independently of actor-only scene revisions. The bounded cache
+is keyed by maps, locations, connections and visible-map scope, so a command can
+return the current actor state without rebuilding unchanged terrain assets.
+Focused projection coverage verifies reuse, client-known asset omission and map
+invalidation; the exact serialized CI integration mode passed 44 suites and 845
+tests, including `PlayerAuthorityInterop`. This removes a confirmed local
+rebuild on the player-command response path but does not replace the native
+ten-client `M5-06` visual/intermediate-motion acceptance gate.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

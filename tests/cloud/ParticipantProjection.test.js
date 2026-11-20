@@ -12,6 +12,7 @@ const { TerrainGeometry } = require('../../src/terrain/TerrainGeometry.js');
 const { TerrainEngine } = require('../../src/terrain/TerrainEngine.js');
 const { reconcileBuildingScene } = require('../../src/campaigns/BuildingAssembly.js');
 const { encodeScene } = require('../../src/campaigns/CampaignScene.js');
+const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
 const { HostResources } = require('../../tools/host-resources.js');
 const {
   participantState,
@@ -27,6 +28,7 @@ const {
   sealPlayerAssets,
   validatePlayerAssets,
 } = require('../../src/campaigns/PlayerPublicProtocol.js');
+const { PublishedMaps } = require('../../tools/published-maps.js');
 
 async function fixture(t) {
   const root = path.resolve(__dirname, '..', '..');
@@ -127,6 +129,40 @@ test('shared snapshot geometry keeps sheets, image slots and hidden owned gamepl
   assert.deepEqual(warm.assets, first.assets);
   assert.deepEqual(warm.state.gameplay, first.state.gameplay);
   assert.deepEqual(f.state, original);
+});
+
+test('host projection reuses static map assets across actor-only scene changes and invalidates map edits', async (t) => {
+  const f = await fixture(t);
+  const root = path.resolve(__dirname, '..', '..');
+  const published = new PublishedMaps(root);
+  const scene = decodeScene(f.state.scene, { ruleset: '2014', library: f.library });
+  const options = {
+    scene,
+    library: f.library,
+    ownedIds: [f.first],
+    mapId: 'map-main',
+    observerTokenId: 'token-1',
+    presentationVersion: 1,
+  };
+  const first = await published.view(options);
+  assert.equal(published.graphics.size, 1);
+  const cached = [...published.graphics.values()][0];
+  scene.creatures[0].facingAngle = Math.PI / 2;
+  const actorChanged = await published.view({
+    ...options,
+    assetKey: first.publicScene.assetKey,
+  });
+  assert.equal(actorChanged.publicScene.assetKey, first.publicScene.assetKey);
+  assert.equal(actorChanged.publicScene.assets, null);
+  assert.equal([...published.graphics.values()][0], cached);
+  scene.maps[0].terrain.biome = 'forestTemperate';
+  const changed = await published.view({
+    ...options,
+    assetKey: actorChanged.publicScene.assetKey,
+  });
+  assert.notEqual(changed.publicScene.assetKey, actorChanged.publicScene.assetKey);
+  assert.notEqual(changed.publicScene.assets, null);
+  assert.equal(published.graphics.size, 2);
 });
 
 for (const stage of ['presentation', 'snapshot'])

@@ -28,9 +28,22 @@ class PublishedMaps {
         ];
   }
 
-  async presentation(world, mapId, assetKey, visibleMapIds = new Set([mapId])) {
-    const key = JSON.stringify([mapId, [...visibleMapIds].sort()]);
-    let graphic = this.snapshotWorld ? this.graphics.get(key) : null;
+  assetSourceKey(scene, maps = this.maps(scene)) {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          version: scene?.version ?? 1,
+          maps,
+          locations: scene?.locations || [],
+          connections: scene?.connections || [],
+        })
+      )
+      .digest('hex');
+  }
+
+  async presentation(world, mapId, assetKey, visibleMapIds = new Set([mapId]), sourceKey = '') {
+    const key = JSON.stringify([sourceKey, mapId, [...visibleMapIds].sort()]);
+    let graphic = this.graphics.get(key);
     if (graphic)
       return {
         version: 1,
@@ -47,7 +60,7 @@ class PublishedMaps {
     const text = JSON.stringify(assets);
     const publicKey = createHash('sha256').update(text).digest('hex');
     const bytes = Buffer.byteLength(text);
-    if (this.snapshotWorld && bytes <= 8 * 1024 ** 2) {
+    if (bytes <= 8 * 1024 ** 2) {
       while (
         this.graphics.size >= 8 ||
         [...this.graphics.values()].reduce((total, entry) => total + entry.bytes, 0) + bytes >
@@ -81,6 +94,7 @@ class PublishedMaps {
         code: 'unsupported-presentation',
       });
     const maps = this.maps(scene);
+    const sourceKey = this.assetSourceKey(scene, maps);
     if (!maps.length) {
       if (mapId)
         throw Object.assign(new Error('This map is not published to players'), { status: 403 });
@@ -133,7 +147,13 @@ class PublishedMaps {
           grid: selected.grid,
           terrain: null,
           tokens: [],
-          presentation: await this.presentation(world, selected.id, assetKey),
+          presentation: await this.presentation(
+            world,
+            selected.id,
+            assetKey,
+            new Set([selected.id]),
+            sourceKey
+          ),
         },
       };
     }
@@ -188,7 +208,8 @@ class PublishedMaps {
       world,
       visibility.observer.mapId,
       assetKey,
-      visibility.visibleMapIds
+      visibility.visibleMapIds,
+      sourceKey
     );
     const key = createHash('sha256')
       .update(
