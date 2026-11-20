@@ -281,6 +281,24 @@ complete 262-suite/3,251-test unit run, 44 integration suites/847 tests and
 native one-DM/nine-player rehearsal and confirms intermediate motion, facing
 order, full-session convergence and the 200 ms RTT latency target.
 
+**Follow-up 2026-11-20 (C1 native-retest findings):** the owner reproduced
+the remaining delay as a presentation/input coupling rather than a server
+authority failure. Player commands now release the submission lock after the
+authoritative snapshot hydrates while locomotion remains a tracked receipt
+presentation; subsequent same-tab intents queue behind acknowledgement instead
+of producing “Wait for the current host command,” and consecutive moves append
+to the active native route. DM movement/visual checkpoints publish after 100 ms,
+player-command SSE notices are emitted immediately after the durable commit and
+before the requesting player's private projection is finished, and later
+authoritative facing updates reconcile onto an in-flight route endpoint.
+DM-created movement presentations now derive each checkpoint heading from the
+actual segment direction, while visible unowned sprites remain selectable
+without becoming player-controlled command actors. The focused local/host,
+player, native-motion and cloud-owner matrix passed 264/264 tests plus format,
+lint and layering checks. `M5-06` remains open until the owner confirms this
+build natively: no click rejection, correct peer and DM facing, continuous
+intermediate motion, and convergence during true overlap.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

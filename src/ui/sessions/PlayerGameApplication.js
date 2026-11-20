@@ -60,6 +60,7 @@ export default class PlayerGameApplication {
     this.selectionVersion = 0;
     this.observerId = initialState.observerTokenId;
     this.mapId = initialState.publicScene?.presentation.mapId;
+    this.presentationTasks = new Set();
     this.openSheet = openSheet;
     this.sheets = new PlayerCharacterSheets({
       connection,
@@ -372,7 +373,7 @@ export default class PlayerGameApplication {
       this.traversalPopup = new CampaignTraversalPopup({ gameManager: this.gameManager }).attach();
     if (result.sharedMovements?.length || result.sharedVisuals?.length || presentation.movement) {
       this.presentationRevision = state.sceneRevision;
-      try {
+      const presenting = (async () => {
         const movements = [...(result.sharedMovements || [])];
         const ownMovement = presentation.movement;
         const ownIndex = ownMovement ? movements.length : -1;
@@ -393,10 +394,24 @@ export default class PlayerGameApplication {
             entry
           );
         }
-      } finally {
-        if (this.presentationRevision === state.sceneRevision)
-          this.presentationRevision = undefined;
-      }
+      })();
+      result.presentation = presenting;
+      this.presentationTasks.add(presenting);
+      presenting
+        .catch((error) => {
+          if (!this.destroyed && !this.accessEnded) {
+            this.controls.status.textContent = error.message;
+            GameErrors.rendering(error, {
+              component: 'PlayerGameApplication',
+              operation: 'presentation',
+            });
+          }
+        })
+        .finally(() => {
+          this.presentationTasks.delete(presenting);
+          if (this.presentationRevision === state.sceneRevision)
+            this.presentationRevision = undefined;
+        });
     }
     return result;
   }
@@ -452,7 +467,12 @@ export default class PlayerGameApplication {
       ? { applied: true, reason: 'already-rendered' }
       : await this.showState(receipt.state, this.selectionVersion, { movement });
     if (!result.applied) return result;
-    if (movement) return result.movementPresentation;
+    if (result.presentation)
+      Object.defineProperty(receipt, 'presentation', {
+        value: result.presentation,
+        configurable: true,
+      });
+    if (movement) return result;
     if (
       animate &&
       receipt.receipt.kind === 'emote' &&

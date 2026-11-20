@@ -378,13 +378,22 @@ export async function restoreCampaignScene(gameManager, scene, library, combat) 
   if (world) await gm.token3DAdapter.syncMapProjections();
 }
 
-export async function reconcileCampaignScene(gm, scene, library, combat) {
+export async function reconcileCampaignScene(
+  gm,
+  scene,
+  library,
+  combat,
+  { preserveMovingActors = false } = {}
+) {
   validateScene(scene, { ruleset: library.ruleset, library });
   const camera = gm.threeSceneManager.snapshotView();
   const selectedId = gm.token3DAdapter.getSelectedToken()?.id || null;
   const focusId = gm.campaignView?.focusTokenId || selectedId;
   const previousMapId = gm.campaignMapId;
   const previousMap = gm.campaignWorld?.getMap(previousMapId);
+  const protectedActors = preserveMovingActors
+    ? new Set(gm.placedTokens.filter((token) => gm.token3DAdapter.isMovementInProgress(token)))
+    : new Set();
   const world =
     scene.version === 3
       ? CampaignWorld.fromScene(scene, { ruleset: library.ruleset, library })
@@ -394,7 +403,7 @@ export async function reconcileCampaignScene(gm, scene, library, combat) {
   const assetsChanged = !previousMap || JSON.stringify(previousMap) !== JSON.stringify(map);
   const ids = new Set(scene.creatures.map(({ id }) => id));
   for (const token of [...gm.placedTokens])
-    if (!ids.has(token.id)) gm.tokenManager.removeToken(token);
+    if (!ids.has(token.id) && !protectedActors.has(token)) gm.tokenManager.removeToken(token);
   gm.campaignWorld = world;
   gm.campaignMapId = mapId;
   gm.campaignView = world
@@ -407,6 +416,7 @@ export async function reconcileCampaignScene(gm, scene, library, combat) {
   const typeCounts = new Map(scene.tokenCounters.types);
   for (const creature of scene.creatures) {
     let token = gm.placedTokens.find(({ id }) => id === creature.id);
+    if (token && protectedActors.has(token)) continue;
     if (!token) {
       const model = gm.tokenManager.createCreatureByType(creature.type);
       gm.tokenManager.addTokenToCollection(

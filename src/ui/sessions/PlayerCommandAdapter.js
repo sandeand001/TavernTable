@@ -26,6 +26,7 @@ export default class PlayerCommandAdapter {
     this.onChanged = onChanged;
     this.pending = false;
     this.submitting = false;
+    this.mutationPending = false;
     this.idle = Promise.resolve();
     this.failure = null;
     this.stateError = null;
@@ -166,7 +167,12 @@ export default class PlayerCommandAdapter {
   }
 
   async send(kind, tokenId, payload) {
-    if (this.pending) throw new Error('Wait for the current host command to finish');
+    if (this.pending) {
+      if (this.mutationPending) throw new Error('Wait for the current host command to finish');
+      const queuedPayload = JSON.parse(JSON.stringify(payload));
+      const idle = this.idle;
+      return idle.then(() => this.send(kind, tokenId, queuedPayload));
+    }
     const availability = this.availability(kind, tokenId, payload);
     if (!availability.allowed)
       throw Object.assign(
@@ -229,6 +235,7 @@ export default class PlayerCommandAdapter {
     if (this.stateError)
       throw new Error('Refresh the authorized game state or reconnect before changing the board');
     this.pending = true;
+    this.mutationPending = true;
     this.failure = null;
     let finishIdle;
     this.idle = new Promise((resolve) => {
@@ -239,6 +246,7 @@ export default class PlayerCommandAdapter {
       return await operation();
     } finally {
       this.pending = false;
+      this.mutationPending = false;
       finishIdle();
       this._publish();
     }

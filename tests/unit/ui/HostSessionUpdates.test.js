@@ -177,6 +177,143 @@ test('a local DM movement rebases over a simultaneous player move on a different
   }
 });
 
+test('a player move applies while a different DM movement is still animating', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  const local = gm.placedTokens[1];
+  try {
+    gm.token3DAdapter._movementRoutes.set(local, {
+      token: local,
+      spent: 0,
+      segmentCharged: true,
+    });
+    gm.characterServices.combat.syncMovementStatus();
+    local.gridX = 4;
+    local.world = { x: 4.5, y: 0, z: 1.5 };
+    gm.token3DAdapter.recordStablePlacement(local);
+    expect(gm.token3DAdapter.isMovementInProgress(local)).toBe(true);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (
+      let check = 0;
+      check < 30 &&
+      (gm.placedTokens[0].world.x !== 2.5 || !parent.textContent.includes('up to date'));
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).not.toMatch(/waiting|conflict|paused|reopen/i);
+    expect(gm.placedTokens[0].world.x).toBe(2.5);
+    expect(local.world.x).toBe(4.5);
+    expect(gm.token3DAdapter.isMovementInProgress(local)).toBe(true);
+    expect(autosave.dirty).toBe(true);
+  } finally {
+    gm.token3DAdapter._movementRoutes.delete(local);
+    gm.characterServices.combat.syncMovementStatus();
+    close();
+  }
+});
+
+test('a clean DM animation does not delay an unrelated player move', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  const local = gm.placedTokens[1];
+  try {
+    gm.token3DAdapter._movementRoutes.set(local, {
+      token: local,
+      spent: 0,
+      segmentCharged: true,
+    });
+    gm.characterServices.combat.syncMovementStatus();
+    expect(autosave.dirty).toBe(false);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (
+      let check = 0;
+      check < 30 &&
+      (gm.placedTokens[0].world.x !== 2.5 || !parent.textContent.includes('up to date'));
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).not.toMatch(/waiting|conflict|paused|reopen/i);
+    expect(gm.placedTokens[0].world.x).toBe(2.5);
+    expect(gm.token3DAdapter.isMovementInProgress(local)).toBe(true);
+    expect(autosave.dirty).toBe(false);
+  } finally {
+    gm.token3DAdapter._movementRoutes.delete(local);
+    gm.characterServices.combat.syncMovementStatus();
+    close();
+  }
+});
+
+test('a player move on the actor currently moving in the DM window remains an explicit conflict', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture();
+  const local = gm.placedTokens[0];
+  try {
+    gm.token3DAdapter._movementRoutes.set(local, {
+      token: local,
+      spent: 0,
+      segmentCharged: true,
+    });
+    gm.characterServices.combat.syncMovementStatus();
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (let check = 0; check < 30 && !parent.textContent.match(/conflict|paused/i); check++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).toMatch(/conflict|paused/i);
+    expect(local.world.x).toBe(1.5);
+    expect(gm.token3DAdapter.isMovementInProgress(local)).toBe(true);
+    expect(autosave.sharedConflict).toBeTruthy();
+  } finally {
+    gm.token3DAdapter._movementRoutes.delete(local);
+    gm.characterServices.combat.syncMovementStatus();
+    close();
+  }
+});
+
 test('a local DM facing change rebases over a simultaneous player move on another actor', async () => {
   const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
     extraActor: true,

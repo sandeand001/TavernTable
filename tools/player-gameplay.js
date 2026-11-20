@@ -44,7 +44,7 @@ class PlayerGameplay {
     );
   }
 
-  async command(session, campaignId, command) {
+  async command(session, campaignId, command, { afterCommit = null } = {}) {
     const { validatePlayerCommand } = await import(
       pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerCommandProtocol.js')).href
     );
@@ -201,6 +201,7 @@ class PlayerGameplay {
       }
     );
     if (committed.undo) this.players.rememberUndo(committed.profile, committed.undo);
+    if (afterCommit) await afterCommit(committed);
     const state = await authorizedState(
       this.players.store,
       committed.response.receipt,

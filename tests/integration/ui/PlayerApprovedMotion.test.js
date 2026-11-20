@@ -155,6 +155,89 @@ test('a server-approved ground segment animates the actual sprite without reserv
   f.adapter.disposeMovementRange();
 });
 
+test('a continued approved route appends while the previous checkpoint is still animating', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: { kind: 'ground', world: { ...first.pose.world, x: first.pose.world.x + 1 } },
+    };
+    const finished = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000102',
+      from,
+      route: [first],
+    });
+    for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    f.adapter.advanceApprovedMovement(0.1);
+    const continued = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000103',
+      from: first,
+      route: [second],
+    });
+    for (let frame = 0; frame < 240 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await Promise.all([finished, continued]);
+    expect(f.token.world).toEqual(second.pose.world);
+    expect(f.token.gridX).toBe(second.gridX);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
+test('a later authoritative facing reconciles onto an in-flight movement endpoint', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const target = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const finished = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000104',
+      from,
+      route: [target],
+    });
+    for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    expect(
+      f.adapter.reconcileApprovedMovement(f.token, { ...target, facingAngle: Math.PI / 2 })
+    ).toBe(true);
+    for (let frame = 0; frame < 240 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await finished;
+    expect(f.token.facingAngle).toBeCloseTo(Math.PI / 2);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
 test.each([
   ['flying', 'fly', { x: 6.5, y: 2, z: 4.5 }, 'flight', 'fly'],
   ['changing flight elevation', 'fly', { x: 5.5, y: 3, z: 4.5 }, 'flight', 'hover'],

@@ -657,6 +657,115 @@ test('a live peer snapshot refreshes while the local player command is still pen
   await app.destroy();
 });
 
+test('an acknowledged player command releases input while its native movement is still presenting', async () => {
+  const { app, state, gameManager } = fixture();
+  state.gameplay.commands.push('facing');
+  state.gameplay.ownedTokens[0].availability.facing = { allowed: true, code: 'allowed' };
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision++;
+  next.publicScene.assets = null;
+  const actor = next.publicScene.actors[0];
+  actor.gridX = 2;
+  actor.pose.world.x = 2.5;
+  next.gameplay.ownedTokens[0].movement = {
+    spentFeet: 5,
+    remainingFeet: 25,
+    allowanceFeet: 30,
+  };
+  const motion = {
+    kind: 'walk',
+    completed: true,
+    from: {
+      mapId: state.publicScene.actors[0].mapId,
+      gridX: state.publicScene.actors[0].gridX,
+      gridY: state.publicScene.actors[0].gridY,
+      facingAngle: state.publicScene.actors[0].facingAngle,
+      pose: JSON.parse(JSON.stringify(state.publicScene.actors[0].pose)),
+    },
+    route: [
+      {
+        mapId: actor.mapId,
+        gridX: actor.gridX,
+        gridY: actor.gridY,
+        facingAngle: actor.facingAngle,
+        pose: JSON.parse(JSON.stringify(actor.pose)),
+      },
+    ],
+  };
+  let commands = 0;
+  app.connection.call = async (operation, [, command]) => {
+    if (operation !== 'playerCommand') throw new Error(`Unexpected operation: ${operation}`);
+    commands++;
+    if (command.kind === 'facing') {
+      const faced = JSON.parse(JSON.stringify(next));
+      faced.sceneRevision++;
+      faced.publicScene.actors[0].facingAngle = command.payload.angle;
+      return {
+        version: 1,
+        commandId: command.commandId,
+        outcome: 'applied',
+        applied: { sceneRevision: faced.sceneRevision, charactersRevision: faced.revision },
+        receipt: {
+          kind: 'facing',
+          tokenId: command.tokenId,
+          facingAngle: command.payload.angle,
+        },
+        state: faced,
+      };
+    }
+    return {
+      version: 1,
+      commandId: command.commandId,
+      outcome: 'applied',
+      applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+      receipt: {
+        kind: 'move',
+        tokenId: actor.id,
+        costFeet: 5,
+        budget: {
+          movementSpentFeet: 5,
+          movementRemainingFeet: 25,
+          movementAllowanceFeet: 30,
+        },
+        route: motion.route,
+        placement: motion.route[0],
+        motion,
+      },
+      state: next,
+    };
+  };
+  let finishPresentation;
+  const presentation = new Promise((resolve) => {
+    finishPresentation = resolve;
+  });
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockReturnValue(presentation);
+  let acknowledged = false;
+  const command = app.commands
+    .move(state.observerTokenId, { mapId: actor.mapId, gridX: 2, gridY: 1 })
+    .then(() => {
+      acknowledged = true;
+    });
+  for (let check = 0; check < 20 && !play.mock.calls.length; check++)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    expect(acknowledged).toBe(true);
+    expect(app.commands.pending).toBe(false);
+    expect(app.state.sceneRevision).toBe(next.sceneRevision);
+    await app.input.requestFacing(gameManager.placedTokens[0], Math.PI / 2);
+    expect(commands).toBe(2);
+    expect(app.commands.pending).toBe(false);
+  } finally {
+    finishPresentation({ completed: true });
+    await command;
+    play.mockRestore();
+    await app.destroy();
+  }
+});
+
 test('a changed authorized map scope applies the host destination without replaying motion in the replacement terrain', async () => {
   const { app, state, gameManager } = fixture();
   await app.start();

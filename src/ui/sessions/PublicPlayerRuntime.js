@@ -147,18 +147,18 @@ export default class PublicPlayerRuntime {
     for (const token of [...gm.placedTokens])
       if (!visible.has(token.id)) gm.tokenManager.removeToken(token);
     const sharedMovements = snapshot.updates
-      .filter(
-        (update) =>
+      .filter((update) => {
+        const token = gm.placedTokens.find(({ id }) => id === update.tokenId);
+        return (
           update.motion &&
           this.revision >= 0 &&
           !assetsChanged &&
           update.sceneRevision > this.revision &&
           movement?.tokenId !== update.tokenId &&
-          samePlacement(
-            gm.placedTokens.find(({ id }) => id === update.tokenId),
-            update.motion.from
-          )
-      )
+          (samePlacement(token, update.motion.from) ||
+            gm.token3DAdapter.canContinueApprovedMovement?.(token, update.motion) === true)
+        );
+      })
       .map((update) => ({
         tokenId: update.tokenId,
         commandId: update.commandId,
@@ -191,9 +191,13 @@ export default class PublicPlayerRuntime {
         gm.token3DAdapter.onTokenRemoved(token);
         token.creature = gm.tokenManager.createCreatureByType(actor.type);
       }
+      if (gm.token3DAdapter.isMovementInProgress(token))
+        gm.token3DAdapter.reconcileApprovedMovement?.(token, actor);
       if (
         token.type === actor.type &&
-        !movements.has(actor.id) &&
+        (!movements.has(actor.id) ||
+          gm.token3DAdapter.canContinueApprovedMovement?.(token, movements.get(actor.id)) ===
+            true) &&
         gm.token3DAdapter.isMovementInProgress(token)
       ) {
         Object.assign(token, {

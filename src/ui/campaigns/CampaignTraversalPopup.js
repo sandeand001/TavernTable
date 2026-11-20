@@ -130,7 +130,8 @@ export default class CampaignTraversalPopup {
       const target = gm.spatial.worldToGrid(option.approach.point.x, option.approach.point.z);
       if (approach.actor.flightActive)
         target.elevationFeet = (option.approach.point.y * 5) / gm.spatial.tileWorldSize;
-      await gm.playerInput.requestMove(approach.actor, target, { closest: true });
+      const receipt = await gm.playerInput.requestMove(approach.actor, target, { closest: true });
+      await receipt?.presentation;
       if (this.disposed || this.approach !== approach) return false;
       this.approach = null;
       const current = gm.playerInput.commands.getState();

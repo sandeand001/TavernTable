@@ -39,8 +39,7 @@ export class TokenFacingGesture {
       return (
         gm.placedTokens.includes(token) &&
         !gm.playerInput.commands.pending &&
-        gm.playerInput.commands.availability('facing', token.id).allowed &&
-        !gm.token3DAdapter.isMovementInProgress(token)
+        gm.playerInput.commands.availability('facing', token.id).allowed
       );
     if (
       gm.characterServices?.sheetContext === 'world' &&

@@ -474,14 +474,35 @@ export async function movePlayerActor(
     y: last.heightFeet * unit,
     z: (last.zFeet ?? (last.gridY + 0.5) * 5) * unit,
   };
+  let routeOrigin = actor.world;
+  let routeFacing = actor.facingAngle;
+  const approvedRoute = route.slice(0, route.indexOf(last) + 1).map((step) => {
+    const world = {
+      x: (step.xFeet ?? (step.gridX + 0.5) * 5) * unit,
+      y: step.heightFeet * unit,
+      z: (step.zFeet ?? (step.gridY + 0.5) * 5) * unit,
+    };
+    const dx = world.x - routeOrigin.x;
+    const dz = world.z - routeOrigin.z;
+    if (Math.hypot(dx, dz) > 1e-6) routeFacing = facingAngleFromDirection(dx, dz);
+    routeOrigin = world;
+    return {
+      mapId: actor.mapId,
+      gridX: step.gridX,
+      gridY: step.gridY,
+      facingAngle: routeFacing,
+      pose: {
+        kind: 'ground',
+        world,
+        ...(step.surfaceId !== 'terrain' ? { surfaceId: step.surfaceId } : {}),
+      },
+    };
+  });
   const ticket = runtime.combat.beginConnectionMovement(actor, last.cost);
   runtime.combat.finishMovement(ticket, last.cost);
   moved.gridX = last.gridX;
   moved.gridY = last.gridY;
-  moved.facingAngle = facingAngleFromDirection(
-    destination.x - actor.world.x,
-    destination.z - actor.world.z
-  );
+  moved.facingAngle = routeFacing;
   moved.pose = {
     kind: 'ground',
     world: destination,
@@ -500,21 +521,7 @@ export async function movePlayerActor(
       type: 'move',
       tokenId,
       costFeet: last.cost,
-      route: route.slice(0, route.indexOf(last) + 1).map((step) => ({
-        mapId: actor.mapId,
-        gridX: step.gridX,
-        gridY: step.gridY,
-        facingAngle: moved.facingAngle,
-        pose: {
-          kind: 'ground',
-          world: {
-            x: (step.xFeet ?? (step.gridX + 0.5) * 5) * unit,
-            y: step.heightFeet * unit,
-            z: (step.zFeet ?? (step.gridY + 0.5) * 5) * unit,
-          },
-          ...(step.surfaceId !== 'terrain' ? { surfaceId: step.surfaceId } : {}),
-        },
-      })),
+      route: approvedRoute,
       ...(fall ? { fall } : {}),
       placement: {
         mapId: actor.mapId,
@@ -633,11 +640,22 @@ function moveFlyingActor(scene, library, runtime, actor, target, { closest = fal
   const ticket = runtime.combat.beginConnectionMovement(actor, costFeet, 'fly');
   const next = copy(scene);
   const moved = next.creatures.find((entry) => entry.id === actor.id);
+  let routeOrigin = actor.world;
+  let routeFacing = actor.facingAngle;
+  for (const step of route) {
+    const world = {
+      x: (step.gridX + 0.5) * tile,
+      y: height,
+      z: (step.gridY + 0.5) * tile,
+    };
+    const dx = world.x - routeOrigin.x;
+    const dz = world.z - routeOrigin.z;
+    if (Math.hypot(dx, dz) > 1e-6) routeFacing = facingAngleFromDirection(dx, dz);
+    routeOrigin = world;
+  }
   moved.gridX = last.gridX;
   moved.gridY = last.gridY;
-  moved.facingAngle = route.length
-    ? facingAngleFromDirection(position.x - actor.world.x, position.z - actor.world.z)
-    : actor.facingAngle;
+  moved.facingAngle = routeFacing;
   moved.pose = { kind: 'flight', world: position };
   if (target.elevationFeet !== undefined) {
     const goalFeet = runtime.world.toCampaignPosition(actor.mapId, position);
@@ -782,6 +800,8 @@ export function playerCommandReceipt(result, previousScene, library) {
       pose: copy(previous.pose),
     };
     if (!receipt.route) {
+      let previousPosition = routeFeet?.[0];
+      let previousFacing = from.facingAngle;
       receipt.route = routeFeet?.length
         ? routeFeet.slice(1).map((position, index, points) => {
             if (index === points.length - 1) return copy(receipt.placement);
@@ -796,12 +816,18 @@ export function playerCommandReceipt(result, previousScene, library) {
               local.z < source.grid.rows * source.grid.tileWorldSize;
             const map = inside ? source : target;
             const point = world.toMapPosition(map.id, position);
+            const previous = world.toMapPosition(map.id, previousPosition);
+            const dx = point.x - previous.x;
+            const dz = point.z - previous.z;
+            const facingAngle =
+              Math.hypot(dx, dz) > 1e-6 ? facingAngleFromDirection(dx, dz) : previousFacing;
+            previousPosition = position;
+            previousFacing = facingAngle;
             return {
               mapId: map.id,
               gridX: Math.floor(point.x / map.grid.tileWorldSize),
               gridY: Math.floor(point.z / map.grid.tileWorldSize),
-              facingAngle:
-                from.facingAngle + ((map.quarterTurns - source.quarterTurns) * Math.PI) / 2,
+              facingAngle,
               pose: {
                 kind: receipt.placement.pose.kind === 'flight' ? 'flight' : 'ground',
                 world: point,

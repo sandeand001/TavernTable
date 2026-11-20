@@ -40,8 +40,9 @@ export function attachHostSessionUpdates({
     services.autosave?.sharedConflict ||
     services.library.failure ||
     services.library.isSaving ||
-    services.library.pendingScenes ||
-    isCampaignActionInProgress(gameManager);
+    services.library.pendingScenes;
+  const saveInProgress = () =>
+    !!(services.autosave?.writing || services.library.isSaving || services.library.pendingScenes);
   const pauseConflict = () => {
     pending = true;
     const error = services.autosave.pauseForSharedUpdate();
@@ -112,7 +113,10 @@ export function attachHostSessionUpdates({
     }
     if (JSON.stringify(state.campaign.sourcePacks) !== JSON.stringify(library.campaign.sourcePacks))
       throw new Error('Campaign sources changed in another host window. Reopen this campaign.');
-    if (options.rebaseShared) await services.autosave.rebaseSharedUpdate(state);
+    if (options.rebaseShared)
+      await services.autosave.rebaseSharedUpdate(state, {
+        allowMovementInProgress: options.preserveMovingActors === true,
+      });
     if (
       !options.discardLocal &&
       state.sceneRevision !== library.sceneRevision &&
@@ -156,14 +160,21 @@ export function attachHostSessionUpdates({
       output.textContent = services.autosave.status.text;
       return;
     }
-    if (isCampaignActionInProgress(gameManager)) {
+    if (isCampaignActionInProgress(gameManager, { allowMovementCheckpoint: true })) {
       pending = true;
       output.textContent =
         'Waiting for the current DM action to finish before applying the player update.';
       timer = setTimeout(() => void refresh(), 100);
       return;
     }
-    const canRebase = services.autosave.canRebaseSharedUpdate?.() === true;
+    const canRebase =
+      services.autosave.canRebaseSharedUpdate?.({ allowMovementInProgress: true }) === true;
+    if (saveInProgress() && !canRebase) {
+      pending = true;
+      output.textContent = 'Player update waiting for the current save to finish.';
+      timer = setTimeout(() => void refresh(), 50);
+      return;
+    }
     if (conflictingWork() && !canRebase) {
       pauseConflict();
       return;
@@ -178,16 +189,34 @@ export function attachHostSessionUpdates({
     try {
       const state = await store.readCharacters(services.campaign.id);
       if (closed) return;
-      if (isCampaignActionInProgress(gameManager)) {
+      if (isCampaignActionInProgress(gameManager, { allowMovementCheckpoint: true })) {
         pending = true;
         return;
       }
-      if (conflictingWork() && services.autosave.canRebaseSharedUpdate?.() !== true) {
+      const rebaseShared =
+        services.autosave.canRebaseSharedUpdate?.({ allowMovementInProgress: true }) === true;
+      if (saveInProgress() && !rebaseShared) {
+        pending = true;
+        return;
+      }
+      if (conflictingWork() && !rebaseShared) {
+        pauseConflict();
+        return;
+      }
+      const movementActive = isCampaignActionInProgress(gameManager);
+      const preserveMovingActors =
+        movementActive &&
+        (rebaseShared ||
+          services.autosave.canReconcileSharedUpdate?.(state, {
+            allowMovementInProgress: true,
+          }) === true);
+      if (movementActive && !preserveMovingActors) {
         pauseConflict();
         return;
       }
       await applyState(state, {
-        rebaseShared: services.autosave.canRebaseSharedUpdate?.() === true,
+        rebaseShared,
+        preserveMovingActors,
       });
     } catch (error) {
       output.textContent = error.message;

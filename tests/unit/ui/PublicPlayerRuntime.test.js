@@ -111,6 +111,35 @@ function fixture() {
   return { library, ownedId, gameManager, runtime, state };
 }
 
+test('a visible moving DM sprite remains selectable without becoming player-authoritative', async () => {
+  const { gameManager, runtime, state, library, ownedId } = fixture();
+  await runtime.update(state);
+  const commands = new PlayerCommandAdapter({
+    connection: { call: jest.fn() },
+    getState: () => state,
+  });
+  const input = new PlayerInputController({ gameManager, commands });
+  const manager = new InteractionManager(gameManager);
+  try {
+    const owned = gameManager.placedTokens.find(({ id }) => id === state.observerTokenId);
+    const foreign = gameManager.placedTokens.find(({ id }) => id === 'visible-foreign');
+    expect(gameManager.token3DAdapter.getSelectedToken()).toBe(owned);
+    jest
+      .spyOn(gameManager.token3DAdapter, 'isMovementInProgress')
+      .mockImplementation((token) => token === foreign);
+    await manager._selectTokenEntry(foreign);
+    expect(gameManager.token3DAdapter.getSelectedToken()).toBe(foreign);
+    await expect(input.requestMove(foreign, { gridX: 4, gridY: 1 })).rejects.toMatchObject({
+      code: 'active-assigned-character-required',
+    });
+    expect(commands.connection.call).not.toHaveBeenCalled();
+  } finally {
+    input.destroy();
+    await runtime.destroy();
+    library.delete(ownedId);
+  }
+});
+
 test('late authorized portraits update existing visuals without replaying placements or interrupting an in-flight route', async () => {
   const { gameManager, runtime, state, library, ownedId } = fixture();
   state.publicScene.actors.forEach((actor) => {
@@ -256,6 +285,54 @@ test('unrelated snapshots preserve a visible peer position that is still animati
   expect(guard.world.x).toBe(3.75);
   expect(restore.mock.calls.some(([token]) => token === guard)).toBe(false);
   moving.mockRestore();
+  restore.mockRestore();
+  await runtime.destroy();
+});
+
+test('a streamed continuation is retained while the peer is still animating', async () => {
+  const { gameManager, runtime, state } = fixture();
+  await runtime.update(state);
+  const guard = gameManager.placedTokens[1];
+  guard.world.x = 3.75;
+  const moving = jest
+    .spyOn(gameManager.token3DAdapter, 'isMovementInProgress')
+    .mockImplementation((token) => token === guard);
+  const continuation = jest
+    .spyOn(gameManager.token3DAdapter, 'canContinueApprovedMovement')
+    .mockImplementation((token) => token === guard);
+  const restore = jest.spyOn(gameManager.token3DAdapter, 'restoreStablePlacement');
+  const from = {
+    mapId: guard.mapId,
+    gridX: guard.gridX,
+    gridY: guard.gridY,
+    facingAngle: guard.facingAngle,
+    pose: { kind: 'ground', world: { ...guard.world, x: 3.5 } },
+  };
+  const target = {
+    ...from,
+    gridX: 4,
+    pose: { kind: 'ground', world: { x: 4.5, y: 0, z: 1.5 } },
+  };
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision++;
+  next.publicScene.assets = null;
+  Object.assign(next.publicScene.actors[1], target);
+  next.publicScene.updates = [
+    {
+      commandId: '00000000-0000-4000-8000-000000000301',
+      tokenId: guard.id,
+      kind: 'move',
+      sceneRevision: next.sceneRevision,
+      charactersRevision: next.revision,
+      motion: { kind: 'walk', completed: true, from, route: [target] },
+    },
+  ];
+  const result = await runtime.update(next);
+  expect(result.sharedMovements).toHaveLength(1);
+  expect(guard.world.x).toBe(3.75);
+  expect(restore.mock.calls.some(([token]) => token === guard)).toBe(false);
+  moving.mockRestore();
+  continuation.mockRestore();
   restore.mockRestore();
   await runtime.destroy();
 });

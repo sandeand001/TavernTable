@@ -71,6 +71,33 @@ function beginSegment(adapter, job) {
   if (!Number.isFinite(job.duration)) throw new Error('The approved movement duration is invalid');
 }
 
+function canContinueApprovedMovement(token, motion) {
+  const job = this._approvedMovements?.get(token);
+  const endpoint = job?.route.at(-1);
+  return Boolean(
+    job &&
+    motion?.from &&
+    samePlacement(endpoint, motion.from) &&
+    Number.isFinite(endpoint?.facingAngle) &&
+    Number.isFinite(motion.from?.facingAngle) &&
+    Math.abs(this._normalizeAngle(endpoint.facingAngle - motion.from.facingAngle)) < 1e-6
+  );
+}
+
+function reconcileApprovedMovement(token, placement) {
+  const job = this._approvedMovements?.get(token);
+  const endpoint = job?.route.at(-1);
+  if (
+    !job ||
+    !Number.isFinite(placement?.facingAngle) ||
+    !endpoint ||
+    !samePlacement(endpoint, placement)
+  )
+    return false;
+  endpoint.facingAngle = placement.facingAngle;
+  return true;
+}
+
 async function playApprovedMovement(token, motion) {
   if (!this.gameManager.placedTokens.includes(token))
     throw new Error('The approved moving creature is not in this view');
@@ -89,7 +116,15 @@ async function playApprovedMovement(token, motion) {
   motion = copy(motion);
   this._approvedMovements ??= new Map();
   this._approvedMovementRequests ??= new Map();
-  if (this._approvedMovements.has(token) || this._approvedMovementRequests.has(token))
+  const active = this._approvedMovements.get(token);
+  if (active) {
+    if (!this.canContinueApprovedMovement(token, motion))
+      throw new Error('Finish the existing approved movement presentation first');
+    active.route.push(...copy(motion.route));
+    if (motion.kind) active.kind = motion.kind;
+    return active.done;
+  }
+  if (this._approvedMovementRequests.has(token))
     throw new Error('Finish the existing approved movement presentation first');
   const request = {};
   this._approvedMovementRequests.set(token, request);
@@ -139,6 +174,7 @@ async function playApprovedMovement(token, motion) {
       index: 0,
       resolve,
       reject,
+      done,
     };
     this._approvedMovements.set(token, job);
     try {
@@ -274,6 +310,8 @@ function cancelApprovedMovement(token, error = null) {
 }
 
 export function installApprovedMotionMethods(prototype) {
+  prototype.canContinueApprovedMovement = canContinueApprovedMovement;
+  prototype.reconcileApprovedMovement = reconcileApprovedMovement;
   prototype.playApprovedVisual = playApprovedVisual;
   prototype.playApprovedMovement = playApprovedMovement;
   prototype.advanceApprovedMovement = advanceApprovedMovement;

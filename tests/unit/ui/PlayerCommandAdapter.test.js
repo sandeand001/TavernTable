@@ -127,6 +127,31 @@ test('scene mutations share the pending checkpoint lock and cannot bypass an unc
   expect(sent).toEqual([]);
 });
 
+test('rapid native intents queue behind the current authority acknowledgement without being rejected', async () => {
+  const { adapter, state, response } = fixture();
+  const sent = [];
+  let release;
+  adapter.connection.call = async (operation, args) => {
+    sent.push(JSON.parse(JSON.stringify([operation, args])));
+    if (sent.length === 1)
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+    return JSON.parse(JSON.stringify(response));
+  };
+  const first = adapter.move('real-scout', { mapId: 'ground', gridX: 2, gridY: 3 });
+  const target = { mapId: 'ground', gridX: 3, gridY: 3 };
+  const second = adapter.move('real-scout', target);
+  expect(sent).toHaveLength(1);
+  target.gridX = 9;
+  release();
+  await first;
+  await second;
+  expect(sent).toHaveLength(2);
+  expect(sent[1][1][1].payload.target.gridX).toBe(3);
+  expect(state.sceneRevision).toBe(12);
+});
+
 test.each(['unowned', 'other-observer', 'unsupported', 'unavailable'])(
   '%s controls cannot submit gameplay or silently change the observer',
   async (reason) => {

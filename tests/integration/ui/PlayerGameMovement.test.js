@@ -296,6 +296,77 @@ test('accepted player movement interpolates the actual animated sprite and displ
   await cleanup();
 });
 
+test('a player can submit a second authoritative move while the first native route is still animating', async () => {
+  const { app, gm, connection, tick, cleanup } = await fixture();
+  const originalCall = connection.call.getMockImplementation();
+  let commands = 0;
+  connection.call.mockImplementation(async (operation, args) => {
+    if (operation !== 'playerCommand' || commands++ === 0) return originalCall(operation, args);
+    const [, command] = args;
+    const accepted = JSON.parse(JSON.stringify(app.state));
+    accepted.sceneRevision++;
+    accepted.publicScene.assets = null;
+    const actor = accepted.publicScene.actors[0];
+    const from = {
+      mapId: actor.mapId,
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: JSON.parse(JSON.stringify(actor.pose)),
+    };
+    const placement = {
+      mapId: actor.mapId,
+      gridX: 3,
+      gridY: 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    };
+    Object.assign(actor, placement);
+    accepted.gameplay.ownedTokens[0].movement = {
+      spentFeet: 10,
+      remainingFeet: 20,
+      allowanceFeet: 30,
+    };
+    return {
+      version: 1,
+      commandId: command.commandId,
+      outcome: 'applied',
+      applied: { sceneRevision: accepted.sceneRevision, charactersRevision: accepted.revision },
+      receipt: {
+        kind: 'move',
+        tokenId: actor.id,
+        costFeet: 5,
+        budget: {
+          movementSpentFeet: 10,
+          movementRemainingFeet: 20,
+          movementAllowanceFeet: 30,
+        },
+        placement,
+        route: [placement],
+        motion: { kind: 'walk', completed: true, from, route: [placement] },
+      },
+      state: accepted,
+    };
+  });
+  try {
+    const token = gm.placedTokens[0];
+    await app.input.requestMove(token, { gridX: 2, gridY: 1 });
+    expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+    await app.input.requestMove(token, { gridX: 3, gridY: 1 });
+    for (let frame = 0; frame < 1200 && gm.token3DAdapter.isMovementInProgress(token); frame++)
+      tick(1 / 120);
+    expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(false);
+    expect(token.world).toEqual({ x: 3.5, y: 0, z: 1.5 });
+    expect(app.input.movementBudget(token)).toEqual({
+      spentFeet: 10,
+      remainingFeet: 20,
+      allowanceFeet: 30,
+    });
+  } finally {
+    await cleanup();
+  }
+});
+
 test('a cloud player receiving its own route before the HTTP receipt animates exactly once and keeps one authoritative movement cost', async () => {
   const { app, gm, connection, state, tick, notify, cleanup } = await fixture({ cloud: true });
   const play = jest.spyOn(gm.token3DAdapter, 'playApprovedMovement');

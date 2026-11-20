@@ -18,6 +18,7 @@ import {
   validatePlayerState,
   validatePlayerCommandResult,
 } from '../../src/campaigns/PlayerPublicProtocol.js';
+import { facingAngleFromDirection } from '../../src/entities/creatures/TokenMovement.js';
 
 const root = path.resolve(__dirname, '..', '..');
 globalThis.TextDecoder ??= TextDecoder;
@@ -338,6 +339,39 @@ test('an assigned active-turn player move is acknowledged with canonical cost an
     5
   );
   expect(moved.body.result.applied.sceneRevision).toBe(before.body.result.sceneRevision + 1);
+}, 30000);
+
+test('an approved player route faces each segment in the direction of travel', async () => {
+  const { campaignId, player } = await table('2024', {
+    gridSize: 6,
+    activeTurn: false,
+    npcPosition: { gridX: 5, gridY: 5 },
+  });
+  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 3, gridY: 2 } },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  let previous = moved.body.result.receipt.motion.from;
+  expect(moved.body.result.receipt.motion.route.length).toBeGreaterThan(1);
+  for (const point of moved.body.result.receipt.motion.route) {
+    const dx = point.pose.world.x - previous.pose.world.x;
+    const dz = point.pose.world.z - previous.pose.world.z;
+    expect(point.facingAngle).toBeCloseTo(
+      Math.hypot(dx, dz) > 1e-6 ? facingAngleFromDirection(dx, dz) : previous.facingAngle
+    );
+    previous = point;
+  }
 }, 30000);
 
 test.each(['2014', '2024'])(
@@ -1861,6 +1895,38 @@ test('owned airborne movement uses the shared physical route and exact flying bu
     spentFeet: 10,
     remainingFeet: 50,
   });
+}, 30000);
+
+test('an approved airborne route faces each changing horizontal segment', async () => {
+  const { campaignId, player } = await table('2024', {
+    gridSize: 6,
+    flightHeightFeet: 10,
+    characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
+  });
+  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 3, gridY: 2 } },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  let previous = moved.body.result.receipt.motion.from;
+  for (const point of moved.body.result.receipt.motion.route) {
+    const dx = point.pose.world.x - previous.pose.world.x;
+    const dz = point.pose.world.z - previous.pose.world.z;
+    expect(point.facingAngle).toBeCloseTo(
+      Math.hypot(dx, dz) > 1e-6 ? facingAngleFromDirection(dx, dz) : previous.facingAngle
+    );
+    previous = point;
+  }
 }, 30000);
 
 test('a native flight destination at its exact supported floor lands normally without a fall or duplicate debit', async () => {

@@ -1,4 +1,7 @@
-import { getTokenMovementSettings } from '../../entities/creatures/TokenMovement.js';
+import {
+  getTokenMovementSettings,
+  facingAngleFromDirection,
+} from '../../entities/creatures/TokenMovement.js';
 import { TOKEN_WORLD_LOCK_PROP } from '../../config/token-adapter/MannequinConfig.js';
 import { validGripReference, isSurfaceGripValid } from '../../campaigns/CampaignSurfaceClimb.js';
 
@@ -341,6 +344,14 @@ function recordSharedPlacement(adapter, token, previous, checkpoint) {
     ...clone(previous.placement),
   };
   const next = { mapId: checkpoint.mapId, ...clone(checkpoint.placement) };
+  const dx = next.pose.world.x - from.pose.world.x;
+  const dz = next.pose.world.z - from.pose.world.z;
+  if (Math.hypot(dx, dz) > 1e-6 && (adapter._movementRoutes?.has(token) || previous.job)) {
+    next.facingAngle = facingAngleFromDirection(dx, dz);
+    checkpoint.placement.facingAngle = next.facingAngle;
+    token.facingAngle = next.facingAngle;
+    adapter._applyOrientationImmediate(token, next.facingAngle);
+  }
   if (samePlacement(from, next)) return;
   adapter._sharedMovementPresentations ??= new Map();
   let pending = adapter._sharedMovementPresentations.get(token);

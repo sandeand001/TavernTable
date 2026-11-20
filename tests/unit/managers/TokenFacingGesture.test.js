@@ -86,6 +86,35 @@ test('ordinary creature clicks retain the normal click path', () => {
   f.view.remove();
 });
 
+test('an assigned player may issue a facing change while approved movement is presenting', async () => {
+  const f = fixture();
+  const requestFacing = jest.fn(() => Promise.resolve());
+  f.gm.playerInput = {
+    commands: {
+      pending: false,
+      availability: () => ({ allowed: true }),
+    },
+    requestFacing,
+  };
+  f.token.mapId = 'main';
+  f.gm.campaignMapId = 'main';
+  f.gm.campaignWorld = { getMap: () => ({ quarterTurns: 0 }) };
+  f.gm.token3DAdapter.getTokenViewPosition = () => f.token.world;
+  f.gm.token3DAdapter.isMovementInProgress = () => true;
+  try {
+    const start = f.screen(0, 0);
+    mouse(f.view, 'mousedown', start);
+    const end = f.screen(0, 2);
+    mouse(document, 'mousemove', end, { buttons: 1 });
+    mouse(document, 'mouseup', end);
+    await Promise.resolve();
+    expect(requestFacing).toHaveBeenCalledWith(f.token, -Math.PI / 2);
+  } finally {
+    f.manager._facingGesture.detach();
+    f.view.remove();
+  }
+});
+
 test.each(['movement', 'wall', 'terrain', 'remove'])('%s prevents a facing drag', (reason) => {
   const f = fixture();
   if (reason === 'movement') f.gm.token3DAdapter.isMovementInProgress = () => true;

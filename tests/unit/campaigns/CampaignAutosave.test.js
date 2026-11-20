@@ -166,6 +166,36 @@ test('safe checkpoints remain in memory without enqueuing scene writes before th
   expect(autosave.status.state).toBe('saved');
 });
 
+test('a shared DM move publishes its safe checkpoint while the route is still active', async () => {
+  const { autosave, adapter, actor, begin, checkpoint, enqueues, writes, library } = await fixture({
+    shared: true,
+    timers: true,
+  });
+  begin();
+  checkpoint(3);
+  await jest.advanceTimersByTimeAsync(99);
+  expect(enqueues).not.toHaveBeenCalled();
+  await jest.advanceTimersByTimeAsync(1);
+  await library.flush();
+  await autosave.writing;
+  expect(writes).toHaveBeenCalledTimes(1);
+  expect(adapter.isMovementInProgress(actor)).toBe(true);
+  expect(autosave.status.state).toBe('saved');
+  expect(writes.mock.calls[0][1].presentations[0].motion.route[0].gridX).toBe(3);
+  checkpoint(4);
+  await jest.advanceTimersByTimeAsync(100);
+  await library.flush();
+  await autosave.writing;
+  expect(writes).toHaveBeenCalledTimes(2);
+  expect(writes.mock.calls[1][1].presentations[0]).toMatchObject({
+    motion: {
+      from: { gridX: 3 },
+      route: [expect.objectContaining({ gridX: 4 })],
+    },
+  });
+  expect(adapter.isMovementInProgress(actor)).toBe(true);
+});
+
 test('multiplayer regression: DM autosave sends the actual safe route separately from the persisted checkpoint and acknowledges its prefix', async () => {
   const { autosave, begin, checkpoint, finish, writes, actor } = await fixture({ shared: true });
   begin();
@@ -190,6 +220,22 @@ test('multiplayer regression: DM autosave sends the actual safe route separately
   expect(writes.mock.calls[0][1].presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([
     5,
   ]);
+});
+
+test('DM movement presentations face the direction of each checkpoint segment', async () => {
+  const { autosave, begin, finish, writes, actor, adapter } = await fixture({
+    shared: true,
+  });
+  begin();
+  actor.gridX = 1;
+  actor.gridY = 2;
+  actor.world = { x: 1.5, y: 0, z: 2.5 };
+  actor.facingAngle = 0;
+  adapter.recordStablePlacement(actor);
+  finish();
+  await autosave.flush();
+  const route = writes.mock.calls[0][1].presentations[0].motion.route;
+  expect(route[0].facingAngle).toBeCloseTo(-Math.PI / 2);
 });
 
 test('multiplayer regression: an atomic character-and-scene commit carries pending DM movement too', async () => {

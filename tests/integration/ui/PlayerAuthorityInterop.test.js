@@ -24,8 +24,8 @@ import { disposeConnectedTravelBoard } from '../../helpers/connectedTravelBoard.
 
 const WAIT_TIMEOUT_MS = 10000;
 
-async function waitForCondition(condition, message) {
-  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+async function waitForCondition(condition, message, timeout = WAIT_TIMEOUT_MS) {
+  const deadline = Date.now() + timeout;
   while (!condition()) {
     if (Date.now() >= deadline) throw new Error(message);
     await new Promise((resolve) => setTimeout(resolve, 5));
@@ -389,9 +389,18 @@ test('real player flight radial honors a scene-granted Fly speed, affordable ele
     };
     const finish = async () => {
       expect(submitted).not.toBeNull();
+      const outcome = await submitted;
+      if (outcome.error) throw outcome.error;
+      expect(outcome.receipt.outcome).toBe('applied');
+      expect(app.commands.pending).toBe(false);
       let animated = false;
+      let presenting = true;
+      const presentation = outcome.receipt.presentation;
+      void presentation.finally(() => {
+        presenting = false;
+      });
       const deadline = Date.now() + WAIT_TIMEOUT_MS;
-      while (app.commands.pending && Date.now() < deadline) {
+      while (presenting && Date.now() < deadline) {
         const beforeY = token.world.y;
         milliseconds += 1000 / 60;
         gm.advanceFrame(1 / 60);
@@ -399,10 +408,7 @@ test('real player flight radial honors a scene-granted Fly speed, affordable ele
           animated = true;
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      expect(app.commands.pending).toBe(false);
-      const outcome = await submitted;
-      if (outcome.error) throw outcome.error;
-      expect(outcome.receipt.outcome).toBe('applied');
+      await presentation;
       expect(animated).toBe(true);
       expect(token.__threeMesh).toBe(model);
     };
@@ -707,7 +713,7 @@ test.each([
         crossingSettled = true;
         return value;
       });
-      const crossingDeadline = Date.now() + WAIT_TIMEOUT_MS;
+      const crossingDeadline = Date.now() + WAIT_TIMEOUT_MS * 2;
       while (!crossingSettled && Date.now() < crossingDeadline) {
         milliseconds += 1000 / 60;
         gm.advanceFrame(1 / 60);
@@ -957,10 +963,10 @@ test("multiplayer regression: native DM and player animate each other's real sav
       await Promise.resolve();
     }
     expect(token.world.x).toBe(3.5);
-    await autosave.flush();
     await waitForCondition(
       () => playerManager.token3DAdapter.isMovementInProgress(playerToken),
-      'The player did not receive the DM movement presentation'
+      'The player did not receive the DM movement presentation promptly',
+      1000
     );
     expect(playerManager.token3DAdapter.isMovementInProgress(playerToken)).toBe(true);
     expect(playerToken.world.x).toBe(2.5);

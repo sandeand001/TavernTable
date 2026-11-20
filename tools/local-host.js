@@ -304,11 +304,43 @@ async function startLocalHost({
           !['playerState', 'playerCommit', 'doorState', 'playerCommand'].includes(command.operation)
         )
           throw failure(403, 'Players can access only their assigned character workspace');
+        let playerCommitBroadcast = false;
         const sessionOperations = {
           playerState: (options) => players.state(session, options),
           playerCommit: (id, change) => players.commit(session, id, change),
           doorState: (id, change) => players.doorState(session, id, change),
-          playerCommand: (id, change) => gameplay.command(session, id, change),
+          playerCommand: (id, change) =>
+            gameplay.command(session, id, change, {
+              afterCommit: async (committed) => {
+                if (committed.duplicate) return;
+                const receipt = committed.response.receipt;
+                const presentations = receipt.motion
+                  ? [
+                      {
+                        commandId: committed.response.commandId,
+                        tokenId: receipt.tokenId,
+                        kind: receipt.kind,
+                        costFeet: receipt.costFeet,
+                        budget: receipt.budget,
+                        motion: receipt.motion,
+                      },
+                    ]
+                  : [];
+                const shared = players.rememberPresentations(
+                  identity.campaignId,
+                  presentations,
+                  committed.response.applied
+                );
+                playerCommitBroadcast = true;
+                broadcast(
+                  identity.campaignId,
+                  identity.id,
+                  'playerCommand',
+                  committed.response.applied,
+                  shared
+                );
+              },
+            }),
           grantPlacement: (id, playerId, characterId, destination) =>
             gameplay.grant(session, id, playerId, characterId, destination),
           sessionInfo: async (id) => {
@@ -457,9 +489,12 @@ async function startLocalHost({
                   },
                 ]
               : sceneChange?.presentations || [];
-        const shared = players.rememberPresentations(changedCampaign, presentations, revisions);
+        const shared = playerCommitBroadcast
+          ? []
+          : players.rememberPresentations(changedCampaign, presentations, revisions);
         if (
           result?.outcome !== 'duplicate' &&
+          !playerCommitBroadcast &&
           [
             'create',
             'importBackup',

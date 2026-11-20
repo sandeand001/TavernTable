@@ -19,8 +19,33 @@ import { applyBuildingScene } from './CampaignBuildingEditor.js';
 const pause = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
 const ACTION_WAIT = 'Waiting for the current action to finish...';
 const SAVE_DELAY = 2000;
+const SHARED_ACTION_SAVE_DELAY = 100;
 const MAX_SAVE_WAIT = 10000;
 const RETRY_DELAY = 100;
+
+function sameMovementWorld(left, right) {
+  if (left?.version !== right?.version) return false;
+  return left?.version === 3
+    ? JSON.stringify(left.maps) === JSON.stringify(right.maps)
+    : JSON.stringify({
+        ...left,
+        creatures: null,
+        combat: null,
+        camera: null,
+        selection: null,
+        rollLog: null,
+        tokenCounters: null,
+      }) ===
+        JSON.stringify({
+          ...right,
+          creatures: null,
+          combat: null,
+          camera: null,
+          selection: null,
+          rollLog: null,
+          tokenCounters: null,
+        });
+}
 
 export default class CampaignAutosave {
   constructor({ gameManager, library, combat, getRollLog = () => [], restoreRollLog = () => {} }) {
@@ -167,7 +192,7 @@ export default class CampaignAutosave {
     return this.sharedConflict;
   }
 
-  canRebaseSharedUpdate() {
+  canRebaseSharedUpdate({ allowMovementInProgress = false } = {}) {
     return !!(
       this.dirty &&
       this.ready &&
@@ -176,15 +201,60 @@ export default class CampaignAutosave {
       !this.library.isSaving &&
       !this.library.pendingScenes &&
       !this.sharedConflict &&
-      !isCampaignActionInProgress(this.gameManager) &&
+      !isCampaignActionInProgress(this.gameManager, {
+        allowMovementCheckpoint: allowMovementInProgress,
+      }) &&
       this.changeKinds.size === 1 &&
       this.changeKinds.has('movement checkpoint') &&
       this.gameManager.token3DAdapter.hasSharedActorPatches?.()
     );
   }
 
-  async rebaseSharedUpdate(state) {
-    if (!this.canRebaseSharedUpdate()) {
+  canReconcileSharedUpdate(state, { allowMovementInProgress = false } = {}) {
+    if (
+      !allowMovementInProgress ||
+      !this.ready ||
+      this.closed ||
+      this.dirty ||
+      this.writing ||
+      this.library.isSaving ||
+      this.library.pendingScenes ||
+      this.error ||
+      this.sharedConflict ||
+      isCampaignActionInProgress(this.gameManager, { allowMovementCheckpoint: true })
+    )
+      return false;
+    const moving = this.gameManager.placedTokens.filter((token) =>
+      this.gameManager.token3DAdapter.isMovementInProgress(token)
+    );
+    if (!moving.length) return false;
+    const local = decodeScene(this.library.savedScene, {
+      ruleset: this.library.ruleset,
+      library: this.library,
+    });
+    const remote = decodeScene(state.scene, {
+      ruleset: this.library.ruleset,
+      library: this.library,
+    });
+    if (
+      !sameMovementWorld(local, remote) ||
+      JSON.stringify(local.combat) !== JSON.stringify(remote.combat)
+    )
+      return false;
+    return moving.every((token) => {
+      const before = local.creatures.find(({ id }) => id === token.id);
+      const after = remote.creatures.find(({ id }) => id === token.id);
+      return (
+        before &&
+        after &&
+        samePlacement(sceneActorPlacement(local, before), sceneActorPlacement(remote, after)) &&
+        Math.abs(before.facingAngle - after.facingAngle) < 1e-6
+      );
+    });
+  }
+
+  async rebaseSharedUpdate(state, { allowMovementInProgress = false } = {}) {
+    if (!this.canRebaseSharedUpdate({ allowMovementInProgress })) {
       throw this.pauseForSharedUpdate();
     }
     const conflict = (reason) => {
@@ -192,11 +262,19 @@ export default class CampaignAutosave {
       error.cause = new Error(reason);
       throw error;
     };
-    const captured = await this._capture(this.library, { completedActionsOnly: true });
+    const captured = await this._capture(this.library, {
+      completedActionsOnly: !allowMovementInProgress,
+    });
     const remote = decodeScene(state.scene, {
       ruleset: this.library.ruleset,
       library: this.library,
     });
+    if (
+      allowMovementInProgress &&
+      isCampaignActionInProgress(this.gameManager) &&
+      !sameMovementWorld(captured.scene, remote)
+    )
+      conflict('The physical world changed while the local creature was moving');
     if (JSON.stringify(captured.scene.combat) !== JSON.stringify(remote.combat))
       conflict('The local and shared combat state both changed');
     const patches = this.gameManager.token3DAdapter.getSharedActorPatches(captured.scene);
@@ -235,6 +313,7 @@ export default class CampaignAutosave {
       discardLocal: true,
       expectedGeneration,
       preserveSharedPresentations: true,
+      preserveMovingActors: allowMovementInProgress,
     });
     this.library.savedScene = state.scene;
     this.changed('movement checkpoint');
@@ -243,7 +322,12 @@ export default class CampaignAutosave {
 
   async reconcile(
     state,
-    { discardLocal = false, expectedGeneration = null, preserveSharedPresentations = false } = {}
+    {
+      discardLocal = false,
+      expectedGeneration = null,
+      preserveSharedPresentations = false,
+      preserveMovingActors = false,
+    } = {}
   ) {
     const gm = this.gameManager;
     if (gm.characterServices?.sessionRole === 'player')
@@ -256,7 +340,9 @@ export default class CampaignAutosave {
       this.library.pendingScenes ||
       (!discardLocal &&
         (this.dirty || this.error || this.sharedConflict || this.library.failure)) ||
-      isCampaignActionInProgress(gm)
+      isCampaignActionInProgress(gm, {
+        allowMovementCheckpoint: preserveMovingActors,
+      })
     )
       throw new SceneNotReadyError(
         'Finish or resolve the current action/save before applying a shared scene'
@@ -276,7 +362,9 @@ export default class CampaignAutosave {
         ruleset: this.library.ruleset,
         library: this.library,
       });
-      await reconcileCampaignScene(gm, scene, this.library, this.combat);
+      await reconcileCampaignScene(gm, scene, this.library, this.combat, {
+        preserveMovingActors,
+      });
       this.restoreRollLog(scene.rollLog);
       gm.campaign = this.library.campaign;
       if (gm.campaignContext) gm.campaignContext.campaign = this.library.campaign;
@@ -322,11 +410,23 @@ export default class CampaignAutosave {
       this.waiting = null;
     }
     const remaining = Math.max(0, MAX_SAVE_WAIT - (performance.now() - this.firstDirtyAt));
-    const delay = moving ? remaining : Math.min(SAVE_DELAY, remaining);
+    const shared =
+      this.library.store?.storageInfo?.kind === 'host' ||
+      this.library.store?.wantsSharedPresentations?.(this.library.campaign.id) === true;
+    const sharedAction =
+      shared &&
+      (this.changeKinds.has('movement checkpoint') || this.changeKinds.has('visual action'));
+    const delay = sharedAction
+      ? Math.min(SHARED_ACTION_SAVE_DELAY, remaining)
+      : moving
+        ? remaining
+        : Math.min(SAVE_DELAY, remaining);
     this.timer = setTimeout(
       () => {
         this.timer = null;
-        void this._save({ allowMovementCheckpoint: this._checkpointDue() }).catch((error) => {
+        void this._save({
+          allowMovementCheckpoint: sharedAction || this._checkpointDue(),
+        }).catch((error) => {
           if (!(error instanceof SceneNotReadyError)) this._failed(error);
         });
       },
