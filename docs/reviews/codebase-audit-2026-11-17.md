@@ -318,6 +318,49 @@ multiplayer/authority/cloud matrix passed 268/268 tests, with formatting, lint
 and layering clean. `M5-06` remains open pending the owner's next native
 two-window overlap result.
 
+**Redesign 2026-11-20 (C1 live movement versus durable checkpoints):** the
+native retest showed that full-scene durability was still on the presentation
+critical path. A DM tile save could take 1–2 seconds, so the 500 ms continuation
+grace expired and the player rendered a stationary locomotion clip at each
+checkpoint. The player also waited for private projection generation after its
+durable command, while unrelated DM saves advanced the shared revision and
+paused the DM autosave conflict path. The correction separates two Interfaces:
+
+- a bounded filtered live-presentation stream carries accepted DM route
+  segments from their start plus their final placement; it never changes the
+  canonical scene revision;
+- the durable checkpoint stream remains authoritative and coalesces movement
+  saves during an active route, then writes the final safe scene and combat state.
+
+Committed player movement is now broadcast as a compact accepted receipt to
+the originating session and as an authorized route to visible peers/DMs.
+Player input releases on that durable SSE acknowledgement, updates only the
+accepted actor/budget, and starts native locomotion without waiting for the
+full private projection. The normal full-state refresh continues in the
+background. DM/player recipients validate line-of-sight and map scope at the
+host before receiving a remote route; a live packet cannot grant control or
+reveal a hidden actor. An active continuation waits in idle rather than running
+in place, and a `move-finish` notice closes the locomotion job explicitly.
+
+Independent movement/combat state now merges with a three-way per-token
+strategy: player A's movement state and DM actor B's placement/spent movement
+can merge, while two changes to the same actor or global turn/effect remain an
+explicit conflict. Selecting a visible unowned creature returns no player
+actions instead of throwing from the character-sheet refresh path.
+
+The deterministic ten-seat local-host acceptance now submits nine independent
+player moves concurrently and gates the compact acknowledgement p95 at 1 second.
+Focused coverage also proves: live DM route delivery without a durable revision
+change, peer route delivery before full projection completion, own-command
+visual start while the HTTP state response remains pending, own input during a
+moving peer's route, immediate DM presentation before canonical state hydration,
+coalesced durable saves, independent combat-state merge and correct same-actor
+refusal. The expanded multiplayer/authority matrix passed 244/244 tests, and the
+complete repository run passed 306/306 suites with 4,127/4,127 tests plus
+formatting, ESLint, style lint and layering. `M5-06` remains open until the
+owner accepts the native one-DM/nine-player overlap, convergence, visual
+continuity and 200 ms RTT acceptance results.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

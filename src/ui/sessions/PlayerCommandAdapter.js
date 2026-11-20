@@ -1,6 +1,9 @@
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validatePlayerCommand } from '../../campaigns/PlayerCommandProtocol.js';
-import { validatePlayerCommandResult } from '../../campaigns/PlayerPublicProtocol.js';
+import {
+  validatePlayerCommandAcknowledgement,
+  validatePlayerCommandResult,
+} from '../../campaigns/PlayerPublicProtocol.js';
 import { validateAuthoritativeRoll } from '../../systems/dice/AuthoritativeDiceReplay.js';
 import { getCharacterDefinition } from '../../config/CharacterCatalog.js';
 
@@ -14,6 +17,7 @@ export default class PlayerCommandAdapter {
     getCachedAssets = () => getState().publicScene.assets,
     createCommandId = () => crypto.randomUUID(),
     onReceipt = () => {},
+    onAccepted = () => {},
     onFailure = () => {},
     onChanged = () => {},
   }) {
@@ -22,6 +26,7 @@ export default class PlayerCommandAdapter {
     this.getCachedAssets = getCachedAssets;
     this.createCommandId = createCommandId;
     this.onReceipt = onReceipt;
+    this.onAccepted = onAccepted;
     this.onFailure = onFailure;
     this.onChanged = onChanged;
     this.pending = false;
@@ -228,6 +233,37 @@ export default class PlayerCommandAdapter {
     return this._submit(this.lastRequest);
   }
 
+  acceptLive(result) {
+    const request = this.lastRequest;
+    if (
+      !request ||
+      this.lastRequest !== request ||
+      !this.pending ||
+      !request.acceptLive ||
+      result?.commandId !== request.command.commandId
+    )
+      return false;
+    try {
+      validatePlayerCommandAcknowledgement(result, { cachedAssets: this.getCachedAssets() });
+    } catch (error) {
+      GameErrors.input(error, {
+        component: 'PlayerCommandAdapter',
+        operation: 'validateAcceptedCommand',
+        commandId: result?.commandId,
+      });
+      return false;
+    }
+    if (
+      result.actorId !== this.getState().profile.id ||
+      result.campaignId !== request.campaignId ||
+      result.receipt.kind !== request.command.kind ||
+      result.receipt.tokenId !== request.command.tokenId
+    )
+      return false;
+    request.acceptLive(result);
+    return true;
+  }
+
   async mutateScene(operation) {
     if (this.pending) throw new Error('Wait for the current host command to finish');
     if (this.canRetry)
@@ -299,7 +335,43 @@ export default class PlayerCommandAdapter {
       for (let rebase = 0; rebase <= STALE_REBASE_LIMIT; rebase++) {
         const { command, origin } = request;
         try {
-          const receipt = await this.connection.call('playerCommand', [campaignId, command]);
+          let resolveLive;
+          const liveReceipt = new Promise((resolve) => {
+            resolveLive = resolve;
+          });
+          request.acceptLive = resolveLive;
+          const response = this.connection.call('playerCommand', [campaignId, command]);
+          const received = await Promise.race([
+            response.then((receipt) => ({ receipt, live: false })),
+            liveReceipt.then((receipt) => ({ receipt, live: true })),
+          ]);
+          const { receipt, live } = received;
+          if (live) {
+            response.catch((error) => {
+              GameErrors.input(error, {
+                component: 'PlayerCommandAdapter',
+                operation: 'reconcileAcceptedCommand',
+                commandId: command.commandId,
+              });
+            });
+            const animate =
+              receipt.outcome === 'applied' &&
+              !this.seen.has(command.commandId) &&
+              this.connection.canAnimateReceipt?.(receipt) !== false;
+            this.seen.add(command.commandId);
+            if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value);
+            try {
+              await this.onAccepted(receipt, { animate, command, origin });
+            } catch (error) {
+              GameErrors.input(error, {
+                component: 'PlayerCommandAdapter',
+                operation: 'presentAcceptedCommand',
+                commandId: command.commandId,
+              });
+            }
+            this.failure = null;
+            return receipt;
+          }
           validatePlayerCommandResult(receipt, { cachedAssets: this.getCachedAssets() });
           if (
             receipt.receipt.kind === 'roll' &&
@@ -341,6 +413,7 @@ export default class PlayerCommandAdapter {
       await this.onFailure(error, { command: request.command });
       throw error;
     } finally {
+      request.acceptLive = null;
       this.pending = false;
       this.submitting = false;
       finishIdle();

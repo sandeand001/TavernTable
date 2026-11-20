@@ -201,7 +201,54 @@ test('a continued approved route appends while the previous checkpoint is still 
   }
 });
 
-test('streamed tile checkpoints do not idle while the next segment is arriving', async () => {
+test('consecutive approved routes queue before the first native model is ready', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: { kind: 'ground', world: { ...first.pose.world, x: first.pose.world.x + 1 } },
+    };
+    const firstDone = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000107',
+      from,
+      route: [first],
+    });
+    const secondDone = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000108',
+      from: first,
+      route: [second],
+    });
+    for (let tick = 0; tick < 8; tick++) await Promise.resolve();
+    expect(f.adapter._approvedMovements.get(f.token).route.map(({ gridX }) => gridX)).toEqual([
+      first.gridX,
+      second.gridX,
+    ]);
+    for (let frame = 0; frame < 300 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await Promise.all([firstDone, secondDone]);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
+test('streamed tile checkpoints wait in idle instead of running in place', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
   try {
     f.token.mapId = 'main';
@@ -235,7 +282,7 @@ test('streamed tile checkpoints do not idle while the next segment is arriving',
       stepHumanoid(f, 1 / 60);
     }
     expect(f.adapter.isMovementInProgress(f.token)).toBe(true);
-    expect(f.adapter._tokenAnimationData.get(f.token).current).not.toBe('idle');
+    expect(f.adapter._tokenAnimationData.get(f.token).current).toBe('idle');
     const continued = f.adapter.playApprovedMovement(f.token, {
       commandId: '00000000-0000-4000-8000-000000000106',
       from: first,

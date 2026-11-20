@@ -50,7 +50,7 @@ class PlayerGameplay {
     );
     validatePlayerCommand(command);
     if (['roll', 'action.use'].includes(command.kind)) await this.dice.load();
-    const { profile, library } = await this.players._state(session);
+    const profile = this.players.authority.profile(session);
     if (campaignId !== profile.campaignId) throw denied();
     const [
       { default: CampaignStore },
@@ -97,10 +97,11 @@ class PlayerGameplay {
           storage: { transaction: (_mode, operation) => operation(transaction) },
         });
         const current = await store.readCharacters(campaignId);
+        const catalog = await this.players.resources.catalog(current.campaign);
         const currentLibrary = new CampaignCharacters({
           ...current,
           store,
-          catalog: library.sourceCatalog,
+          catalog,
         });
         const scene = decodeScene(current.scene, {
           ruleset: current.campaign.ruleset,

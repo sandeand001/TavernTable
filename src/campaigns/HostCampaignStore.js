@@ -74,6 +74,9 @@ export default class HostCampaignStore extends CampaignStore {
   backupStatus(id) {
     return this._request('backupStatus', [id]);
   }
+  publishLivePresentations(id, packet) {
+    return this._request('publishLivePresentations', [id, packet]);
+  }
   sessionCall(operation, args) {
     return this.connection.call(operation, args);
   }

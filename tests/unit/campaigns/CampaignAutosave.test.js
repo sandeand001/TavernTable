@@ -21,7 +21,12 @@ async function fixture({ timers = false, shared = false } = {}) {
   });
   board = { store };
   const campaign = await store.create({ name: 'Action-complete saves', ruleset: '2014' });
-  if (shared) store.storageInfo = { kind: 'host' };
+  let liveWrites = null;
+  if (shared) {
+    store.storageInfo = { kind: 'host' };
+    liveWrites = jest.fn().mockResolvedValue({ version: 1 });
+    store.publishLivePresentations = liveWrites;
+  }
   const catalog = { ruleset: '2014', entries: [], classes: [], enabledEntryIds: [] };
   const library = await CampaignCharacters.open({ store, campaignId: campaign.id, catalog });
   const id = await library.create('Scout');
@@ -58,7 +63,18 @@ async function fixture({ timers = false, shared = false } = {}) {
     combat.syncMovementStatus();
   };
   if (timers) jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
-  return { ...board, actor, adapter, combat, writes, enqueues, begin, checkpoint, finish };
+  return {
+    ...board,
+    actor,
+    adapter,
+    combat,
+    writes,
+    enqueues,
+    liveWrites,
+    begin,
+    checkpoint,
+    finish,
+  };
 }
 
 afterEach(() => {
@@ -166,14 +182,19 @@ test('safe checkpoints remain in memory without enqueuing scene writes before th
   expect(autosave.status.state).toBe('saved');
 });
 
-test('a shared DM move publishes its safe checkpoint while the route is still active', async () => {
-  const { autosave, adapter, actor, begin, checkpoint, enqueues, writes, library } = await fixture({
-    shared: true,
-    timers: true,
-  });
+test('a shared DM move publishes live checkpoints while coalescing durable writes', async () => {
+  const { autosave, adapter, actor, begin, checkpoint, enqueues, writes, liveWrites, library } =
+    await fixture({ shared: true, timers: true });
   begin();
   checkpoint(3);
-  await jest.advanceTimersByTimeAsync(99);
+  await Promise.resolve();
+  expect(liveWrites).toHaveBeenCalledTimes(1);
+  expect(liveWrites.mock.calls[0][1].presentations[0]).toMatchObject({
+    motion: { completed: false, continuing: true, route: [{ gridX: 3 }] },
+  });
+  await jest.advanceTimersByTimeAsync(100);
+  expect(enqueues).not.toHaveBeenCalled();
+  await jest.advanceTimersByTimeAsync(1899);
   expect(enqueues).not.toHaveBeenCalled();
   await jest.advanceTimersByTimeAsync(1);
   await library.flush();
@@ -184,7 +205,7 @@ test('a shared DM move publishes its safe checkpoint while the route is still ac
   expect(writes.mock.calls[0][1].presentations[0].motion.continuing).toBe(true);
   expect(writes.mock.calls[0][1].presentations[0].motion.route[0].gridX).toBe(3);
   checkpoint(4);
-  await jest.advanceTimersByTimeAsync(100);
+  await jest.advanceTimersByTimeAsync(2000);
   await library.flush();
   await autosave.writing;
   expect(writes).toHaveBeenCalledTimes(2);

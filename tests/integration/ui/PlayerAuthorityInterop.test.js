@@ -105,6 +105,242 @@ test('nine overlapping player commands commit independent intents without waitin
   }
 }, 30000);
 
+test('nine simultaneous players receive compact authoritative movement acknowledgements within one second', async () => {
+  const table = await createPlayerAuthorityTable({
+    activeTurn: false,
+    liveUpdates: true,
+    playerCount: 9,
+  });
+  const subscriptions = [];
+  try {
+    const ready = table.players.map(
+      (player) =>
+        new Promise((resolve) => {
+          subscriptions.push(
+            player.connection.subscribe((event) => {
+              if (event.type === 'connected') resolve();
+            })
+          );
+        })
+    );
+    await Promise.all(ready);
+    const states = await Promise.all(
+      table.players.map((player) =>
+        player.connection.call('playerState', [
+          { presentationVersion: 1, observerTokenId: player.tokenId },
+        ])
+      )
+    );
+    const acknowledgements = table.players.map(
+      (player) =>
+        new Promise((resolve) => {
+          subscriptions.push(
+            player.connection.subscribe((event) => {
+              if (event.type === 'command-accepted' && event.actorId === player.identity.id)
+                resolve(performance.now());
+            })
+          );
+        })
+    );
+    const startedAt = performance.now();
+    const responses = table.players.map((player, index) =>
+      player.connection.call('playerCommand', [
+        table.campaign.id,
+        {
+          version: 1,
+          commandId: crypto.randomUUID(),
+          sceneRevision: states[index].sceneRevision,
+          charactersRevision: states[index].revision,
+          observerTokenId: player.tokenId,
+          tokenId: player.tokenId,
+          kind: 'move',
+          payload: {
+            target: { mapId: 'map-main', gridX: index + 1, gridY: 2 },
+          },
+        },
+      ])
+    );
+    const times = (await Promise.all(acknowledgements))
+      .map((at) => at - startedAt)
+      .sort((a, b) => a - b);
+    expect(times[Math.ceil(times.length * 0.95) - 1]).toBeLessThanOrEqual(1000);
+    expect((await Promise.all(responses)).every(({ outcome }) => outcome === 'applied')).toBe(true);
+  } finally {
+    for (const unsubscribe of subscriptions) unsubscribe();
+    await table.close();
+  }
+}, 30000);
+
+test('live DM motion reaches an authorized player before the durable scene checkpoint', async () => {
+  const table = await createPlayerAuthorityTable({ liveUpdates: true });
+  const received = [];
+  const unsubscribe = table.players[0].connection.subscribe((event) => {
+    if (event.type === 'live-presentations') received.push(event);
+  });
+  try {
+    await table.players[0].connection.call('playerState', [
+      { presentationVersion: 1, observerTokenId: table.players[0].tokenId },
+    ]);
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    const destination = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: {
+        ...structuredClone(from.pose),
+        world: { ...from.pose.world, x: from.pose.world.x + 1 },
+      },
+    };
+    const startedAt = performance.now();
+    await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [
+          {
+            commandId: 'dm-live-motion-1',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from,
+              route: [destination],
+            },
+          },
+        ],
+      },
+    ]);
+    await waitForCondition(
+      () => received.length === 1,
+      'The authorized player did not receive live DM motion'
+    );
+    expect(performance.now() - startedAt).toBeLessThanOrEqual(1000);
+    expect(received[0]).toMatchObject({
+      campaignId: table.campaign.id,
+      presentations: [
+        {
+          tokenId: actor.id,
+          motion: { from, route: [destination], continuing: true },
+        },
+      ],
+    });
+    const durable = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    expect(durable.sceneRevision).toBe(state.sceneRevision);
+    expect(durable.scene).toBe(state.scene);
+  } finally {
+    unsubscribe();
+    await table.close();
+  }
+}, 30000);
+
+test('a committed player route reaches a visible peer before full projection responses complete', async () => {
+  const table = await createPlayerAuthorityTable({
+    activeTurn: false,
+    liveUpdates: true,
+    playerCount: 2,
+  });
+  const received = [];
+  const unsubscribe = table.players[1].connection.subscribe((event) => {
+    if (event.type === 'live-presentations') received.push(event);
+  });
+  try {
+    const states = await Promise.all(
+      table.players.map((player) =>
+        player.connection.call('playerState', [
+          { presentationVersion: 1, observerTokenId: player.tokenId },
+        ])
+      )
+    );
+    const startedAt = performance.now();
+    const moved = await table.players[0].connection.call('playerCommand', [
+      table.campaign.id,
+      {
+        version: 1,
+        commandId: crypto.randomUUID(),
+        sceneRevision: states[0].sceneRevision,
+        charactersRevision: states[0].revision,
+        observerTokenId: table.players[0].tokenId,
+        tokenId: table.players[0].tokenId,
+        kind: 'move',
+        payload: { target: { mapId: 'map-main', gridX: 1, gridY: 2 } },
+      },
+    ]);
+    await waitForCondition(
+      () => received.length === 1,
+      'The visible peer did not receive the committed player route'
+    );
+    expect(performance.now() - startedAt).toBeLessThanOrEqual(1500);
+    expect(received[0]).toMatchObject({
+      campaignId: table.campaign.id,
+      presentations: [
+        {
+          commandId: moved.commandId,
+          tokenId: table.players[0].tokenId,
+          kind: 'move',
+          motion: { completed: true },
+        },
+      ],
+    });
+    expect(received[0].presentations[0].motion).not.toHaveProperty('continuing');
+  } finally {
+    unsubscribe();
+    await table.close();
+  }
+}, 30000);
+
+test('the authoritative command acknowledgement reaches its player before the full response body', async () => {
+  const table = await createPlayerAuthorityTable({ activeTurn: false, liveUpdates: true });
+  let notify;
+  const accepted = new Promise((resolve) => {
+    notify = resolve;
+  });
+  const unsubscribe = table.connection.subscribe((event) => {
+    if (event.type === 'command-accepted') notify(event);
+  });
+  try {
+    const state = await table.connection.call('playerState', [{ presentationVersion: 1 }]);
+    const startedAt = performance.now();
+    const response = table.connection.call('playerCommand', [
+      table.campaign.id,
+      {
+        version: 1,
+        commandId: crypto.randomUUID(),
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        observerTokenId: table.tokenId,
+        tokenId: table.tokenId,
+        kind: 'move',
+        payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+      },
+    ]);
+    const acknowledgement = await accepted;
+    expect(performance.now() - startedAt).toBeLessThanOrEqual(1000);
+    expect(acknowledgement).toMatchObject({
+      campaignId: table.campaign.id,
+      actorId: table.identity.id,
+      commandId: expect.any(String),
+      outcome: 'applied',
+      receipt: { kind: 'move', tokenId: table.tokenId },
+    });
+    expect((await response).commandId).toBe(acknowledgement.commandId);
+  } finally {
+    unsubscribe();
+    await table.close();
+  }
+}, 30000);
+
 test('an overlapping command that changed the same assigned actor remains a stale conflict', async () => {
   const table = await createPlayerAuthorityTable({ activeTurn: false });
   try {
@@ -858,6 +1094,8 @@ test("multiplayer regression: native DM and player animate each other's real sav
       commitCharacters: (id, changes) =>
         table.dm.connection.call('commitCharacters', [id, changes]),
       commitScene: (id, changes) => table.dm.connection.call('commitScene', [id, changes]),
+      publishLivePresentations: (id, packet) =>
+        table.dm.connection.call('publishLivePresentations', [id, packet]),
       subscribeChanges: (listener) => table.dm.connection.subscribe(listener),
     };
     const library = new CampaignCharacters({ ...state, store, catalog: table.catalog });
@@ -982,6 +1220,7 @@ test("multiplayer regression: native DM and player animate each other's real sav
       milliseconds += 1000 / 120;
       playerManager.advanceFrame();
     }
+    await autosave.flush();
     await playerApp.refresh();
     expect(playerToken.__threeMesh).toBe(playerModel);
     expect(playerToken.world.x).toBe(3.5);

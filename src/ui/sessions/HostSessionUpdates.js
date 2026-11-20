@@ -6,6 +6,7 @@ import {
   coalesceMovementPresentations,
 } from '../../scene/token-adapter/SavedPlacements.js';
 import {
+  validateLivePlayerPresentation,
   validatePlayerMotion,
   validatePlayerVisual,
 } from '../../campaigns/PlayerPublicProtocol.js';
@@ -47,6 +48,39 @@ export function attachHostSessionUpdates({
     pending = true;
     const error = services.autosave.pauseForSharedUpdate();
     output.textContent = `Paused / conflict: ${error.message}`;
+  };
+  const presentImmediately = (entry, { live = false } = {}) => {
+    try {
+      if (live) validateLivePlayerPresentation(entry);
+      else if (entry.motion) validatePlayerMotion(entry.motion);
+      const token = gameManager.placedTokens.find(({ id }) => id === entry.tokenId);
+      if (!token) return;
+      if (entry.kind === 'move-finish') {
+        gameManager.token3DAdapter.finishApprovedMovement?.(token, entry.placement);
+        return;
+      }
+      if (entry.kind !== 'move') return;
+      void gameManager.token3DAdapter
+        .playApprovedMovement(token, {
+          tokenId: entry.tokenId,
+          commandId: entry.commandId,
+          ...entry.motion,
+          continuing: entry.motion.completed === false ? entry.motion.continuing : true,
+          holdUntilFinish: entry.motion.completed === true,
+        })
+        .catch((error) =>
+          GameErrors.rendering(error, {
+            component: 'HostSessionUpdates',
+            operation: live ? 'livePresentation' : 'acceptedPresentation',
+            tokenId: entry.tokenId,
+          })
+        );
+    } catch (error) {
+      GameErrors.gameState(error, {
+        component: 'HostSessionUpdates',
+        operation: live ? 'readLivePresentation' : 'readAcceptedPresentation',
+      });
+    }
   };
   const applyState = async (state, options = {}) => {
     const library = services.library;
@@ -106,6 +140,8 @@ export function attachHostSessionUpdates({
             gameManager.campaignMapId,
             entry.motion.from.mapId
           )) &&
+        !gameManager.token3DAdapter._approvedMovements?.has(token) &&
+        !gameManager.token3DAdapter._approvedMovementRequests?.has(token) &&
         samePlacement(current, entry.motion.from) &&
         samePlacement(entry.motion.route.at(-1), sceneActorPlacement(scene, actor))
       )
@@ -135,6 +171,11 @@ export function attachHostSessionUpdates({
       else library.reload(state);
       services.campaign = library.campaign;
       for (const character of library.list()) notifyCharacterChanged(gameManager, character.id);
+    }
+    for (const actor of scene?.creatures || []) {
+      const token = gameManager.placedTokens.find(({ id }) => id === actor.id);
+      if (!token) continue;
+      gameManager.token3DAdapter.finishApprovedMovement?.(token, sceneActorPlacement(scene, actor));
     }
     presentations = presentations.filter((entry) => entry.sceneRevision > state.sceneRevision);
     await Promise.all(
@@ -219,6 +260,9 @@ export function attachHostSessionUpdates({
         preserveMovingActors,
       });
     } catch (error) {
+      for (const token of gameManager.placedTokens)
+        if (gameManager.token3DAdapter._approvedMovements?.get(token)?.holdUntilFinish)
+          gameManager.token3DAdapter.cancelApprovedMovement(token);
       output.textContent = error.message;
       GameErrors.gameState(error, { component: 'HostSessionUpdates', operation: 'refresh' });
     } finally {
@@ -273,6 +317,11 @@ export function attachHostSessionUpdates({
   };
   discard.addEventListener('click', discardDraft);
   const unsubscribe = store.subscribeChanges((event) => {
+    if (event.type === 'live-presentations') {
+      if (event.campaignId !== services.campaign.id || !Array.isArray(event.presentations)) return;
+      for (const entry of event.presentations) presentImmediately(entry, { live: true });
+      return;
+    }
     if (event.type === 'disconnected') {
       output.textContent = 'Session connection interrupted. Reconnecting...';
       return;
@@ -303,6 +352,7 @@ export function attachHostSessionUpdates({
           return;
         }
         presentations = [...presentations, ...event.presentations].slice(-256);
+        for (const entry of event.presentations) presentImmediately(entry);
       }
       lastKind = event.kind || lastKind;
       pending = true;

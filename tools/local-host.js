@@ -40,6 +40,7 @@ const operations = new Map([
   ['playerCommit', 2],
   ['doorState', 2],
   ['playerCommand', 2],
+  ['publishLivePresentations', 2],
   ['grantPlacement', 4],
 ]);
 
@@ -184,6 +185,51 @@ async function startLocalHost({
         );
     }
   };
+  const broadcastCommandAccepted = (campaignId, actorId, accepted) => {
+    for (const stream of streams) {
+      const session = authority.authenticate(stream.cookie, stream.cookieName);
+      if (!session) {
+        stream.response.end();
+        continue;
+      }
+      const profile = authority.profile(session);
+      if (profile.id !== actorId || profile.campaignId !== campaignId) continue;
+      stream.response.write(
+        `event: command-accepted\ndata: ${JSON.stringify({ campaignId, ...accepted })}\n\n`
+      );
+    }
+  };
+  const broadcastLive = async (campaignId, actorId, published) => {
+    await Promise.all(
+      [...streams].map(async (stream) => {
+        const session = authority.authenticate(stream.cookie, stream.cookieName);
+        if (!session) {
+          stream.response.end();
+          return;
+        }
+        const profile = authority.profile(session);
+        if (profile.id === actorId) return;
+        if (profile.role !== 'dm' && profile.campaignId !== campaignId) return;
+        let presentations = published.presentations;
+        if (profile.role === 'player')
+          presentations = await players.visibleLivePresentations(
+            session,
+            campaignId,
+            presentations
+          );
+        if (!presentations.length) return;
+        stream.response.write(
+          `event: live-presentations\ndata: ${JSON.stringify({
+            campaignId,
+            version: published.version,
+            sequence: published.sequence,
+            actorId,
+            presentations,
+          })}\n\n`
+        );
+      })
+    );
+  };
   const loginAttempts = new LoginThrottle();
   const server = http.createServer(async (request, response) => {
     try {
@@ -309,6 +355,11 @@ async function startLocalHost({
           playerState: (options) => players.state(session, options),
           playerCommit: (id, change) => players.commit(session, id, change),
           doorState: (id, change) => players.doorState(session, id, change),
+          publishLivePresentations: async (id, packet) => {
+            const published = await players.publishLivePresentations(session, id, packet);
+            await broadcastLive(id, identity.id, published);
+            return published;
+          },
           playerCommand: (id, change) =>
             gameplay.command(session, id, change, {
               afterCommit: async (committed) => {
@@ -332,6 +383,26 @@ async function startLocalHost({
                   committed.response.applied
                 );
                 playerCommitBroadcast = true;
+                if (receipt.motion)
+                  broadcastCommandAccepted(identity.campaignId, identity.id, {
+                    version: 1,
+                    actorId: identity.id,
+                    commandId: committed.response.commandId,
+                    outcome: 'applied',
+                    applied: committed.response.applied,
+                    receipt,
+                  });
+                if (presentations.length)
+                  await broadcastLive(identity.campaignId, identity.id, {
+                    version: 1,
+                    sequence: committed.response.applied.sceneRevision,
+                    presentations: presentations.map(({ commandId, tokenId, kind, motion }) => ({
+                      commandId,
+                      tokenId,
+                      kind,
+                      motion,
+                    })),
+                  });
                 broadcast(
                   identity.campaignId,
                   identity.id,

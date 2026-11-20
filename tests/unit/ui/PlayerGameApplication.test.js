@@ -13,6 +13,16 @@ import { getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 import { characterActionOptions } from '../../../src/entities/characters/combat/actions.js';
 import { installHumanoidAssetFiles } from '../../helpers/humanoid-fixture.js';
 
+async function waitFor(condition, message = 'Condition was not reached') {
+  const deadline = Date.now() + 1000;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+const copy = (value) => JSON.parse(JSON.stringify(value));
+
 function fixture(connectionOptions = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
@@ -44,6 +54,247 @@ function fixture(connectionOptions = {}) {
 afterEach(() => {
   document.body.replaceChildren();
   delete document.body.dataset.sessionRole;
+});
+
+test('a compact committed command starts own motion without waiting for full projection hydration', async () => {
+  let notify;
+  let command;
+  const transport = new Promise(() => {});
+  const { app, state, gameManager } = fixture({
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+    call: async (operation, [, intent]) => {
+      if (operation !== 'playerCommand') throw new Error(`Unexpected operation: ${operation}`);
+      command = JSON.parse(JSON.stringify(intent));
+      return transport;
+    },
+  });
+  state.profile.id = 'player-session';
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockResolvedValue({ completed: true });
+  try {
+    await app.start();
+    const actor = state.publicScene.actors[0];
+    const moving = app.input.requestMove(gameManager.placedTokens[0], {
+      mapId: actor.mapId,
+      gridX: actor.gridX + 1,
+      gridY: actor.gridY,
+    });
+    await waitFor(() => command);
+    const destination = {
+      ...copy(actor),
+      gridX: actor.gridX + 1,
+      facingAngle: 0,
+      pose: {
+        ...copy(actor.pose),
+        world: { ...actor.pose.world, x: actor.pose.world.x + 1 },
+      },
+    };
+    const motion = {
+      kind: 'walk',
+      completed: true,
+      from: {
+        mapId: actor.mapId,
+        gridX: actor.gridX,
+        gridY: actor.gridY,
+        facingAngle: actor.facingAngle,
+        pose: copy(actor.pose),
+      },
+      route: [
+        {
+          mapId: destination.mapId,
+          gridX: destination.gridX,
+          gridY: destination.gridY,
+          facingAngle: destination.facingAngle,
+          pose: copy(destination.pose),
+        },
+      ],
+    };
+    notify({
+      type: 'command-accepted',
+      campaignId: state.campaign.id,
+      actorId: state.profile.id,
+      version: 1,
+      commandId: command.commandId,
+      outcome: 'applied',
+      applied: {
+        sceneRevision: state.sceneRevision + 1,
+        charactersRevision: state.revision,
+      },
+      receipt: {
+        kind: 'move',
+        tokenId: actor.id,
+        costFeet: 5,
+        budget: {
+          movementSpentFeet: 5,
+          movementRemainingFeet: 25,
+          movementAllowanceFeet: 30,
+        },
+        route: motion.route,
+        placement: motion.route.at(-1),
+        motion,
+      },
+    });
+    await expect(moving).resolves.toMatchObject({
+      commandId: command.commandId,
+      outcome: 'applied',
+    });
+    expect(app.commands.pending).toBe(false);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(app.state.sceneRevision).toBe(state.sceneRevision + 1);
+    expect(app.state.publicScene.actors[0]).toMatchObject({
+      id: actor.id,
+      gridX: destination.gridX,
+      pose: destination.pose,
+    });
+  } finally {
+    play.mockRestore();
+    await app.destroy();
+  }
+});
+
+test('selecting a visible unowned creature exposes no player gameplay actions', async () => {
+  const { app, state } = fixture();
+  const token = { id: 'visible-dm-knight' };
+  state.publicScene.actors.push({
+    ...copy(state.publicScene.actors[0]),
+    id: token.id,
+    name: 'Knight',
+    owned: false,
+    characterId: 'dm-only',
+  });
+  expect(app.input.availableActions(token)).toEqual([]);
+  await app.destroy();
+});
+
+test('a live peer movement does not block the assigned character command path', async () => {
+  let notify;
+  let command;
+  let finishPeer;
+  const peerPresentation = new Promise((resolve) => {
+    finishPeer = resolve;
+  });
+  const { app, state, gameManager } = fixture({
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+    call: async (operation, [, intent]) => {
+      if (operation !== 'playerCommand') throw new Error(`Unexpected operation: ${operation}`);
+      command = intent;
+      return new Promise(() => {});
+    },
+  });
+  state.profile.id = 'player-session';
+  const play = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockImplementation((token) =>
+      token.id === 'visible-dm-knight' ? peerPresentation : Promise.resolve({ completed: true })
+    );
+  try {
+    await app.start();
+    const next = copy(state);
+    next.publicScene.actors.push({
+      ...copy(state.publicScene.actors[0]),
+      id: 'visible-dm-knight',
+      name: 'Knight',
+      owned: false,
+      characterId: null,
+      gridX: 3,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    });
+    await app.showState(next);
+    const from = {
+      mapId: 'main',
+      gridX: 3,
+      gridY: 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 1.5 } },
+    };
+    const destination = {
+      ...from,
+      gridX: 4,
+      pose: { kind: 'ground', world: { x: 4.5, y: 0, z: 1.5 } },
+    };
+    notify({
+      type: 'live-presentations',
+      campaignId: state.campaign.id,
+      presentations: [
+        {
+          commandId: 'dm-live-peer-motion',
+          tokenId: 'visible-dm-knight',
+          kind: 'move',
+          motion: {
+            kind: 'walk',
+            completed: false,
+            continuing: true,
+            from,
+            route: [destination],
+          },
+        },
+      ],
+    });
+    await waitFor(() => play.mock.calls.some(([token]) => token.id === 'visible-dm-knight'));
+    const moving = app.input.requestMove(
+      gameManager.placedTokens.find(({ owned }) => owned),
+      {
+        mapId: 'main',
+        gridX: 2,
+        gridY: 1,
+      }
+    );
+    await waitFor(() => command);
+    const own = app.state.publicScene.actors.find(({ owned }) => owned);
+    const ownDestination = {
+      mapId: own.mapId,
+      gridX: 2,
+      gridY: own.gridY,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 2.5, y: 0, z: own.pose.world.z } },
+    };
+    notify({
+      type: 'command-accepted',
+      campaignId: state.campaign.id,
+      actorId: state.profile.id,
+      version: 1,
+      commandId: command.commandId,
+      outcome: 'applied',
+      applied: { sceneRevision: 2, charactersRevision: state.revision },
+      receipt: {
+        kind: 'move',
+        tokenId: own.id,
+        costFeet: 5,
+        budget: {
+          movementSpentFeet: 5,
+          movementRemainingFeet: 25,
+          movementAllowanceFeet: 30,
+        },
+        route: [ownDestination],
+        placement: ownDestination,
+        motion: {
+          kind: 'walk',
+          completed: true,
+          from: {
+            mapId: own.mapId,
+            gridX: own.gridX,
+            gridY: own.gridY,
+            facingAngle: own.facingAngle,
+            pose: copy(own.pose),
+          },
+          route: [ownDestination],
+        },
+      },
+    });
+    await expect(moving).resolves.toMatchObject({ outcome: 'applied' });
+    expect(app.commands.pending).toBe(false);
+  } finally {
+    finishPeer({ completed: false, reason: 'test-complete' });
+    play.mockRestore();
+    await app.destroy();
+  }
 });
 
 test('a disconnected native player visibly retains an unconfirmed command and protects its same-ID online recovery from navigation', async () => {

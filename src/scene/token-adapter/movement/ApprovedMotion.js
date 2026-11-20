@@ -85,6 +85,22 @@ function canContinueApprovedMovement(token, motion) {
   );
 }
 
+function appendApprovedMovement(adapter, token, motion) {
+  const active = adapter._approvedMovements?.get(token);
+  if (!active || !adapter.canContinueApprovedMovement(token, motion))
+    throw new Error('Finish the existing approved movement presentation first');
+  const waiting = active.waitingForContinuation !== null;
+  active.route.push(...copy(motion.route));
+  if (motion.kind) active.kind = motion.kind;
+  active.continuing = motion.continuing === true;
+  active.holdUntilFinish ||= motion.holdUntilFinish === true;
+  if (waiting && active.index < active.route.length) {
+    active.waitingForContinuation = null;
+    beginSegment(adapter, active);
+  }
+  return active.done;
+}
+
 function reconcileApprovedMovement(token, placement) {
   const job = this._approvedMovements?.get(token);
   const endpoint = job?.route.at(-1);
@@ -118,22 +134,30 @@ async function playApprovedMovement(token, motion) {
   this._approvedMovements ??= new Map();
   this._approvedMovementRequests ??= new Map();
   const active = this._approvedMovements.get(token);
-  if (active) {
-    if (!this.canContinueApprovedMovement(token, motion))
-      throw new Error('Finish the existing approved movement presentation first');
-    const waiting = active.waitingForContinuation !== null;
-    active.route.push(...copy(motion.route));
-    if (motion.kind) active.kind = motion.kind;
-    active.continuing = motion.continuing === true;
-    if (waiting && active.index < active.route.length) {
-      active.waitingForContinuation = null;
-      beginSegment(this, active);
-    }
-    return active.done;
+  if (active) return appendApprovedMovement(this, token, motion);
+  const pendingRequest = this._approvedMovementRequests.get(token);
+  if (pendingRequest) {
+    let resolve;
+    let reject;
+    const completion = new Promise((accepted, failed) => {
+      resolve = accepted;
+      reject = failed;
+    });
+    const queued = { motion, resolve, reject, handled: false };
+    pendingRequest.queue.push(queued);
+    const ready = await pendingRequest.ready;
+    if (!ready) return { completed: false, reason: 'presentation-replaced' };
+    if (queued.handled) return completion;
+    return this.playApprovedMovement(token, motion);
   }
-  if (this._approvedMovementRequests.has(token))
-    throw new Error('Finish the existing approved movement presentation first');
-  const request = {};
+  let ready;
+  const request = {
+    ready: new Promise((resolve) => {
+      ready = resolve;
+    }),
+    queue: [],
+  };
+  request.readyResolve = ready;
   this._approvedMovementRequests.set(token, request);
   const replaced = () => this._approvedMovementRequests.get(token) !== request;
   const cancelled = { completed: false, reason: 'presentation-replaced' };
@@ -183,6 +207,7 @@ async function playApprovedMovement(token, motion) {
       reject,
       done,
       continuing: motion.continuing === true,
+      holdUntilFinish: motion.holdUntilFinish === true,
       waitingForContinuation: null,
       finishing: false,
     };
@@ -194,9 +219,23 @@ async function playApprovedMovement(token, motion) {
       state.phase = 'idle';
       state.pathActive = false;
       this._unlockTokenWorldAuthority(state);
+      request.readyResolve(false);
       throw error;
     }
+    request.job = job;
+    for (const queued of request.queue) {
+      try {
+        queued.resolve(appendApprovedMovement(this, token, queued.motion));
+      } catch (error) {
+        queued.reject(error);
+      }
+      queued.handled = true;
+    }
+    request.readyResolve(true);
     return done;
+  } catch (error) {
+    request.readyResolve(false);
+    throw error;
   } finally {
     if (!replaced()) this._approvedMovementRequests.delete(token);
   }
@@ -206,6 +245,8 @@ async function finishMovement(adapter, token, job) {
   if (job.finishing || adapter._approvedMovements.get(token) !== job) return;
   job.finishing = true;
   adapter._approvedMovements.delete(token);
+  const request = adapter._approvedMovementRequests?.get(token);
+  if (request?.job === job) adapter._approvedMovementRequests.delete(token);
   job.state.phase = 'idle';
   job.state.pathActive = false;
   adapter._unlockTokenWorldAuthority(job.state);
@@ -215,8 +256,33 @@ async function finishMovement(adapter, token, job) {
     fadeIn: 0.2,
     fadeOut: 0.2,
   });
-  await adapter.restoreStablePlacement(token, placement);
+  adapter._restoringApprovedMovements ??= new WeakSet();
+  adapter._restoringApprovedMovements.add(token);
+  try {
+    await adapter.restoreStablePlacement(token, placement);
+  } finally {
+    adapter._restoringApprovedMovements.delete(token);
+  }
   job.resolve({ completed: true });
+}
+
+function finishApprovedMovement(token, placement) {
+  const job = this._approvedMovements?.get(token);
+  if (!job || !samePlacement(job.route.at(-1), placement)) return false;
+  job.continuing = false;
+  job.holdUntilFinish = false;
+  if (job.waitingForContinuation !== null) {
+    job.waitingForContinuation = null;
+    void finishMovement(this, token, job).catch((error) => {
+      job.reject(error);
+      GameErrors.rendering(error, {
+        component: 'ApprovedMotion',
+        operation: 'finish-live',
+        tokenId: token.id,
+      });
+    });
+  }
+  return true;
 }
 
 function advanceApprovedMovement(delta) {
@@ -228,7 +294,7 @@ function advanceApprovedMovement(delta) {
         throw new Error('The approved moving creature is no longer visible');
       if (job.waitingForContinuation !== null) {
         job.waitingForContinuation += delta;
-        if (job.waitingForContinuation >= CONTINUATION_GRACE_SECONDS)
+        if (!job.holdUntilFinish && job.waitingForContinuation >= CONTINUATION_GRACE_SECONDS)
           void finishMovement(this, token, job).catch((error) => {
             job.reject(error);
             GameErrors.rendering(error, {
@@ -263,6 +329,11 @@ function advanceApprovedMovement(delta) {
         if (job.index === job.route.length) {
           if (job.continuing) {
             job.waitingForContinuation = 0;
+            this._setAnimation(token, token.flightActive ? 'hover' : 'idle', {
+              force: true,
+              fadeIn: 0.12,
+              fadeOut: 0.12,
+            });
           } else {
             void finishMovement(this, token, job).catch((error) => {
               job.reject(error);
@@ -327,7 +398,11 @@ async function playApprovedVisual(token, entry) {
 }
 
 function cancelApprovedMovement(token, error = null) {
-  this._approvedMovementRequests?.delete(token);
+  const request = this._approvedMovementRequests?.get(token);
+  if (request) {
+    request.readyResolve(false);
+    this._approvedMovementRequests.delete(token);
+  }
   const job = this._approvedMovements?.get(token);
   if (!job) return;
   this._approvedMovements.delete(token);
@@ -344,5 +419,6 @@ export function installApprovedMotionMethods(prototype) {
   prototype.playApprovedVisual = playApprovedVisual;
   prototype.playApprovedMovement = playApprovedMovement;
   prototype.advanceApprovedMovement = advanceApprovedMovement;
+  prototype.finishApprovedMovement = finishApprovedMovement;
   prototype.cancelApprovedMovement = cancelApprovedMovement;
 }

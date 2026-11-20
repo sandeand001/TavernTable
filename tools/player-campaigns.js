@@ -26,6 +26,8 @@ class PlayerCampaigns {
     this.presentations = new Map();
     this.undoSessions = new Map();
     this.authorityContexts = new WeakMap();
+    this.liveCampaigns = new Map();
+    this.liveProjections = new WeakMap();
   }
 
   undoFor(profile, state) {
@@ -177,7 +179,189 @@ class PlayerCampaigns {
     };
     const validated = validatePlayerState(snapshot);
     this.rememberAuthorityContext(session, scene, validated);
+    const observer = scene?.creatures.find(({ id }) => id === validated.observerTokenId);
+    this.liveProjections.set(session, {
+      campaignId: state.campaign.id,
+      sceneRevision: state.sceneRevision,
+      charactersRevision: state.revision,
+      scene: { version: scene?.version, creatures: observer ? [copy(observer)] : [] },
+      library: null,
+      view: {
+        observerTokenId: view.observerTokenId,
+        maps: view.maps,
+        publicScene: { actors: view.publicScene.actors },
+      },
+      world: this.published.cachedWorld(scene),
+    });
     return validated;
+  }
+
+  async publishLivePresentations(session, campaignId, packet) {
+    const profile = this.authority.profile(session);
+    if (profile.role !== 'dm') throw reject('Only the host may publish live movement');
+    if (
+      !packet ||
+      Object.keys(packet).some(
+        (key) => !['sceneRevision', 'charactersRevision', 'presentations'].includes(key)
+      ) ||
+      !Number.isSafeInteger(packet.sceneRevision) ||
+      packet.sceneRevision < 0 ||
+      !Number.isSafeInteger(packet.charactersRevision) ||
+      packet.charactersRevision < 0 ||
+      !Array.isArray(packet.presentations) ||
+      !packet.presentations.length ||
+      packet.presentations.length > 256 ||
+      new Set(packet.presentations.map((entry) => entry?.commandId)).size !==
+        packet.presentations.length
+    )
+      throw presentationError('Choose valid bounded live movement presentations');
+    const state = await this.store.readCharacters(campaignId);
+    if (packet.sceneRevision > state.sceneRevision || packet.charactersRevision > state.revision)
+      throw Object.assign(new Error('Refresh the live campaign before publishing movement'), {
+        status: 409,
+        code: 'stale-scene-revision',
+      });
+    const scene = state.scene ? JSON.parse(state.scene) : null;
+    if (!scene || !Array.isArray(scene.creatures))
+      throw presentationError('Save the campaign board before publishing live movement');
+    const [{ validateLivePlayerPresentation }, { samePlacement, sceneActorPlacement }] =
+      await Promise.all([
+        import(
+          pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+        ),
+        import(
+          pathToFileURL(path.join(this.root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js'))
+            .href
+        ),
+      ]);
+    const same = (left, right) =>
+      samePlacement(left, right) && Math.abs(left?.facingAngle - right?.facingAngle) < 1e-6;
+    let live = this.liveCampaigns.get(campaignId);
+    if (!live) {
+      live = { sequence: 0, actors: new Map() };
+      this.liveCampaigns.set(campaignId, live);
+    }
+    for (const entry of packet.presentations) {
+      validateLivePlayerPresentation(entry);
+      if (entry.kind === 'move' && entry.motion.completed !== false)
+        throw presentationError('Host live movement must be provisional and continuable');
+      const actor = scene.creatures.find(({ id }) => id === entry.tokenId);
+      if (!actor) throw presentationError('Live movement must reference a real campaign actor');
+      const canonical = sceneActorPlacement(scene, actor);
+      const combatState =
+        scene.combat?.states.find(({ tokenId }) => tokenId === entry.tokenId) || null;
+      const tracked = live.actors.get(entry.tokenId);
+      if (tracked) {
+        const endpointActor = {
+          ...tracked.baseActor,
+          gridX: tracked.endpoint.gridX,
+          gridY: tracked.endpoint.gridY,
+          facingAngle: tracked.endpoint.facingAngle,
+          pose: copy(tracked.endpoint.pose),
+          ...(scene.version === 3 ? { mapId: tracked.endpoint.mapId } : {}),
+        };
+        const matchesBase =
+          isDeepStrictEqual(actor, tracked.baseActor) &&
+          isDeepStrictEqual(combatState, tracked.baseCombat);
+        const matchesEndpoint =
+          isDeepStrictEqual(actor, endpointActor) &&
+          packet.sceneRevision === state.sceneRevision &&
+          packet.charactersRevision === state.revision;
+        if (!matchesBase && !matchesEndpoint)
+          throw Object.assign(new Error('Refresh the live actor before continuing movement'), {
+            status: 409,
+            code: 'live-actor-conflict',
+          });
+        if (matchesEndpoint) {
+          tracked.baseActor = copy(actor);
+          tracked.baseCombat = copy(combatState);
+          tracked.base = canonical;
+        }
+      }
+      const expected = tracked?.endpoint || canonical;
+      if (entry.kind === 'move') {
+        if (!same(entry.motion.from, expected))
+          throw Object.assign(new Error('Refresh the live actor before continuing movement'), {
+            status: 409,
+            code: 'live-actor-conflict',
+          });
+        live.actors.set(entry.tokenId, {
+          base: tracked?.base || canonical,
+          baseActor: tracked?.baseActor || copy(actor),
+          baseCombat: tracked ? copy(tracked.baseCombat) : copy(combatState),
+          endpoint: entry.motion.route.at(-1),
+        });
+      } else {
+        if (!tracked || !same(entry.placement, tracked.endpoint))
+          throw presentationError('Live movement must finish at its last published pose');
+      }
+    }
+    live.sequence++;
+    return {
+      version: 1,
+      campaignId,
+      sequence: live.sequence,
+      presentations: copy(packet.presentations),
+    };
+  }
+
+  async visibleLivePresentations(session, campaignId, presentations) {
+    const profile = this.authority.profile(session);
+    if (profile.role !== 'player' || profile.campaignId !== campaignId) return [];
+    const projection = this.liveProjections.get(session);
+    if (!projection || projection.campaignId !== campaignId || !projection.view.observerTokenId)
+      return [];
+    if (!projection.world)
+      throw presentationError('The player live projection lost its authorized world');
+    const visible = [];
+    for (const entry of presentations) {
+      const actor = projection.view.publicScene.actors.find(({ id }) => id === entry.tokenId);
+      if (!actor) continue;
+      const endpoint = entry.kind === 'move' ? entry.motion.route.at(-1) : entry.placement;
+      const view = {
+        ...projection.view,
+        publicScene: {
+          ...projection.view.publicScene,
+          actors: projection.view.publicScene.actors.map((current) =>
+            current.id === entry.tokenId ? { ...current, ...copy(endpoint) } : current
+          ),
+        },
+      };
+      const synthetic =
+        entry.kind === 'move'
+          ? entry
+          : {
+              ...entry,
+              kind: 'move',
+              motion: {
+                kind: 'walk',
+                completed: true,
+                from: copy(endpoint),
+                route: [copy(endpoint)],
+              },
+            };
+      const updates = await visibleMovementPresentations({
+        root: this.root,
+        scene: projection.scene,
+        library: projection.library,
+        view,
+        updates: [
+          {
+            ...copy(synthetic),
+            sceneRevision: projection.sceneRevision,
+            charactersRevision: projection.charactersRevision,
+          },
+        ],
+        state: {
+          sceneRevision: projection.sceneRevision,
+          revision: projection.charactersRevision,
+        },
+        previousView: view,
+        world: projection.world,
+      });
+      if (updates.length) visible.push(copy(entry));
+    }
+    return visible;
   }
 
   rememberAuthorityContext(session, scene, state) {

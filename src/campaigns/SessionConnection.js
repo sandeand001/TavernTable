@@ -87,22 +87,14 @@ export default class SessionConnection {
       this.source.addEventListener('open', () => this._emit({ type: 'connected' }));
       this.source.addEventListener('error', () => this._emit({ type: 'disconnected' }));
       this.source.addEventListener('campaign', (event) => {
-        try {
-          this._emit({ type: 'campaign', ...JSON.parse(event.data) });
-        } catch (error) {
-          logger.log(
-            LOG_LEVEL.ERROR,
-            'The live session returned an invalid update',
-            LOG_CATEGORY.SYSTEM,
-            {
-              component: 'SessionConnection',
-              operation: 'readUpdate',
-              error: error.message,
-            }
-          );
-          this._emit({ type: 'invalid-update' });
-        }
+        this._readEvent('campaign', event, 'readUpdate');
       });
+      this.source.addEventListener('live-presentations', (event) =>
+        this._readEvent('live-presentations', event, 'readLivePresentations')
+      );
+      this.source.addEventListener('command-accepted', (event) =>
+        this._readEvent('command-accepted', event, 'readCommandAccepted')
+      );
     }
     return () => {
       this.listeners.delete(listener);
@@ -111,6 +103,24 @@ export default class SessionConnection {
         this.source = null;
       }
     };
+  }
+
+  _readEvent(type, event, operation) {
+    try {
+      this._emit({ type, ...JSON.parse(event.data) });
+    } catch (error) {
+      logger.log(
+        LOG_LEVEL.ERROR,
+        'The live session returned an invalid update',
+        LOG_CATEGORY.SYSTEM,
+        {
+          component: 'SessionConnection',
+          operation,
+          error: error.message,
+        }
+      );
+      this._emit({ type: 'invalid-update' });
+    }
   }
 
   _emit(event) {

@@ -20,6 +20,7 @@ const pause = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
 const ACTION_WAIT = 'Waiting for the current action to finish...';
 const SAVE_DELAY = 2000;
 const SHARED_ACTION_SAVE_DELAY = 100;
+const SHARED_MOVEMENT_SAVE_DELAY = 2000;
 const MAX_SAVE_WAIT = 10000;
 const RETRY_DELAY = 100;
 
@@ -47,6 +48,78 @@ function sameMovementWorld(left, right) {
         });
 }
 
+const copyJson = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+const sameJson = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const conflict = (reason) =>
+  Object.assign(new Error(reason), { status: 409, code: 'shared-scene-conflict' });
+
+function mergeThreeWay(base, local, remote, reason) {
+  if (sameJson(local, base)) return copyJson(remote);
+  if (sameJson(remote, base) || sameJson(local, remote)) return copyJson(local);
+  throw conflict(reason);
+}
+
+function mergeCombatSnapshots(base, local, remote, movedActorIds) {
+  if (sameJson(local, base)) return copyJson(remote);
+  if (sameJson(local, remote)) return copyJson(local);
+  for (const field of ['version', 'active', 'turn', 'activeTokenId', 'effects']) {
+    if (!sameJson(local?.[field], base?.[field]))
+      mergeThreeWay(base?.[field], local[field], remote?.[field], `The shared ${field} changed`);
+  }
+  if (!sameJson(local?.histories, base?.histories))
+    throw conflict('The local combat history changed during the shared update');
+  const mergeStates = (source) =>
+    new Map((source?.states || []).map((state) => [state.tokenId, state]));
+  const before = mergeStates(base);
+  const own = mergeStates(local);
+  const shared = mergeStates(remote);
+  const ids = new Set([...before.keys(), ...own.keys(), ...shared.keys()]);
+  const states = [];
+  for (const id of ids) {
+    const old = before.get(id);
+    const current = own.get(id);
+    const canonical = shared.get(id);
+    if (!sameJson(current, old) && !movedActorIds.has(id))
+      throw conflict(`The shared combat actor changed locally: ${id}`);
+    const state = mergeThreeWay(
+      old,
+      current,
+      canonical,
+      `The shared actor changed concurrently: ${id}`
+    );
+    if (state) states.push(state);
+  }
+  const global = mergeThreeWay(
+    {
+      version: base.version,
+      active: base.active,
+      turn: base.turn,
+      activeTokenId: base.activeTokenId,
+      effects: base.effects,
+    },
+    {
+      version: local.version,
+      active: local.active,
+      turn: local.turn,
+      activeTokenId: local.activeTokenId,
+      effects: local.effects,
+    },
+    {
+      version: remote.version,
+      active: remote.active,
+      turn: remote.turn,
+      activeTokenId: remote.activeTokenId,
+      effects: remote.effects,
+    },
+    'The shared combat turn changed concurrently'
+  );
+  return {
+    ...global,
+    states,
+    histories: copyJson(remote.histories),
+  };
+}
+
 export default class CampaignAutosave {
   constructor({ gameManager, library, combat, getRollLog = () => [], restoreRollLog = () => {} }) {
     this.gameManager = gameManager;
@@ -65,6 +138,8 @@ export default class CampaignAutosave {
     this.timer = null;
     this.firstDirtyAt = null;
     this.changeKinds = new Set();
+    this.livePresentations = [];
+    this.liveTask = null;
     this.closed = false;
     gameManager.sceneAutosave = this;
   }
@@ -170,6 +245,44 @@ export default class CampaignAutosave {
     this._schedule();
   }
 
+  publishLivePresentation(presentation) {
+    if (
+      this.closed ||
+      typeof this.library.store?.publishLivePresentations !== 'function' ||
+      !presentation
+    )
+      return;
+    this.livePresentations.push(JSON.parse(JSON.stringify(presentation)));
+    if (this.livePresentations.length > 256)
+      this.livePresentations.splice(0, this.livePresentations.length - 256);
+    if (!this.liveTask)
+      this.liveTask = Promise.resolve()
+        .then(() => this._publishLivePresentations())
+        .finally(() => {
+          this.liveTask = null;
+          const next = this.livePresentations.shift();
+          if (next) this.publishLivePresentation(next);
+        });
+  }
+
+  async _publishLivePresentations() {
+    const presentations = this.livePresentations.splice(0);
+    if (!presentations.length) return;
+    try {
+      await this.library.store.publishLivePresentations(this.library.campaign.id, {
+        sceneRevision: this.library.sceneRevision,
+        charactersRevision: this.library.revision,
+        presentations,
+      });
+    } catch (error) {
+      GameErrors.gameState(error, {
+        component: 'CampaignAutosave',
+        operation: 'publishLivePresentations',
+        campaignId: this.library.campaign.id,
+      });
+    }
+  }
+
   pauseForSharedUpdate() {
     if (this.gameManager.characterServices?.sessionRole === 'player')
       throw new Error('Canonical shared-scene conflicts require the DM workspace');
@@ -204,8 +317,8 @@ export default class CampaignAutosave {
       !isCampaignActionInProgress(this.gameManager, {
         allowMovementCheckpoint: allowMovementInProgress,
       }) &&
-      this.changeKinds.size === 1 &&
       this.changeKinds.has('movement checkpoint') &&
+      [...this.changeKinds].every((kind) => ['movement checkpoint', 'combat'].includes(kind)) &&
       this.gameManager.token3DAdapter.hasSharedActorPatches?.()
     );
   }
@@ -236,19 +349,20 @@ export default class CampaignAutosave {
       ruleset: this.library.ruleset,
       library: this.library,
     });
-    if (
-      !sameMovementWorld(local, remote) ||
-      JSON.stringify(local.combat) !== JSON.stringify(remote.combat)
-    )
-      return false;
+    if (!sameMovementWorld(local, remote)) return false;
     return moving.every((token) => {
       const before = local.creatures.find(({ id }) => id === token.id);
       const after = remote.creatures.find(({ id }) => id === token.id);
+      const approved = this.gameManager.token3DAdapter._approvedMovements?.get(token);
+      const approvedEndpoint = approved?.route.at(-1);
       return (
         before &&
         after &&
-        samePlacement(sceneActorPlacement(local, before), sceneActorPlacement(remote, after)) &&
-        Math.abs(before.facingAngle - after.facingAngle) < 1e-6
+        ((samePlacement(sceneActorPlacement(local, before), sceneActorPlacement(remote, after)) &&
+          Math.abs(before.facingAngle - after.facingAngle) < 1e-6) ||
+          (approvedEndpoint &&
+            samePlacement(approvedEndpoint, sceneActorPlacement(remote, after)) &&
+            Math.abs(approvedEndpoint.facingAngle - after.facingAngle) < 1e-6))
       );
     });
   }
@@ -275,10 +389,18 @@ export default class CampaignAutosave {
       !sameMovementWorld(captured.scene, remote)
     )
       conflict('The physical world changed while the local creature was moving');
-    if (JSON.stringify(captured.scene.combat) !== JSON.stringify(remote.combat))
-      conflict('The local and shared combat state both changed');
     const patches = this.gameManager.token3DAdapter.getSharedActorPatches(captured.scene);
     if (!patches.length) conflict('No exact local actor patch is available');
+    const base = decodeScene(this.library.savedScene, {
+      ruleset: this.library.ruleset,
+      library: this.library,
+    });
+    remote.combat = mergeCombatSnapshots(
+      base.combat,
+      captured.scene.combat,
+      remote.combat,
+      new Set(patches.map(({ tokenId }) => tokenId))
+    );
     for (const patch of patches) {
       const local = captured.scene.creatures.find(({ id }) => id === patch.tokenId);
       const remoteIndex = remote.creatures.findIndex(({ id }) => id === patch.tokenId);
@@ -416,11 +538,15 @@ export default class CampaignAutosave {
     const sharedAction =
       shared &&
       (this.changeKinds.has('movement checkpoint') || this.changeKinds.has('visual action'));
-    const delay = sharedAction
-      ? Math.min(SHARED_ACTION_SAVE_DELAY, remaining)
-      : moving
-        ? remaining
-        : Math.min(SAVE_DELAY, remaining);
+    const movingSharedCheckpoint =
+      moving && sharedAction && this.changeKinds.has('movement checkpoint');
+    const delay = movingSharedCheckpoint
+      ? Math.min(SHARED_MOVEMENT_SAVE_DELAY, remaining)
+      : sharedAction
+        ? Math.min(SHARED_ACTION_SAVE_DELAY, remaining)
+        : moving
+          ? remaining
+          : Math.min(SAVE_DELAY, remaining);
     this.timer = setTimeout(
       () => {
         this.timer = null;

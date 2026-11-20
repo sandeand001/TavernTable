@@ -9,6 +9,7 @@ class PublishedMaps {
     this.snapshotWorld = snapshotWorld;
     this.graphics = graphics;
     this.cache = new Map();
+    this.worlds = new Map();
   }
 
   maps(scene) {
@@ -39,6 +40,29 @@ class PublishedMaps {
         })
       )
       .digest('hex');
+  }
+
+  async world(scene, library, sourceKey = this.assetSourceKey(scene)) {
+    if (this.snapshotWorld) return this.snapshotWorld;
+    const key = JSON.stringify([scene?.ruleset, sourceKey]);
+    let cached = this.worlds.get(key);
+    if (cached) {
+      this.worlds.delete(key);
+      this.worlds.set(key, cached);
+      return cached.forkQuery(scene, { ruleset: scene.ruleset, library });
+    }
+    const { default: CampaignWorld } = await import(
+      pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href
+    );
+    cached = CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+    if (this.worlds.size >= 8) this.worlds.delete(this.worlds.keys().next().value);
+    this.worlds.set(key, cached);
+    return cached;
+  }
+
+  cachedWorld(scene) {
+    if (this.snapshotWorld) return this.snapshotWorld;
+    return this.worlds.get(JSON.stringify([scene?.ruleset, this.assetSourceKey(scene)])) || null;
   }
 
   async presentation(world, mapId, assetKey, visibleMapIds = new Set([mapId]), sourceKey = '') {
@@ -106,12 +130,10 @@ class PublishedMaps {
         publicScene: emptyPlayerScene(),
       };
     }
-    const [{ default: CampaignWorld }, { playerCreatureVisibility }] = await Promise.all([
-      import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CampaignWorld.js')).href),
+    const [{ playerCreatureVisibility }] = await Promise.all([
       import(pathToFileURL(path.join(this.root, 'src', 'campaigns', 'CreatureVisibility.js')).href),
     ]);
-    const world =
-      this.snapshotWorld ?? CampaignWorld.fromScene(scene, { ruleset: scene.ruleset, library });
+    const world = await this.world(scene, library, sourceKey);
     if (placementGrant) {
       if (presentationVersion !== 1 || observerTokenId !== null)
         throw Object.assign(

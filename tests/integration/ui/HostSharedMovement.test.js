@@ -151,8 +151,10 @@ test.each(['walk', 'run'])(
       tick(0.1);
       expect(token.world.x).toBeGreaterThan(1.5);
       expect(token.world.x).toBeLessThan(2.5);
-      for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++)
+      for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++) {
         tick(1 / 120);
+        if (frame % 16 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(token.__threeMesh).toBe(model);
       expect(token.world.x).toBe(2.5);
@@ -224,8 +226,10 @@ test('multiplayer regression: queued player notices do not skip the first step o
     expect(gm.token3DAdapter._approvedMovements.get(token).route.map(({ gridX }) => gridX)).toEqual(
       [2, 3]
     );
-    for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++)
+    for (let frame = 0; frame < 600 && gm.token3DAdapter.isMovementInProgress(token); frame++) {
       tick(1 / 120);
+      if (frame % 16 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(token.world.x).toBe(3.5);
   } finally {

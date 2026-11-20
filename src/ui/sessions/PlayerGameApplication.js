@@ -6,7 +6,10 @@ import PlayerControls from './PlayerControls.js';
 import CloudCacheControls from './CloudCacheControls.js';
 import { connectCharacterServices } from '../characters/characterServices.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
-import { validatePlayerState } from '../../campaigns/PlayerPublicProtocol.js';
+import {
+  validateLivePlayerPresentation,
+  validatePlayerState,
+} from '../../campaigns/PlayerPublicProtocol.js';
 import { isCloudWorldCommandReceipt } from '../../campaigns/CloudProtocol.js';
 import AuthoritativeDiceReplay from '../../systems/dice/AuthoritativeDiceReplay.js';
 import CampaignTraversalPopup from '../campaigns/CampaignTraversalPopup.js';
@@ -86,6 +89,7 @@ export default class PlayerGameApplication {
         return this.state;
       },
       onReceipt: (receipt, context) => this.receiveReceipt(receipt, context),
+      onAccepted: (receipt, context) => this.receiveAccepted(receipt, context),
       onFailure: (error, context) => this.commandFailed(error, context),
       onChanged: (commands) => {
         if (this.destroyed || this.accessEnded) return;
@@ -149,6 +153,18 @@ export default class PlayerGameApplication {
   async start(state = this.state) {
     await this.showState(state);
     this.unsubscribe = this.connection.subscribe((event) => {
+      if (event.type === 'command-accepted') {
+        const acknowledgement = { ...event };
+        delete acknowledgement.type;
+        this.commands.acceptLive(acknowledgement);
+        return;
+      }
+      if (event.type === 'live-presentations') {
+        void this.receiveLivePresentations(event).catch((error) => {
+          if (!this.destroyed && !this.accessEnded) this.fail(error);
+        });
+        return;
+      }
       if (event.type === 'assets-status' && this.connection.kind === 'cloud-player') {
         if (this.destroyed || this.accessEnded) return;
         this.cacheControls?.updateStatus(event.status);
@@ -527,6 +543,104 @@ export default class PlayerGameApplication {
       return presentation;
     }
     return result;
+  }
+
+  async receiveAccepted(acknowledgement, { animate, command }) {
+    if (
+      this.observerId !== command.observerTokenId ||
+      this.destroyed ||
+      this.accessEnded ||
+      acknowledgement.receipt.kind !== 'move' ||
+      !acknowledgement.receipt.motion
+    )
+      return { applied: false, reason: 'superseded-command' };
+    const current = this.state.publicScene.actors.find(({ id }) => id === command.tokenId);
+    const motion = acknowledgement.receipt.motion;
+    const token = this.gameManager.placedTokens.find(({ id }) => id === command.tokenId);
+    if (
+      !current?.owned ||
+      !token ||
+      !samePresentedPlacement(current, motion.from) ||
+      !samePresentedPlacement(motion.route.at(-1), acknowledgement.receipt.placement)
+    )
+      return { applied: false, reason: 'superseded-presentation' };
+    const next = JSON.parse(JSON.stringify(this.state));
+    const actor = next.publicScene.actors.find(({ id }) => id === command.tokenId);
+    Object.assign(actor, motion.route.at(-1));
+    next.sceneRevision = Math.max(next.sceneRevision, acknowledgement.applied.sceneRevision);
+    next.revision = Math.max(next.revision, acknowledgement.applied.charactersRevision);
+    const owned = next.gameplay.ownedTokens.find(({ tokenId }) => tokenId === command.tokenId);
+    if (owned && acknowledgement.receipt.budget)
+      owned.movement = {
+        spentFeet: acknowledgement.receipt.budget.movementSpentFeet,
+        remainingFeet: acknowledgement.receipt.budget.movementRemainingFeet,
+        allowanceFeet: acknowledgement.receipt.budget.movementAllowanceFeet,
+      };
+    this.state = next;
+    this.sheets.refresh(next);
+    this.controls.update(next, { placementGrantId: this.placementGrantId });
+    if (!animate) return { applied: true };
+    this.presentationRevision = acknowledgement.applied.sceneRevision;
+    const presenting = this.gameManager.token3DAdapter.playApprovedMovement(token, {
+      tokenId: command.tokenId,
+      commandId: command.commandId,
+      ...motion,
+    });
+    this.presentationTasks.add(presenting);
+    presenting
+      .catch((error) => {
+        if (!this.destroyed && !this.accessEnded) {
+          this.controls.status.textContent = error.message;
+          GameErrors.rendering(error, {
+            component: 'PlayerGameApplication',
+            operation: 'accepted-presentation',
+          });
+        }
+      })
+      .finally(() => {
+        this.presentationTasks.delete(presenting);
+        if (this.presentationRevision === acknowledgement.applied.sceneRevision)
+          this.presentationRevision = undefined;
+      });
+    return { applied: true, presentation: presenting };
+  }
+
+  async receiveLivePresentations(event) {
+    if (
+      this.destroyed ||
+      this.accessEnded ||
+      event.campaignId !== this.state.campaign.id ||
+      !Array.isArray(event.presentations) ||
+      event.presentations.length > 256
+    )
+      throw new Error('The host returned invalid live movement presentations');
+    const maps = new Map(this.runtime.assets?.maps.map((map) => [map.id, map]) || []);
+    for (const entry of event.presentations) {
+      validateLivePlayerPresentation(entry, maps.size ? maps : null);
+      const token = this.gameManager.placedTokens.find(({ id }) => id === entry.tokenId);
+      if (!token) continue;
+      if (entry.kind === 'move-finish') {
+        this.gameManager.token3DAdapter.finishApprovedMovement?.(token, entry.placement);
+        continue;
+      }
+      const presenting = this.gameManager.token3DAdapter.playApprovedMovement(token, {
+        tokenId: entry.tokenId,
+        commandId: entry.commandId,
+        ...entry.motion,
+      });
+      this.presentationTasks.add(presenting);
+      presenting
+        .catch((error) => {
+          if (!this.destroyed && !this.accessEnded) {
+            GameErrors.rendering(error, {
+              component: 'PlayerGameApplication',
+              operation: 'live-presentation',
+              tokenId: entry.tokenId,
+            });
+          }
+        })
+        .finally(() => this.presentationTasks.delete(presenting));
+    }
   }
 
   refresh() {

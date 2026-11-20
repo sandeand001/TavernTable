@@ -266,16 +266,20 @@ function recordStablePlacement(token) {
     placement,
     ...checkpointCost(this, token, placement),
   };
+  const presentationControlled =
+    this._approvedMovements?.has(token) || this._restoringApprovedMovements?.has(token) === true;
   this._savedPlacements.set(token, checkpoint);
-  if (!this._getManualAnimationState(token)?.coverPlacement)
-    recordSharedPlacement(this, token, previous, checkpoint);
-  recordSharedActorPatch(this, token, previous, checkpoint);
-  if (
-    !previous ||
-    JSON.stringify(previous.placement) !== JSON.stringify(placement) ||
-    previous.spent !== checkpoint.spent
-  )
-    this.gameManager.sceneAutosave?.changed('movement checkpoint');
+  if (!presentationControlled) {
+    if (!this._getManualAnimationState(token)?.coverPlacement)
+      recordSharedPlacement(this, token, previous, checkpoint);
+    recordSharedActorPatch(this, token, previous, checkpoint);
+    if (
+      !previous ||
+      JSON.stringify(previous.placement) !== JSON.stringify(placement) ||
+      previous.spent !== checkpoint.spent
+    )
+      this.gameManager.sceneAutosave?.changed('movement checkpoint');
+  }
   return true;
 }
 
@@ -372,6 +376,7 @@ function recordSharedPlacement(adapter, token, previous, checkpoint) {
   )
     pending.motion.kind = 'traverse';
   if (adapter._movementStates.get(token)?.phase === 'fall-resolve') pending.motion.kind = 'fall';
+  publishStableSharedMovement(adapter, token, from, next, pending.motion.kind);
 }
 
 function recordSharedVisual(token, { actionId, animationKey, cover }) {
@@ -400,6 +405,109 @@ function recordSharedVisual(token, { actionId, animationKey, cover }) {
   while (this._sharedVisualPresentations.size > 256)
     this._sharedVisualPresentations.delete(this._sharedVisualPresentations.keys().next().value);
   autosave.changed('visual action');
+}
+
+function canPublishSharedMovement(adapter) {
+  const autosave = adapter.gameManager.sceneAutosave;
+  const store = autosave?.library.store;
+  return !!(
+    autosave?.ready &&
+    !autosave.closed &&
+    typeof store?.publishLivePresentations === 'function' &&
+    (store?.storageInfo?.kind === 'host' ||
+      store?.wantsSharedPresentations?.(autosave.library.campaign.id) === true)
+  );
+}
+
+function publishPlannedSharedMovement(token, goal, { kind = 'ground' } = {}) {
+  if (
+    !canPublishSharedMovement(this) ||
+    !goal?.world ||
+    ![goal.world.x, goal.world.y, goal.world.z].every(Number.isFinite)
+  )
+    return false;
+  const saved = this._savedPlacements?.get(token);
+  if (!saved?.placement) return false;
+  this._liveMovementJourneys ??= new Map();
+  let journey = this._liveMovementJourneys.get(token);
+  const origin = journey?.endpoint || {
+    mapId: saved.mapId ?? token.mapId ?? this.gameManager.campaignMapId ?? 'map-main',
+    ...clone(saved.placement),
+  };
+  const destination = {
+    mapId: goal.mapId ?? token.mapId ?? this.gameManager.campaignMapId ?? 'map-main',
+    gridX: goal.gridX,
+    gridY: goal.gridY,
+    facingAngle: origin.facingAngle,
+    pose: {
+      kind,
+      world: { ...goal.world },
+    },
+  };
+  const dx = destination.pose.world.x - origin.pose.world.x;
+  const dz = destination.pose.world.z - origin.pose.world.z;
+  if (Math.hypot(dx, dz) <= 1e-6) return false;
+  destination.facingAngle = facingAngleFromDirection(dx, dz);
+  if (!journey) {
+    journey = { commandId: globalThis.crypto.randomUUID(), endpoint: origin, planned: true };
+    this._liveMovementJourneys.set(token, journey);
+  }
+  const presentation = {
+    commandId: journey.commandId,
+    tokenId: token.id,
+    kind: 'move',
+    motion: {
+      kind: kind === 'flight' ? 'fly' : 'walk',
+      completed: false,
+      continuing: true,
+      from: clone(origin),
+      route: [clone(destination)],
+    },
+  };
+  journey.endpoint = clone(destination);
+  this.gameManager.sceneAutosave.publishLivePresentation(presentation);
+  return true;
+}
+
+function publishStableSharedMovement(adapter, token, from, next, kind = 'walk') {
+  if (!canPublishSharedMovement(adapter)) return false;
+  adapter._liveMovementJourneys ??= new Map();
+  let journey = adapter._liveMovementJourneys.get(token);
+  if (journey?.planned) return false;
+  if (journey && samePlacement(journey.endpoint, next)) return false;
+  if (!journey) {
+    journey = { commandId: globalThis.crypto.randomUUID(), endpoint: clone(from) };
+    adapter._liveMovementJourneys.set(token, journey);
+  }
+  const presentation = {
+    commandId: journey.commandId,
+    tokenId: token.id,
+    kind: 'move',
+    motion: {
+      kind,
+      completed: false,
+      continuing: true,
+      from: clone(journey.endpoint),
+      route: [clone(next)],
+    },
+  };
+  journey.endpoint = clone(next);
+  adapter.gameManager.sceneAutosave.publishLivePresentation(presentation);
+  return true;
+}
+
+function publishSharedMovementFinish(token) {
+  if (!canPublishSharedMovement(this)) return false;
+  const journey = this._liveMovementJourneys?.get(token);
+  if (!journey) return false;
+  this.gameManager.sceneAutosave.publishLivePresentation({
+    commandId: journey.commandId,
+    tokenId: token.id,
+    kind: 'move-finish',
+    placement: clone(journey.endpoint),
+  });
+  this._liveMovementJourneys.delete(token);
+  return true;
 }
 
 function getSharedPresentations(scene) {
@@ -765,6 +873,8 @@ export function installSavedPlacementMethods(prototype) {
     this._sharedActorPatches?.clear();
   };
   prototype.recordSharedVisual = recordSharedVisual;
+  prototype.publishPlannedSharedMovement = publishPlannedSharedMovement;
+  prototype.publishSharedMovementFinish = publishSharedMovementFinish;
   prototype.acknowledgeSharedPresentations = acknowledgeSharedPresentations;
   prototype.clearSharedPresentations = function () {
     this._sharedMovementPresentations?.clear();

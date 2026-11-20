@@ -896,12 +896,18 @@
   safe routes with native locomotion variants, without spending costs again.
   Free play permits assigned movement and refreshes its per-journey allowance;
   combat keeps active-turn restrictions. Compatible queued routes remain
-  continuous. DM movement metadata travels outside the saved scene; reloading
-  never resumes its animation. Preserve local cameras, shared-draft conflict
-  protection and physical sight; hidden waypoints and unassigned budgets stay
-  private. Asset-scope changes apply the authoritative destination rather than
-  replaying against replacement or unauthorized terrain. This is checkpoint-driven
-  replay, not frame-locked live networking.
+  continuous. DM motion has two distinct Interfaces: a bounded, participant-
+  filtered live route stream starts at the accepted segment boundary without
+  advancing canonical scene revisions, while a durable checkpoint coalesces safe
+  placements/combat state and remains the recovery authority. A route-finish
+  event closes the live animation; reloads never resume historical live motion.
+  Player commands similarly publish a compact durable acknowledgement to their
+  origin and an authorized route to visible peers before private projection
+  hydration completes. Preserve local cameras, per-actor shared-draft merging,
+  conflict protection and physical sight; hidden waypoints and unassigned
+  budgets stay private. Asset-scope changes apply the authoritative destination
+  rather than replaying against replacement or unauthorized terrain. This is
+  event-driven route interpolation, not frame-locked live networking.
 - **Live cloud visual action (M5 development verified; activation gated)**:
   bounded, canonical action/variant IDs and the visible actor's accepted placement
   travel only with contiguous live changes. Player and DM recipients reuse native

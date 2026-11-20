@@ -100,10 +100,19 @@ export class Token3DAdapter {
       const gm = this.gameManager;
       if (gm?.threeSceneManager?.addAnimationCallback && !this._frameCallback) {
         this._frameCallback = () => {
+          const activePresentation =
+            !!this._approvedMovements?.size ||
+            !!this._movementRoutes?.size ||
+            !!this.gameManager.placedTokens.some((token) => this.isMovementInProgress(token));
+          const continuingDuringViewUpdate =
+            this.gameManager.campaignViewBusy &&
+            !this.gameManager.campaignMapTransition &&
+            activePresentation;
           if (
             (this.gameManager.campaignViewBusy || this.gameManager.campaignMapTransition) &&
             !this.gameManager.campaignFallSettling &&
-            !this.gameManager.campaignTraversalAnimating
+            !this.gameManager.campaignTraversalAnimating &&
+            !continuingDuringViewUpdate
           )
             return;
           const gmRef = this.gameManager;

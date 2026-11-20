@@ -166,6 +166,8 @@ export default class PlayerInputController {
   }
 
   availableActions(token) {
+    const state = this.commands.getState();
+    if (!state.publicScene.actors.some((actor) => actor.id === token.id && actor.owned)) return [];
     return this.ownedToken(token).availableActions;
   }
 

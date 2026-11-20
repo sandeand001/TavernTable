@@ -516,6 +516,7 @@ function _beginPlannedMovementSegment(token, job) {
     movementType: job.settings.type,
   });
   if (!result?.goal) throw new Error('The reachable movement route could not be started');
+  this.publishPlannedSharedMovement?.(token, result.goal);
   return result;
 }
 
@@ -725,6 +726,7 @@ function _finishPlannedMovement(token, interrupted = false, { recordPlacement = 
     job.combat.finishMovement(ticket, cost);
   }
   if (job && !interrupted && recordPlacement) this.recordStablePlacement?.(token);
+  if (job) this.publishSharedMovementFinish?.(token);
   if (job && !job.continuing && !job.combat?.active && token.characterSheetId)
     job.combat?.completeFreeMovement(token);
 }

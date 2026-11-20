@@ -130,6 +130,85 @@ test('the DM live-notice path reconciles an accepted player move without requiri
   }
 });
 
+test('the DM starts a player movement presentation before its full shared snapshot read finishes', async () => {
+  const { store, campaign, library, gm, autosave, services, notice, close } = await fixture();
+  let releaseRead;
+  try {
+    const before = await store.readCharacters(campaign.id);
+    const next = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    const actor = next.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    actor.gridX = 2;
+    actor.pose.world.x = 2.5;
+    const destination = {
+      ...from,
+      gridX: actor.gridX,
+      pose: structuredClone(actor.pose),
+    };
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(next, { ruleset: library.ruleset, library }),
+    });
+    const canonical = await store.readCharacters(campaign.id);
+    const originalRead = services.workspace.store.readCharacters;
+    services.workspace.store.readCharacters = () =>
+      new Promise((resolve) => {
+        releaseRead = () => resolve(canonical);
+      });
+    const play = jest
+      .spyOn(gm.token3DAdapter, 'playApprovedMovement')
+      .mockResolvedValue({ completed: true });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player-session',
+      kind: 'playerCommand',
+      version: 1,
+      sceneRevision: canonical.sceneRevision,
+      charactersRevision: canonical.revision,
+      hasPresentations: true,
+      presentations: [
+        {
+          commandId: 'player-live-motion-1',
+          tokenId: actor.id,
+          kind: 'move',
+          motion: {
+            kind: 'walk',
+            completed: true,
+            from,
+            route: [destination],
+          },
+          sceneRevision: canonical.sceneRevision,
+          charactersRevision: canonical.revision,
+        },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(play.mock.calls[0][1]).toMatchObject({
+      tokenId: actor.id,
+      from,
+      route: [destination],
+    });
+    releaseRead();
+    services.workspace.store.readCharacters = originalRead;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    play.mockRestore();
+    expect(autosave.sharedConflict).toBeFalsy();
+  } finally {
+    releaseRead?.();
+    close();
+  }
+});
+
 test('a local DM movement rebases over a simultaneous player move on a different actor', async () => {
   const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
     extraActor: true,
@@ -172,6 +251,63 @@ test('a local DM movement rebases over a simultaneous player move on a different
       library,
     });
     expect(saved.creatures.map(({ pose }) => pose.world.x)).toEqual([2.5, 4.5]);
+  } finally {
+    close();
+  }
+});
+
+test('a local movement-cost patch merges independent combat state from a player actor', async () => {
+  const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
+    extraActor: true,
+  });
+  try {
+    const local = gm.placedTokens[1];
+    const combat = gm.characterServices.combat;
+    combat._state(local).movementSpent = 5;
+    combat._publish();
+    local.gridX = 4;
+    local.world = { x: 4.5, y: 0, z: 1.5 };
+    gm.token3DAdapter.recordStablePlacement(local);
+    const before = await store.readCharacters(campaign.id);
+    const canonical = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    canonical.creatures[0].gridX = 2;
+    canonical.creatures[0].pose.world.x = 2.5;
+    const localState = combat.snapshot().states.find(({ tokenId }) => tokenId === local.id);
+    canonical.combat.states = [
+      {
+        ...JSON.parse(JSON.stringify(localState)),
+        tokenId: canonical.creatures[0].id,
+        characterId: canonical.creatures[0].characterId,
+        movementSpent: 10,
+      },
+    ];
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(canonical, { ruleset: library.ruleset, library }),
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player',
+      kind: 'playerCommand',
+    });
+    for (let check = 0; check < 100 && !parent.textContent.includes('up to date'); check++)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(parent.textContent).not.toMatch(/conflict|paused|reopen/i);
+    await autosave.flush();
+    const saved = decodeScene((await store.readScene(campaign.id)).scene, {
+      ruleset: library.ruleset,
+      library,
+    });
+    expect(saved.creatures.map(({ pose }) => pose.world.x)).toEqual([2.5, 4.5]);
+    expect(saved.combat.states).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tokenId: 'token-1', movementSpent: 10 }),
+        expect.objectContaining({ tokenId: 'token-2', movementSpent: 5 }),
+      ])
+    );
   } finally {
     close();
   }

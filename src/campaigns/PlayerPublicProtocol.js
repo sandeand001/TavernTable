@@ -227,6 +227,55 @@ export function validatePlayerMotion(motion, maps = null) {
   return motion;
 }
 
+export function validateLivePlayerMotion(motion, maps = null) {
+  if (
+    !only(motion, ['kind', 'completed', 'from', 'route', 'continuing']) ||
+    !['walk', 'fly', 'fall', 'traverse'].includes(motion.kind) ||
+    !(
+      (motion.completed === false && motion.continuing === true) ||
+      (motion.completed === true && motion.continuing !== true)
+    ) ||
+    !Array.isArray(motion.route) ||
+    !motion.route.length ||
+    motion.route.length > 10000
+  )
+    invalid('The public live motion is invalid');
+  validatePlayerPlacement(motion.from, maps);
+  for (const step of motion.route) validatePlayerPlacement(step, maps);
+  return motion;
+}
+
+export function validateLivePlayerPresentation(entry, maps = null) {
+  if (
+    !object(entry) ||
+    Object.keys(entry).some(
+      (key) => !['commandId', 'tokenId', 'kind', 'motion', 'placement'].includes(key)
+    ) ||
+    typeof entry.commandId !== 'string' ||
+    !/^[a-zA-Z0-9_-]{8,100}$/.test(entry.commandId) ||
+    !id(entry.tokenId)
+  )
+    invalid('The public live presentation is invalid');
+  if (entry.kind === 'move') {
+    if (
+      Object.hasOwn(entry, 'placement') ||
+      !object(entry.motion) ||
+      Object.keys(entry).length !== 4
+    )
+      invalid('The public live movement presentation is invalid');
+    validateLivePlayerMotion(entry.motion, maps);
+  } else if (entry.kind === 'move-finish') {
+    if (
+      Object.hasOwn(entry, 'motion') ||
+      Object.keys(entry).length !== 4 ||
+      !object(entry.placement)
+    )
+      invalid('The public live movement finish is invalid');
+    validatePlayerPlacement(entry.placement, maps);
+  } else invalid('The public live presentation kind is invalid');
+  return entry;
+}
+
 export function scopePlayerReceipt(receipt, state) {
   const maps = new Set(state.maps.map(({ id }) => id));
   const placements = [
@@ -244,26 +293,7 @@ export function scopePlayerReceipt(receipt, state) {
   return result;
 }
 
-export function validatePlayerCommandResult(result, options = {}) {
-  if (
-    !only(result, ['version', 'commandId', 'outcome', 'applied', 'receipt', 'state']) ||
-    result.version !== 1 ||
-    typeof result.commandId !== 'string' ||
-    !/^[a-zA-Z0-9_-]{8,100}$/.test(result.commandId) ||
-    !['applied', 'duplicate'].includes(result.outcome) ||
-    !only(result.applied, ['sceneRevision', 'charactersRevision']) ||
-    !revision(result.applied.sceneRevision) ||
-    !revision(result.applied.charactersRevision)
-  )
-    invalid('The public command result is invalid');
-  validatePlayerState(result.state, options);
-  if (
-    result.state.sceneRevision < result.applied.sceneRevision ||
-    result.state.revision < result.applied.charactersRevision ||
-    (result.outcome === 'duplicate' && result.state.publicScene.updates.length)
-  )
-    invalid('The public command result contains stale or replayed state');
-  const receipt = result.receipt;
+function validatePlayerCommandReceipt(receipt, maps = null, commandId = null) {
   if (
     !only(receipt, [
       'kind',
@@ -292,15 +322,13 @@ export function validatePlayerCommandResult(result, options = {}) {
     !id(receipt.tokenId)
   )
     invalid('The public command receipt contains unsupported or private data');
-  const assets = result.state.publicScene.assets || options.cachedAssets;
-  const maps = assets ? new Map(assets.maps.map((map) => [map.id, map])) : null;
   if (receipt.budget) validateBudget(receipt.budget);
   if (receipt.placement) validatePlayerPlacement(receipt.placement, maps);
   if (receipt.from !== undefined) {
     if (receipt.kind !== 'emote' || receipt.actionId !== 'action-cover') invalid();
     validatePlayerVisual(
       {
-        commandId: result.commandId,
+        commandId,
         tokenId: receipt.tokenId,
         kind: 'emote',
         actionId: receipt.actionId,
@@ -321,6 +349,62 @@ export function validatePlayerCommandResult(result, options = {}) {
     )
       invalid('The approved route, destination, cost and motion do not agree');
   }
+  return receipt;
+}
+
+function playerCommandResultHeader(result) {
+  if (
+    !object(result) ||
+    result.version !== 1 ||
+    typeof result.commandId !== 'string' ||
+    !/^[a-zA-Z0-9_-]{8,100}$/.test(result.commandId) ||
+    !['applied', 'duplicate'].includes(result.outcome) ||
+    !only(result.applied, ['sceneRevision', 'charactersRevision']) ||
+    !revision(result.applied.sceneRevision) ||
+    !revision(result.applied.charactersRevision)
+  )
+    invalid('The public command result is invalid');
+}
+
+export function validatePlayerCommandAcknowledgement(result, options = {}) {
+  playerCommandResultHeader(result);
+  if (
+    !only(result, [
+      'version',
+      'campaignId',
+      'actorId',
+      'commandId',
+      'outcome',
+      'applied',
+      'receipt',
+    ]) ||
+    result.outcome !== 'applied' ||
+    !id(result.campaignId) ||
+    !id(result.actorId)
+  )
+    invalid('The public command acknowledgement is invalid');
+  const maps = options.cachedAssets
+    ? new Map(options.cachedAssets.maps.map((map) => [map.id, map]))
+    : null;
+  validatePlayerCommandReceipt(result.receipt, maps, result.commandId);
+  return result;
+}
+
+export function validatePlayerCommandResult(result, options = {}) {
+  playerCommandResultHeader(result);
+  if (!only(result, ['version', 'commandId', 'outcome', 'applied', 'receipt', 'state']))
+    invalid('The public command result is invalid');
+  validatePlayerState(result.state, options);
+  if (
+    result.state.sceneRevision < result.applied.sceneRevision ||
+    result.state.revision < result.applied.charactersRevision ||
+    (result.outcome === 'duplicate' && result.state.publicScene.updates.length)
+  )
+    invalid('The public command result contains stale or replayed state');
+  const receipt = result.receipt;
+  const assets = result.state.publicScene.assets || options.cachedAssets;
+  const maps = assets ? new Map(assets.maps.map((map) => [map.id, map])) : null;
+  validatePlayerCommandReceipt(receipt, maps, result.commandId);
   return result;
 }
 
