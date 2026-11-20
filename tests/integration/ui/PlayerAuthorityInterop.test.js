@@ -328,6 +328,267 @@ test('same-journey live DM chunks are coalesced before host authority and fanout
   }
 }, 30000);
 
+test('live DM continuations accept a durable checkpoint inside the streamed segment', async () => {
+  const table = await createPlayerAuthorityTable({ liveUpdates: true });
+  try {
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const placement = (x) => ({
+      mapId: actor.mapId ?? 'map-main',
+      gridX: x,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: {
+        kind: actor.pose.kind,
+        world: { ...actor.pose.world, x: x + 0.5 },
+      },
+    });
+    const from = placement(actor.gridX);
+    const first = placement(actor.gridX + 1);
+    const second = placement(actor.gridX + 2);
+    const third = placement(actor.gridX + 3);
+    await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [
+          {
+            commandId: 'dm-live-checkpoint-prefix',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from,
+              route: [second],
+            },
+          },
+        ],
+      },
+    ]);
+    Object.assign(actor, {
+      gridX: first.gridX,
+      gridY: first.gridY,
+      facingAngle: first.facingAngle,
+      pose: structuredClone(first.pose),
+    });
+    const checkpoint = await table.dm.connection.call('commitScene', [
+      table.campaign.id,
+      {
+        ruleset: state.campaign.ruleset,
+        revision: state.sceneRevision,
+        charactersRevision: state.revision,
+        scene: JSON.stringify(scene),
+      },
+    ]);
+
+    const continued = await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: checkpoint.revision,
+        charactersRevision: state.revision,
+        presentations: [
+          {
+            commandId: 'dm-live-checkpoint-prefix',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from: second,
+              route: [third],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(continued.sequence).toBe(2);
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
+test('live DM continuations reject a canonical actor moved outside the streamed segment', async () => {
+  const table = await createPlayerAuthorityTable({ liveUpdates: true });
+  try {
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    const endpoint = {
+      ...from,
+      gridX: from.gridX + 2,
+      pose: {
+        ...structuredClone(from.pose),
+        world: { ...from.pose.world, x: from.pose.world.x + 2 },
+      },
+    };
+    await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [
+          {
+            commandId: 'dm-live-off-route-conflict',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from,
+              route: [endpoint],
+            },
+          },
+        ],
+      },
+    ]);
+    Object.assign(actor, {
+      gridX: from.gridX + 1,
+      gridY: from.gridY + 1,
+      facingAngle: endpoint.facingAngle,
+      pose: {
+        ...structuredClone(from.pose),
+        world: { x: from.pose.world.x + 1, y: from.pose.world.y, z: from.pose.world.z + 1 },
+      },
+    });
+    const checkpoint = await table.dm.connection.call('commitScene', [
+      table.campaign.id,
+      {
+        ruleset: state.campaign.ruleset,
+        revision: state.sceneRevision,
+        charactersRevision: state.revision,
+        scene: JSON.stringify(scene),
+      },
+    ]);
+
+    await expect(
+      table.dm.connection.call('publishLivePresentations', [
+        table.campaign.id,
+        {
+          sceneRevision: checkpoint.revision,
+          charactersRevision: state.revision,
+          presentations: [
+            {
+              commandId: 'dm-live-off-route-conflict',
+              tokenId: actor.id,
+              kind: 'move',
+              motion: {
+                kind: 'walk',
+                completed: false,
+                continuing: true,
+                from: endpoint,
+                route: [
+                  {
+                    ...endpoint,
+                    gridX: endpoint.gridX + 1,
+                    pose: {
+                      ...structuredClone(endpoint.pose),
+                      world: { ...endpoint.pose.world, x: endpoint.pose.world.x + 1 },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+    ).rejects.toMatchObject({ status: 409, code: 'live-actor-conflict' });
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
+test('live DM continuations tolerate packet revisions older than the tracked endpoint checkpoint', async () => {
+  const table = await createPlayerAuthorityTable({ liveUpdates: true });
+  try {
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      pose: {
+        ...structuredClone(from.pose),
+        world: { ...from.pose.world, x: from.pose.world.x + 1 },
+      },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: {
+        ...structuredClone(first.pose),
+        world: { ...first.pose.world, x: first.pose.world.x + 1 },
+      },
+    };
+    const presentation = (origin, destination) => ({
+      commandId: 'dm-live-stale-revisions',
+      tokenId: actor.id,
+      kind: 'move',
+      motion: {
+        kind: 'walk',
+        completed: false,
+        continuing: true,
+        from: origin,
+        route: [destination],
+      },
+    });
+    await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [presentation(from, first)],
+      },
+    ]);
+    Object.assign(actor, {
+      gridX: first.gridX,
+      gridY: first.gridY,
+      facingAngle: first.facingAngle,
+      pose: structuredClone(first.pose),
+    });
+    await table.dm.connection.call('commitScene', [
+      table.campaign.id,
+      {
+        ruleset: state.campaign.ruleset,
+        revision: state.sceneRevision,
+        charactersRevision: state.revision,
+        scene: JSON.stringify(scene),
+      },
+    ]);
+
+    const continued = await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [presentation(first, second)],
+      },
+    ]);
+    expect(continued.sequence).toBe(2);
+  } finally {
+    await table.close();
+  }
+}, 30000);
+
 test('a committed player route reaches a visible peer before full projection responses complete', async () => {
   const table = await createPlayerAuthorityTable({
     activeTurn: false,

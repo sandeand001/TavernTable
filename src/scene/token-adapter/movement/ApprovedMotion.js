@@ -10,6 +10,7 @@ import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const CONTINUATION_GRACE_SECONDS = 0.5;
+const LIVE_CONTINUATION_TIMEOUT_SECONDS = 10;
 const MAX_PRESENTATION_FINGERPRINTS = 512;
 
 function presentationFingerprint(motion) {
@@ -345,7 +346,10 @@ function advanceApprovedMovement(delta) {
         throw new Error('The approved moving creature is no longer visible');
       if (job.waitingForContinuation !== null) {
         job.waitingForContinuation += delta;
-        if (!job.holdUntilFinish && job.waitingForContinuation >= CONTINUATION_GRACE_SECONDS)
+        const timeout = job.continuing
+          ? LIVE_CONTINUATION_TIMEOUT_SECONDS
+          : CONTINUATION_GRACE_SECONDS;
+        if (!job.holdUntilFinish && job.waitingForContinuation >= timeout)
           void finishMovement(this, token, job).catch((error) => {
             job.reject(error);
             GameErrors.rendering(error, {

@@ -904,7 +904,11 @@
   Exact command/actor/origin/route presentations are idempotent, and contiguous
   same-journey checkpoints coalesce under one presentation identity that is
   retained by the durable checkpoint. Late canonical echoes therefore cannot
-  replay or rewind an already-presented live route.
+  replay or rewind an already-presented live route. Durable saves may catch any
+  accepted waypoint or the interior of its straight live segment without
+  conflicting with a farther provisional endpoint. Provisional render jobs
+  retain continuity across bounded transport gaps, and a player refresh promise
+  drains revisions queued during hydration before reporting convergence.
   Player commands similarly publish a compact durable acknowledgement to their
   origin and an authorized route to visible peers before private projection
   hydration completes. Preserve local cameras, per-actor shared-draft merging,

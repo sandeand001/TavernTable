@@ -342,6 +342,57 @@ test('streamed tile checkpoints wait in idle instead of running in place', async
   }
 });
 
+test('a continued live route survives a one-second transport gap', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: { kind: 'ground', world: { ...first.pose.world, x: first.pose.world.x + 1 } },
+    };
+    const finished = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000110',
+      from,
+      route: [first],
+      continuing: true,
+    });
+    for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    for (let frame = 0; frame < 600 && f.token.world.x < first.pose.world.x - 1e-6; frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    f.adapter.advanceApprovedMovement(1);
+    expect(f.adapter.isMovementInProgress(f.token)).toBe(true);
+    const continued = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000111',
+      from: first,
+      route: [second],
+    });
+    for (let frame = 0; frame < 600 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await Promise.all([finished, continued]);
+    expect(f.token.world).toEqual(second.pose.world);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
 test('a later authoritative facing reconciles onto an in-flight movement endpoint', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
   try {

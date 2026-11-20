@@ -15,6 +15,7 @@ const reject = (message) => Object.assign(new Error(message), { status: 403 });
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const presentationError = (message) =>
   Object.assign(new Error(message), { status: 422, code: 'invalid-scene-presentation' });
+const MAX_LIVE_CHECKPOINTS = 512;
 
 class PlayerCampaigns {
   constructor({ root, store, authority, resources }) {
@@ -257,30 +258,93 @@ class PlayerCampaigns {
         scene.combat?.states.find(({ tokenId }) => tokenId === entry.tokenId) || null;
       const tracked = live.actors.get(entry.tokenId);
       if (tracked) {
-        const endpointActor = {
-          ...tracked.baseActor,
-          gridX: tracked.endpoint.gridX,
-          gridY: tracked.endpoint.gridY,
-          facingAngle: tracked.endpoint.facingAngle,
-          pose: copy(tracked.endpoint.pose),
-          ...(scene.version === 3 ? { mapId: tracked.endpoint.mapId } : {}),
+        const actorIdentity = (value) => {
+          const identity = { ...value };
+          delete identity.mapId;
+          delete identity.gridX;
+          delete identity.gridY;
+          delete identity.facingAngle;
+          delete identity.pose;
+          return identity;
         };
-        const matchesBase =
-          isDeepStrictEqual(actor, tracked.baseActor) &&
+        const matchesActor =
+          isDeepStrictEqual(actorIdentity(actor), actorIdentity(tracked.baseActor)) &&
           isDeepStrictEqual(combatState, tracked.baseCombat);
-        const matchesEndpoint =
-          isDeepStrictEqual(actor, endpointActor) &&
-          packet.sceneRevision === state.sceneRevision &&
-          packet.charactersRevision === state.revision;
-        if (!matchesBase && !matchesEndpoint)
+        const poseShape = (pose) => {
+          const shape = { ...pose };
+          delete shape.world;
+          return shape;
+        };
+        let checkpointIndex = matchesActor
+          ? tracked.checkpoints.findLastIndex(
+              (placement) =>
+                same(canonical, placement) && isDeepStrictEqual(canonical.pose, placement.pose)
+            )
+          : -1;
+        let segmentIndex = -1;
+        if (checkpointIndex < 0 && matchesActor) {
+          segmentIndex = tracked.checkpoints.findLastIndex((from, index) => {
+            const to = tracked.checkpoints[index + 1];
+            if (
+              !to ||
+              canonical.mapId !== from.mapId ||
+              canonical.mapId !== to.mapId ||
+              canonical.pose.kind !== from.pose.kind ||
+              canonical.pose.kind !== to.pose.kind ||
+              from.pose.kind !== to.pose.kind
+            )
+              return false;
+            const fromPose = poseShape(from.pose);
+            const toPose = poseShape(to.pose);
+            const currentPose = poseShape(canonical.pose);
+            if (
+              !isDeepStrictEqual(fromPose, toPose) ||
+              !isDeepStrictEqual(currentPose, fromPose) ||
+              Math.abs(canonical.facingAngle - to.facingAngle) >= 1e-6 ||
+              canonical.gridX < Math.min(from.gridX, to.gridX) ||
+              canonical.gridX > Math.max(from.gridX, to.gridX) ||
+              canonical.gridY < Math.min(from.gridY, to.gridY) ||
+              canonical.gridY > Math.max(from.gridY, to.gridY)
+            )
+              return false;
+            const start = from.pose.world;
+            const end = to.pose.world;
+            const point = canonical.pose.world;
+            const delta = {
+              x: end.x - start.x,
+              y: end.y - start.y,
+              z: end.z - start.z,
+            };
+            const lengthSquared = delta.x ** 2 + delta.y ** 2 + delta.z ** 2;
+            if (!(lengthSquared > 1e-12)) return false;
+            const progress =
+              ((point.x - start.x) * delta.x +
+                (point.y - start.y) * delta.y +
+                (point.z - start.z) * delta.z) /
+              lengthSquared;
+            if (!(progress > 1e-6 && progress < 1 - 1e-6)) return false;
+            return ['x', 'y', 'z'].every(
+              (axis) => Math.abs(point[axis] - (start[axis] + delta[axis] * progress)) < 1e-5
+            );
+          });
+          if (segmentIndex >= 0) checkpointIndex = segmentIndex;
+        }
+        if (checkpointIndex < 0)
           throw Object.assign(new Error('Refresh the live actor before continuing movement'), {
             status: 409,
             code: 'live-actor-conflict',
           });
+        const matchesEndpoint =
+          segmentIndex < 0 && checkpointIndex === tracked.checkpoints.length - 1;
+        tracked.baseActor = copy(actor);
+        tracked.baseCombat = copy(combatState);
+        tracked.base = canonical;
+        tracked.checkpoints =
+          segmentIndex >= 0
+            ? [copy(canonical), ...tracked.checkpoints.slice(segmentIndex + 1)]
+            : tracked.checkpoints.slice(checkpointIndex);
         if (matchesEndpoint) {
-          tracked.baseActor = copy(actor);
-          tracked.baseCombat = copy(combatState);
-          tracked.base = canonical;
+          tracked.checkpoints = [copy(canonical)];
         }
       }
       const expected = tracked?.endpoint || canonical;
@@ -290,12 +354,18 @@ class PlayerCampaigns {
             status: 409,
             code: 'live-actor-conflict',
           });
-        live.actors.set(entry.tokenId, {
+        const next = {
           base: tracked?.base || canonical,
           baseActor: tracked?.baseActor || copy(actor),
           baseCombat: tracked ? copy(tracked.baseCombat) : copy(combatState),
           endpoint: entry.motion.route.at(-1),
-        });
+          checkpoints: tracked?.checkpoints.length
+            ? [...tracked.checkpoints, ...entry.motion.route.map(copy)]
+            : [copy(canonical), ...entry.motion.route.map(copy)],
+        };
+        if (next.checkpoints.length > MAX_LIVE_CHECKPOINTS)
+          next.checkpoints.splice(0, next.checkpoints.length - MAX_LIVE_CHECKPOINTS);
+        live.actors.set(entry.tokenId, next);
       } else {
         if (!tracked || !same(entry.placement, tracked.endpoint))
           throw presentationError('Live movement must finish at its last published pose');

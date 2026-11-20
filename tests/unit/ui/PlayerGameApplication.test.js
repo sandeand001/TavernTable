@@ -860,6 +860,41 @@ test('bursts of authorized revision notices coalesce into one read and one fresh
   await app.destroy();
 });
 
+test('a refresh promise waits for a revision queued during its final allowed follow-up', async () => {
+  const { app, state, gameManager } = fixture();
+  await app.start();
+  const reads = [];
+  app.connection.call = () => new Promise((resolve) => reads.push(resolve));
+  const refreshing = app.refresh();
+  let settled = false;
+  void refreshing.finally(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  void app.refresh();
+  reads[0](state);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  void app.refresh();
+  const intermediate = JSON.parse(JSON.stringify(state));
+  intermediate.sceneRevision++;
+  intermediate.publicScene.assets = null;
+  intermediate.publicScene.actors[0].gridX = 2;
+  intermediate.publicScene.actors[0].pose.world.x = 2.5;
+  reads[1](intermediate);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(settled).toBe(false);
+  expect(reads).toHaveLength(3);
+  const fresh = JSON.parse(JSON.stringify(intermediate));
+  fresh.sceneRevision++;
+  fresh.publicScene.actors[0].gridX = 3;
+  fresh.publicScene.actors[0].pose.world.x = 3.5;
+  reads[2](fresh);
+  await refreshing;
+  expect(gameManager.placedTokens[0].world.x).toBe(3.5);
+  expect(app.state.sceneRevision).toBe(fresh.sceneRevision);
+  await app.destroy();
+});
+
 test('a live peer snapshot refreshes while the local player command is still pending', async () => {
   let notify;
   const { app, state } = fixture({

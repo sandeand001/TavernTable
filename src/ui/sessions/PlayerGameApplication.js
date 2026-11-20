@@ -661,7 +661,7 @@ export default class PlayerGameApplication {
 
   async _refreshQueued() {
     let result;
-    for (let read = 0; read < 2 && this.refreshQueued; read++) {
+    while (this.refreshQueued && !this.destroyed && !this.accessEnded) {
       this.refreshQueued = false;
       const version = this.selectionVersion;
       if (!this.commands.submitting) await this.commands.idle;

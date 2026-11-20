@@ -377,6 +377,28 @@ Thus a final checkpoint cannot restart a route that already reached its live
 endpoint. The focused live movement/authority/host/cloud matrix passed 195/195
 tests; the native `M5-06` ten-seat acceptance remains open.
 
+**Follow-up 2026-11-20 (live checkpoint convergence and CI stability):** a
+durable DM checkpoint may land on an announced waypoint or partway through a
+single longer live segment, while the presentation stream is already farther
+ahead. The host now validates canonical actor state against bounded accepted
+waypoints and the linear interior of each accepted segment. It no longer couples
+that validation to stale global scene/character revisions, but it still rejects
+off-route or same-actor state changes. Provisional live locomotion retains its
+continuation job through a bounded ten-second transport gap instead of closing
+after 500 ms, with `move-finish` remaining the normal terminal notice.
+
+The repeated GitHub CI failure was also a client convergence race: a player
+`refresh()` promise could resolve after its second read while another revision
+queued during that read was deferred to a timer. The refresh drain now keeps the
+same promise pending until every queued revision has been hydrated. Regressions
+cover a durable checkpoint inside a live segment, a checkpoint lagging the
+streamed endpoint, stale global revisions, a one-second presentation gap and a
+third refresh queued during the final follow-up. The focused multiplayer matrix
+passed 135/135 tests, including five repeated native DM/player convergence runs;
+the complete GitHub integration command passed 44/44 suites and 866/866 tests,
+and formatting/lint remained clean. `M5-06` remains open pending owner native
+acceptance and a green post-change GitHub CI run.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted
