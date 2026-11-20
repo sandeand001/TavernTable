@@ -245,6 +245,89 @@ test('live DM motion reaches an authorized player before the durable scene check
   }
 }, 30000);
 
+test('same-journey live DM chunks are coalesced before host authority and fanout', async () => {
+  const table = await createPlayerAuthorityTable({ liveUpdates: true });
+  const received = [];
+  const unsubscribe = table.players[0].connection.subscribe((event) => {
+    if (event.type === 'live-presentations') received.push(event);
+  });
+  try {
+    await table.players[0].connection.call('playerState', [
+      { presentationVersion: 1, observerTokenId: table.players[0].tokenId },
+    ]);
+    const state = await table.dm.connection.call('readCharacters', [table.campaign.id]);
+    const scene = JSON.parse(state.scene);
+    const actor = scene.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      pose: {
+        ...structuredClone(from.pose),
+        world: { ...from.pose.world, x: from.pose.world.x + 1 },
+      },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: {
+        ...structuredClone(first.pose),
+        world: { ...first.pose.world, x: first.pose.world.x + 1 },
+      },
+    };
+    const published = await table.dm.connection.call('publishLivePresentations', [
+      table.campaign.id,
+      {
+        sceneRevision: state.sceneRevision,
+        charactersRevision: state.revision,
+        presentations: [
+          {
+            commandId: 'dm-live-coalesced-1',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from,
+              route: [first],
+            },
+          },
+          {
+            commandId: 'dm-live-coalesced-1',
+            tokenId: actor.id,
+            kind: 'move',
+            motion: {
+              kind: 'walk',
+              completed: false,
+              continuing: true,
+              from: first,
+              route: [second],
+            },
+          },
+        ],
+      },
+    ]);
+    expect(published.presentations).toHaveLength(1);
+    expect(published.presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([2, 3]);
+    await waitForCondition(
+      () => received.length === 1,
+      'The coalesced DM route did not reach the player'
+    );
+    expect(received[0].presentations).toHaveLength(1);
+    expect(received[0].presentations[0].motion.route).toHaveLength(2);
+  } finally {
+    unsubscribe();
+    await table.close();
+  }
+}, 30000);
+
 test('a committed player route reaches a visible peer before full projection responses complete', async () => {
   const table = await createPlayerAuthorityTable({
     activeTurn: false,

@@ -201,6 +201,49 @@ test('a continued approved route appends while the previous checkpoint is still 
   }
 });
 
+test('an exact approved route duplicate is idempotent before and after presentation', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const target = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const motion = {
+      commandId: '00000000-0000-4000-8000-000000000109',
+      from,
+      route: [target],
+    };
+    const original = f.adapter.playApprovedMovement(f.token, motion);
+    const duplicate = f.adapter.playApprovedMovement(f.token, motion);
+    await expect(duplicate).resolves.toMatchObject({
+      completed: false,
+      reason: 'duplicate-presentation',
+    });
+    for (let frame = 0; frame < 300 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await original;
+    await expect(f.adapter.playApprovedMovement(f.token, motion)).resolves.toMatchObject({
+      completed: false,
+      reason: 'duplicate-presentation',
+    });
+    expect(f.token.world).toEqual(target.pose.world);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
 test('consecutive approved routes queue before the first native model is ready', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
   try {

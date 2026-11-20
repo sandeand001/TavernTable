@@ -361,6 +361,22 @@ formatting, ESLint, style lint and layering. `M5-06` remains open until the
 owner accepts the native one-DM/nine-player overlap, convergence, visual
 continuity and 200 ms RTT acceptance results.
 
+**Follow-up 2026-11-20 (live/canonical duplicate presentation):** native
+player movement exposed two consequences of the new two-channel transport:
+the DM could receive a completed player route once as a live notice and again
+as its canonical SSE packet, while several same-journey DM checkpoints could
+enter one live batch under one command ID. The first produced
+“Finish the existing approved movement presentation first”; the second returned
+422 as an invalid live batch. Presentation ingestion is now idempotent by the
+command/actor/origin/route fingerprint, so an exact late replay settles as a
+duplicate rather than appending or rewinding. Player commands fan compact
+routes to visible peers but leave the DM on the canonical presentation path.
+Same-journey live chunks coalesce into one contiguous route before authority and
+fanout, and the resulting durable presentation retains the same journey ID.
+Thus a final checkpoint cannot restart a route that already reached its live
+endpoint. The focused live movement/authority/host/cloud matrix passed 195/195
+tests; the native `M5-06` ten-seat acceptance remains open.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

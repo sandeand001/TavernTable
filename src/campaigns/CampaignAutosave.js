@@ -15,6 +15,7 @@ import { notifyCreatureNames } from '../entities/creatures/CreatureNames.js';
 import { GameErrors } from '../utils/error/ErrorHandler.js';
 import CampaignWorld from './CampaignWorld.js';
 import { applyBuildingScene } from './CampaignBuildingEditor.js';
+import { coalesceLiveMovementPresentations } from './LiveMovementPresentations.js';
 
 const pause = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
 const ACTION_WAIT = 'Waiting for the current action to finish...';
@@ -266,7 +267,7 @@ export default class CampaignAutosave {
   }
 
   async _publishLivePresentations() {
-    const presentations = this.livePresentations.splice(0);
+    const presentations = coalesceLiveMovementPresentations(this.livePresentations.splice(0));
     if (!presentations.length) return;
     try {
       await this.library.store.publishLivePresentations(this.library.campaign.id, {

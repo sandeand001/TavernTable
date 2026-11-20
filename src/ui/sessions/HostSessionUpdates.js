@@ -33,7 +33,12 @@ export function attachHostSessionUpdates({
   let timer = null;
   let lastKind = null;
   let presentations = [];
+  const presented = new Set();
   let initialCheckpointReady = services.autosave.ready;
+  const presentationKey = (entry) =>
+    entry?.kind === 'move' && typeof entry.commandId === 'string'
+      ? JSON.stringify([entry.commandId, entry.tokenId, entry.motion?.from, entry.motion?.route])
+      : null;
   const conflictingWork = () =>
     services.autosave?.dirty ||
     services.autosave?.writing ||
@@ -60,6 +65,12 @@ export function attachHostSessionUpdates({
         return;
       }
       if (entry.kind !== 'move') return;
+      const key = presentationKey(entry);
+      if (key && presented.has(key)) return;
+      if (key) {
+        if (presented.size >= 512) presented.delete(presented.values().next().value);
+        presented.add(key);
+      }
       void gameManager.token3DAdapter
         .playApprovedMovement(token, {
           tokenId: entry.tokenId,
@@ -68,13 +79,14 @@ export function attachHostSessionUpdates({
           continuing: entry.motion.completed === false ? entry.motion.continuing : true,
           holdUntilFinish: entry.motion.completed === true,
         })
-        .catch((error) =>
+        .catch((error) => {
+          if (key) presented.delete(key);
           GameErrors.rendering(error, {
             component: 'HostSessionUpdates',
             operation: live ? 'livePresentation' : 'acceptedPresentation',
             tokenId: entry.tokenId,
-          })
-        );
+          });
+        });
     } catch (error) {
       GameErrors.gameState(error, {
         component: 'HostSessionUpdates',
@@ -337,6 +349,7 @@ export function attachHostSessionUpdates({
     if (local && event.reconcile !== true) return;
     if (event.reconcile === true) {
       presentations = [];
+      presented.clear();
       for (const token of gameManager.placedTokens)
         gameManager.token3DAdapter.cancelApprovedMovement(token);
     }

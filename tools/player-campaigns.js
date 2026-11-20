@@ -210,9 +210,7 @@ class PlayerCampaigns {
       packet.charactersRevision < 0 ||
       !Array.isArray(packet.presentations) ||
       !packet.presentations.length ||
-      packet.presentations.length > 256 ||
-      new Set(packet.presentations.map((entry) => entry?.commandId)).size !==
-        packet.presentations.length
+      packet.presentations.length > 256
     )
       throw presentationError('Choose valid bounded live movement presentations');
     const state = await this.store.readCharacters(campaignId);
@@ -224,16 +222,23 @@ class PlayerCampaigns {
     const scene = state.scene ? JSON.parse(state.scene) : null;
     if (!scene || !Array.isArray(scene.creatures))
       throw presentationError('Save the campaign board before publishing live movement');
-    const [{ validateLivePlayerPresentation }, { samePlacement, sceneActorPlacement }] =
-      await Promise.all([
-        import(
-          pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
-        ),
-        import(
-          pathToFileURL(path.join(this.root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js'))
-            .href
-        ),
-      ]);
+    const [
+      { validateLivePlayerPresentation },
+      { samePlacement, sceneActorPlacement },
+      { coalesceLiveMovementPresentations },
+    ] = await Promise.all([
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'campaigns', 'PlayerPublicProtocol.js')).href
+      ),
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'scene', 'token-adapter', 'SavedPlacements.js'))
+          .href
+      ),
+      import(
+        pathToFileURL(path.join(this.root, 'src', 'campaigns', 'LiveMovementPresentations.js')).href
+      ),
+    ]);
+    const presentations = coalesceLiveMovementPresentations(packet.presentations);
     const same = (left, right) =>
       samePlacement(left, right) && Math.abs(left?.facingAngle - right?.facingAngle) < 1e-6;
     let live = this.liveCampaigns.get(campaignId);
@@ -241,7 +246,7 @@ class PlayerCampaigns {
       live = { sequence: 0, actors: new Map() };
       this.liveCampaigns.set(campaignId, live);
     }
-    for (const entry of packet.presentations) {
+    for (const entry of presentations) {
       validateLivePlayerPresentation(entry);
       if (entry.kind === 'move' && entry.motion.completed !== false)
         throw presentationError('Host live movement must be provisional and continuable');
@@ -301,7 +306,7 @@ class PlayerCampaigns {
       version: 1,
       campaignId,
       sequence: live.sequence,
-      presentations: copy(packet.presentations),
+      presentations: copy(presentations),
     };
   }
 

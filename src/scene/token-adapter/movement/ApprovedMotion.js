@@ -10,6 +10,37 @@ import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const CONTINUATION_GRACE_SECONDS = 0.5;
+const MAX_PRESENTATION_FINGERPRINTS = 512;
+
+function presentationFingerprint(motion) {
+  if (typeof motion?.commandId !== 'string') return null;
+  return JSON.stringify({
+    commandId: motion.commandId,
+    tokenId: motion.tokenId ?? null,
+    from: motion.from,
+    route: motion.route,
+  });
+}
+
+function rememberPresentation(adapter, token, motion) {
+  const fingerprint = presentationFingerprint(motion);
+  if (!fingerprint) return { fingerprint: null, duplicate: false };
+  adapter._approvedMovementFingerprints ??= new WeakMap();
+  let fingerprints = adapter._approvedMovementFingerprints.get(token);
+  if (!fingerprints) {
+    fingerprints = new Set();
+    adapter._approvedMovementFingerprints.set(token, fingerprints);
+  }
+  if (fingerprints.has(fingerprint)) return { fingerprint, duplicate: true };
+  if (fingerprints.size >= MAX_PRESENTATION_FINGERPRINTS)
+    fingerprints.delete(fingerprints.values().next().value);
+  fingerprints.add(fingerprint);
+  return { fingerprint, duplicate: false };
+}
+
+function forgetPresentation(adapter, token, fingerprint) {
+  if (fingerprint) adapter._approvedMovementFingerprints?.get(token)?.delete(fingerprint);
+}
 
 function beginSegment(adapter, job) {
   const target = job.route[job.index];
@@ -131,10 +162,19 @@ async function playApprovedMovement(token, motion) {
     this.gameManager.campaignWorld?.getMap(point.mapId);
   }
   motion = copy(motion);
+  const remembered = rememberPresentation(this, token, motion);
+  if (remembered.duplicate) return { completed: false, reason: 'duplicate-presentation' };
   this._approvedMovements ??= new Map();
   this._approvedMovementRequests ??= new Map();
   const active = this._approvedMovements.get(token);
-  if (active) return appendApprovedMovement(this, token, motion);
+  if (active) {
+    try {
+      return appendApprovedMovement(this, token, motion);
+    } catch (error) {
+      forgetPresentation(this, token, remembered.fingerprint);
+      throw error;
+    }
+  }
   const pendingRequest = this._approvedMovementRequests.get(token);
   if (pendingRequest) {
     let resolve;
@@ -146,7 +186,10 @@ async function playApprovedMovement(token, motion) {
     const queued = { motion, resolve, reject, handled: false };
     pendingRequest.queue.push(queued);
     const ready = await pendingRequest.ready;
-    if (!ready) return { completed: false, reason: 'presentation-replaced' };
+    if (!ready) {
+      forgetPresentation(this, token, remembered.fingerprint);
+      return { completed: false, reason: 'presentation-replaced' };
+    }
     if (queued.handled) return completion;
     return this.playApprovedMovement(token, motion);
   }
@@ -163,7 +206,10 @@ async function playApprovedMovement(token, motion) {
   const cancelled = { completed: false, reason: 'presentation-replaced' };
   try {
     await token.__threeMeshPromise;
-    if (replaced()) return cancelled;
+    if (replaced()) {
+      forgetPresentation(this, token, remembered.fingerprint);
+      return cancelled;
+    }
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('The approved moving creature was removed while its model loaded');
     const data = this._tokenAnimationData.get(token);
@@ -171,7 +217,10 @@ async function playApprovedMovement(token, motion) {
       throw new Error('Wait for the creature locomotion animations to finish loading');
     if ([motion.from, ...motion.route].some((point) => point.pose.kind === 'flight'))
       await this._ensureFlightAnimations(token);
-    if (replaced()) return cancelled;
+    if (replaced()) {
+      forgetPresentation(this, token, remembered.fingerprint);
+      return cancelled;
+    }
     if (
       !this.gameManager.placedTokens.includes(token) ||
       this._tokenAnimationData.get(token) !== data
@@ -228,12 +277,14 @@ async function playApprovedMovement(token, motion) {
         queued.resolve(appendApprovedMovement(this, token, queued.motion));
       } catch (error) {
         queued.reject(error);
+        forgetPresentation(this, token, presentationFingerprint(queued.motion));
       }
       queued.handled = true;
     }
     request.readyResolve(true);
     return done;
   } catch (error) {
+    forgetPresentation(this, token, remembered.fingerprint);
     request.readyResolve(false);
     throw error;
   } finally {

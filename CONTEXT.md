@@ -901,6 +901,10 @@
   advancing canonical scene revisions, while a durable checkpoint coalesces safe
   placements/combat state and remains the recovery authority. A route-finish
   event closes the live animation; reloads never resume historical live motion.
+  Exact command/actor/origin/route presentations are idempotent, and contiguous
+  same-journey checkpoints coalesce under one presentation identity that is
+  retained by the durable checkpoint. Late canonical echoes therefore cannot
+  replay or rewind an already-presented live route.
   Player commands similarly publish a compact durable acknowledgement to their
   origin and an authorized route to visible peers before private projection
   hydration completes. Preserve local cameras, per-actor shared-draft merging,

@@ -361,7 +361,8 @@ function recordSharedPlacement(adapter, token, previous, checkpoint) {
   let pending = adapter._sharedMovementPresentations.get(token);
   if (!pending) {
     pending = {
-      commandId: globalThis.crypto.randomUUID(),
+      commandId:
+        adapter._liveMovementJourneys?.get(token)?.commandId || globalThis.crypto.randomUUID(),
       tokenId: token.id,
       kind: 'move',
       motion: { kind: 'walk', completed: true, from, route: [] },
@@ -476,7 +477,12 @@ function publishStableSharedMovement(adapter, token, from, next, kind = 'walk') 
   if (journey?.planned) return false;
   if (journey && samePlacement(journey.endpoint, next)) return false;
   if (!journey) {
-    journey = { commandId: globalThis.crypto.randomUUID(), endpoint: clone(from) };
+    journey = {
+      commandId:
+        adapter._sharedMovementPresentations?.get(token)?.commandId ||
+        globalThis.crypto.randomUUID(),
+      endpoint: clone(from),
+    };
     adapter._liveMovementJourneys.set(token, journey);
   }
   const presentation = {
@@ -501,7 +507,7 @@ function publishSharedMovementFinish(token) {
   const journey = this._liveMovementJourneys?.get(token);
   if (!journey) return false;
   this.gameManager.sceneAutosave.publishLivePresentation({
-    commandId: journey.commandId,
+    commandId: globalThis.crypto.randomUUID(),
     tokenId: token.id,
     kind: 'move-finish',
     placement: clone(journey.endpoint),

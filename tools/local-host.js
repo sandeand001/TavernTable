@@ -199,7 +199,7 @@ async function startLocalHost({
       );
     }
   };
-  const broadcastLive = async (campaignId, actorId, published) => {
+  const broadcastLive = async (campaignId, actorId, published, { includeDM = true } = {}) => {
     await Promise.all(
       [...streams].map(async (stream) => {
         const session = authority.authenticate(stream.cookie, stream.cookieName);
@@ -210,6 +210,7 @@ async function startLocalHost({
         const profile = authority.profile(session);
         if (profile.id === actorId) return;
         if (profile.role !== 'dm' && profile.campaignId !== campaignId) return;
+        if (profile.role === 'dm' && !includeDM) return;
         let presentations = published.presentations;
         if (profile.role === 'player')
           presentations = await players.visibleLivePresentations(
@@ -393,16 +394,21 @@ async function startLocalHost({
                     receipt,
                   });
                 if (presentations.length)
-                  await broadcastLive(identity.campaignId, identity.id, {
-                    version: 1,
-                    sequence: committed.response.applied.sceneRevision,
-                    presentations: presentations.map(({ commandId, tokenId, kind, motion }) => ({
-                      commandId,
-                      tokenId,
-                      kind,
-                      motion,
-                    })),
-                  });
+                  await broadcastLive(
+                    identity.campaignId,
+                    identity.id,
+                    {
+                      version: 1,
+                      sequence: committed.response.applied.sceneRevision,
+                      presentations: presentations.map(({ commandId, tokenId, kind, motion }) => ({
+                        commandId,
+                        tokenId,
+                        kind,
+                        motion,
+                      })),
+                    },
+                    { includeDM: false }
+                  );
                 broadcast(
                   identity.campaignId,
                   identity.id,

@@ -209,6 +209,86 @@ test('the DM starts a player movement presentation before its full shared snapsh
   }
 });
 
+test('the DM renders one copy of a route delivered as live and canonical notices', async () => {
+  const { store, campaign, library, gm, services, notice, close } = await fixture();
+  let releaseRead;
+  try {
+    const before = await store.readCharacters(campaign.id);
+    const next = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    const actor = next.creatures[0];
+    const from = {
+      mapId: actor.mapId ?? 'map-main',
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: structuredClone(actor.pose),
+    };
+    actor.gridX = 2;
+    actor.pose.world.x = 2.5;
+    const destination = {
+      ...from,
+      gridX: actor.gridX,
+      pose: structuredClone(actor.pose),
+    };
+    await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(next, { ruleset: library.ruleset, library }),
+    });
+    const canonical = await store.readCharacters(campaign.id);
+    services.workspace.store.readCharacters = () =>
+      new Promise((resolve) => {
+        releaseRead = () => resolve(canonical);
+      });
+    const play = jest
+      .spyOn(gm.token3DAdapter, 'playApprovedMovement')
+      .mockResolvedValue({ completed: true });
+    const entry = {
+      commandId: 'duplicate-player-route-1',
+      tokenId: actor.id,
+      kind: 'move',
+      motion: {
+        kind: 'walk',
+        completed: true,
+        from,
+        route: [destination],
+      },
+    };
+    notice({
+      type: 'live-presentations',
+      campaignId: campaign.id,
+      actorId: 'player-session',
+      presentations: [entry],
+    });
+    notice({
+      type: 'campaign',
+      campaignId: campaign.id,
+      actorId: 'player-session',
+      kind: 'playerCommand',
+      version: 1,
+      sceneRevision: canonical.sceneRevision,
+      charactersRevision: canonical.revision,
+      hasPresentations: true,
+      presentations: [
+        {
+          ...entry,
+          sceneRevision: canonical.sceneRevision,
+          charactersRevision: canonical.revision,
+        },
+      ],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(play).toHaveBeenCalledTimes(1);
+    releaseRead();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    play.mockRestore();
+  } finally {
+    releaseRead?.();
+    close();
+  }
+});
+
 test('a local DM movement rebases over a simultaneous player move on a different actor', async () => {
   const { store, campaign, library, gm, autosave, parent, notice, close } = await fixture({
     extraActor: true,

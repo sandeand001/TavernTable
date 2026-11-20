@@ -219,6 +219,34 @@ test('a shared DM move publishes live checkpoints while coalescing durable write
   expect(adapter.isMovementInProgress(actor)).toBe(true);
 });
 
+test('same-journey live checkpoints coalesce into one bounded presentation', async () => {
+  const { begin, checkpoint, finish, liveWrites, writes, autosave } = await fixture({
+    shared: true,
+  });
+  begin();
+  checkpoint(2);
+  checkpoint(3);
+  for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+  expect(liveWrites).toHaveBeenCalledTimes(1);
+  const packet = liveWrites.mock.calls[0][1];
+  expect(packet.presentations).toHaveLength(1);
+  expect(new Set(packet.presentations.map(({ commandId }) => commandId)).size).toBe(1);
+  expect(packet.presentations[0].motion).toMatchObject({
+    from: { gridX: 1 },
+    route: [
+      { gridX: 2, pose: { world: { x: 2.5 } } },
+      { gridX: 3, pose: { world: { x: 3.5 } } },
+    ],
+    completed: false,
+    continuing: true,
+  });
+  finish();
+  await autosave.flush();
+  expect(writes.mock.calls[0][1].presentations[0].commandId).toBe(
+    packet.presentations[0].commandId
+  );
+});
+
 test('multiplayer regression: DM autosave sends the actual safe route separately from the persisted checkpoint and acknowledges its prefix', async () => {
   const { autosave, begin, checkpoint, finish, writes, actor } = await fixture({ shared: true });
   begin();
