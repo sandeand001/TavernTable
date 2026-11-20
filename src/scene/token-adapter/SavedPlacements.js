@@ -416,6 +416,7 @@ function getSharedPresentations(scene) {
     const captured = clone(pending);
     captured.motion.route = captured.motion.route.slice(0, index + 1);
     captured.motion.route[index] = placement;
+    captured.motion.continuing = this._movementRoutes?.has(token) === true;
     result.push(captured);
   }
   for (const [token, entry] of this._sharedVisualPresentations || []) {

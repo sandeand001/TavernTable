@@ -127,12 +127,42 @@ test('a visible moving DM sprite remains selectable without becoming player-auth
     jest
       .spyOn(gameManager.token3DAdapter, 'isMovementInProgress')
       .mockImplementation((token) => token === foreign);
+    const send = jest.spyOn(commands, 'send').mockResolvedValue({ applied: true });
     await manager._selectTokenEntry(foreign);
     expect(gameManager.token3DAdapter.getSelectedToken()).toBe(foreign);
-    await expect(input.requestMove(foreign, { gridX: 4, gridY: 1 })).rejects.toMatchObject({
-      code: 'active-assigned-character-required',
+    await input.requestMove(foreign, { gridX: 4, gridY: 1 });
+    expect(send).toHaveBeenCalledWith('move', state.observerTokenId, {
+      target: { mapId: 'main', gridX: 4, gridY: 1 },
     });
-    expect(commands.connection.call).not.toHaveBeenCalled();
+  } finally {
+    input.destroy();
+    await runtime.destroy();
+    library.delete(ownedId);
+  }
+});
+
+test('player movement uses the assigned observer after selecting a DM sprite or hitting a wall face', async () => {
+  const { gameManager, runtime, state, library, ownedId } = fixture();
+  await runtime.update(state);
+  const send = jest.fn();
+  const input = new PlayerInputController({
+    gameManager,
+    commands: {
+      getState: () => state,
+      send,
+    },
+  });
+  try {
+    const foreign = { id: 'visible-foreign' };
+    input.requestMove(foreign, {
+      gridX: 4,
+      gridY: 1,
+      wallSurface: { kind: 'wall', mapId: 'main' },
+    });
+    expect(send).toHaveBeenCalledWith('move', state.observerTokenId, {
+      target: { mapId: 'main', gridX: 4, gridY: 1 },
+      closest: true,
+    });
   } finally {
     input.destroy();
     await runtime.destroy();

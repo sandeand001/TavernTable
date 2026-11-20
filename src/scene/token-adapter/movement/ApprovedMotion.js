@@ -9,6 +9,7 @@ import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovem
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+const CONTINUATION_GRACE_SECONDS = 0.5;
 
 function beginSegment(adapter, job) {
   const target = job.route[job.index];
@@ -120,8 +121,14 @@ async function playApprovedMovement(token, motion) {
   if (active) {
     if (!this.canContinueApprovedMovement(token, motion))
       throw new Error('Finish the existing approved movement presentation first');
+    const waiting = active.waitingForContinuation !== null;
     active.route.push(...copy(motion.route));
     if (motion.kind) active.kind = motion.kind;
+    active.continuing = motion.continuing === true;
+    if (waiting && active.index < active.route.length) {
+      active.waitingForContinuation = null;
+      beginSegment(this, active);
+    }
     return active.done;
   }
   if (this._approvedMovementRequests.has(token))
@@ -175,6 +182,9 @@ async function playApprovedMovement(token, motion) {
       resolve,
       reject,
       done,
+      continuing: motion.continuing === true,
+      waitingForContinuation: null,
+      finishing: false,
     };
     this._approvedMovements.set(token, job);
     try {
@@ -193,6 +203,8 @@ async function playApprovedMovement(token, motion) {
 }
 
 async function finishMovement(adapter, token, job) {
+  if (job.finishing || adapter._approvedMovements.get(token) !== job) return;
+  job.finishing = true;
   adapter._approvedMovements.delete(token);
   job.state.phase = 'idle';
   job.state.pathActive = false;
@@ -214,6 +226,19 @@ function advanceApprovedMovement(delta) {
     try {
       if (!this.gameManager.placedTokens.includes(token))
         throw new Error('The approved moving creature is no longer visible');
+      if (job.waitingForContinuation !== null) {
+        job.waitingForContinuation += delta;
+        if (job.waitingForContinuation >= CONTINUATION_GRACE_SECONDS)
+          void finishMovement(this, token, job).catch((error) => {
+            job.reject(error);
+            GameErrors.rendering(error, {
+              component: 'ApprovedMotion',
+              operation: 'finish',
+              tokenId: token.id,
+            });
+          });
+        continue;
+      }
       let remaining = delta;
       while (remaining > 0) {
         const elapsed = Math.min(remaining, job.duration - job.elapsed);
@@ -236,14 +261,18 @@ function advanceApprovedMovement(delta) {
         this._positionMesh(token.__threeMesh, token);
         this._applyOrientationImmediate(token, target.facingAngle);
         if (job.index === job.route.length) {
-          void finishMovement(this, token, job).catch((error) => {
-            job.reject(error);
-            GameErrors.rendering(error, {
-              component: 'ApprovedMotion',
-              operation: 'finish',
-              tokenId: token.id,
+          if (job.continuing) {
+            job.waitingForContinuation = 0;
+          } else {
+            void finishMovement(this, token, job).catch((error) => {
+              job.reject(error);
+              GameErrors.rendering(error, {
+                component: 'ApprovedMotion',
+                operation: 'finish',
+                tokenId: token.id,
+              });
             });
-          });
+          }
           break;
         }
         beginSegment(this, job);

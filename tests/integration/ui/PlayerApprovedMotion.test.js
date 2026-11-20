@@ -201,6 +201,57 @@ test('a continued approved route appends while the previous checkpoint is still 
   }
 });
 
+test('streamed tile checkpoints do not idle while the next segment is arriving', async () => {
+  const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
+  try {
+    f.token.mapId = 'main';
+    const from = {
+      mapId: 'main',
+      gridX: f.token.gridX,
+      gridY: f.token.gridY,
+      facingAngle: f.token.facingAngle,
+      pose: { kind: 'ground', world: { ...f.token.world } },
+    };
+    const first = {
+      ...from,
+      gridX: from.gridX + 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { ...from.pose.world, x: from.pose.world.x + 1 } },
+    };
+    const second = {
+      ...first,
+      gridX: first.gridX + 1,
+      pose: { kind: 'ground', world: { ...first.pose.world, x: first.pose.world.x + 1 } },
+    };
+    const finished = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000105',
+      from,
+      route: [first],
+      continuing: true,
+    });
+    for (let tick = 0; tick < 4; tick++) await Promise.resolve();
+    for (let frame = 0; frame < 600 && f.token.world.x < first.pose.world.x - 1e-6; frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    expect(f.adapter.isMovementInProgress(f.token)).toBe(true);
+    expect(f.adapter._tokenAnimationData.get(f.token).current).not.toBe('idle');
+    const continued = f.adapter.playApprovedMovement(f.token, {
+      commandId: '00000000-0000-4000-8000-000000000106',
+      from: first,
+      route: [second],
+    });
+    for (let frame = 0; frame < 600 && f.adapter.isMovementInProgress(f.token); frame++) {
+      f.adapter.advanceApprovedMovement(1 / 60);
+      stepHumanoid(f, 1 / 60);
+    }
+    await Promise.all([finished, continued]);
+    expect(f.token.world).toEqual(second.pose.world);
+  } finally {
+    f.adapter.disposeMovementRange();
+  }
+});
+
 test('a later authoritative facing reconciles onto an in-flight movement endpoint', async () => {
   const f = await createHumanoidFixture({ height: 0, animationKeys: ['idle', 'walk'] });
   try {

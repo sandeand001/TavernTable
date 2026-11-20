@@ -19,17 +19,27 @@ export default class PlayerInputController {
   }
 
   requestMove(token, target, { closest = false } = {}) {
-    if (!token) throw new Error('Select the active assigned character before moving');
-    if (target.wallSurface && target.wallSurface.kind !== 'floor')
-      throw new Error('The host has not enabled this surface movement command');
-    return this.commands.send('move', token.id, {
+    const state = this.commands.getState();
+    const observerTokenId = state.observerTokenId;
+    const actor = state.publicScene?.actors.find(
+      (entry) => entry.id === observerTokenId && entry.owned
+    );
+    const activeToken =
+      this.gameManager.placedTokens.find((entry) => entry.id === observerTokenId) ||
+      (token?.id === observerTokenId ? token : null);
+    if (!actor || !activeToken)
+      throw new Error('Select the active assigned character before moving');
+    if (!Number.isInteger(target?.gridX) || !Number.isInteger(target?.gridY))
+      throw new Error('Choose a supported floor destination for the active assigned character');
+    const resolveClosest = closest || (target.wallSurface && target.wallSurface.kind !== 'floor');
+    return this.commands.send('move', activeToken.id, {
       target: {
         mapId: target.wallSurface?.mapId || this.gameManager.campaignMapId,
         gridX: target.gridX,
         gridY: target.gridY,
         ...(target.elevationFeet !== undefined ? { elevationFeet: target.elevationFeet } : {}),
       },
-      ...(closest ? { closest: true } : {}),
+      ...(resolveClosest ? { closest: true } : {}),
     });
   }
 

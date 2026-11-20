@@ -660,6 +660,9 @@ test('multiplayer regression: invalid DM motion metadata is rejected before any 
       entry.motion.route[0].mapId = 'unknown-map';
     },
     (entry) => {
+      entry.motion.continuing = 'yes';
+    },
+    (entry) => {
       entry.budget = { movementRemainingFeet: 10000 };
     },
   ]) {
@@ -2917,4 +2920,83 @@ test('a player-first commit makes stale DM scene writes a typed CAS conflict wit
     charactersRevision: canonical.revision,
   });
   expect((await host.request('readCharacters', [campaignId])).body.result).toEqual(canonical);
+}, 30000);
+
+test('continuous unrelated DM checkpoints do not reject an old player movement intent', async () => {
+  const { campaignId, player } = await table();
+  const baseline = (
+    await player.request('playerState', [{ observerTokenId: 'token-1', presentationVersion: 1 }])
+  ).body.result;
+  for (let step = 0; step < 8; step++) {
+    const saved = (await host.request('readCharacters', [campaignId])).body.result;
+    const scene = JSON.parse(saved.scene);
+    const dm = scene.creatures.find(({ id }) => id === 'token-2');
+    dm.gridX = Math.max(0, dm.gridX - 1);
+    dm.pose.world.x = dm.gridX + 0.5;
+    const committed = await host.request('commitScene', [
+      campaignId,
+      {
+        ruleset: scene.ruleset,
+        revision: saved.sceneRevision,
+        charactersRevision: saved.revision,
+        scene: JSON.stringify(scene),
+      },
+    ]);
+    expect(committed.status).toBe(200);
+  }
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: baseline.sceneRevision,
+      charactersRevision: baseline.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  expect(moved.body.result.receipt).toMatchObject({
+    kind: 'move',
+    tokenId: 'token-1',
+    placement: { gridX: 2, gridY: 1 },
+  });
+}, 30000);
+
+test('an unrelated actor rebase still rejects when the player actor changed', async () => {
+  const { campaignId, player } = await table();
+  const baseline = (
+    await player.request('playerState', [{ observerTokenId: 'token-1', presentationVersion: 1 }])
+  ).body.result;
+  const saved = (await host.request('readCharacters', [campaignId])).body.result;
+  const scene = JSON.parse(saved.scene);
+  const playerActor = scene.creatures.find(({ id }) => id === 'token-1');
+  playerActor.gridX = 3;
+  playerActor.pose.world.x = 3.5;
+  await host.request('commitScene', [
+    campaignId,
+    {
+      ruleset: scene.ruleset,
+      revision: saved.sceneRevision,
+      charactersRevision: saved.revision,
+      scene: JSON.stringify(scene),
+    },
+  ]);
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: baseline.sceneRevision,
+      charactersRevision: baseline.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(409);
+  expect(moved.body.code).toBe('stale-revision');
 }, 30000);

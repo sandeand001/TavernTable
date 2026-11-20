@@ -25,6 +25,7 @@ class PlayerCampaigns {
     this.published = new PublishedMaps(root);
     this.presentations = new Map();
     this.undoSessions = new Map();
+    this.authorityContexts = new WeakMap();
   }
 
   undoFor(profile, state) {
@@ -174,7 +175,63 @@ class PlayerCampaigns {
       placementGrants: this.authority.placementGrants(session),
       ...view,
     };
-    return validatePlayerState(snapshot);
+    const validated = validatePlayerState(snapshot);
+    this.rememberAuthorityContext(session, scene, validated);
+    return validated;
+  }
+
+  rememberAuthorityContext(session, scene, state) {
+    if (state.observerTokenId === null) return;
+    let contexts = this.authorityContexts.get(session);
+    if (!contexts) {
+      contexts = new Map();
+      this.authorityContexts.set(session, contexts);
+    }
+    const key = [
+      state.campaign.id,
+      state.sceneRevision,
+      state.revision,
+      state.observerTokenId,
+    ].join(':');
+    contexts.set(
+      key,
+      copy({
+        campaignId: state.campaign.id,
+        characterIds: state.profile.characterIds,
+        observerTokenId: state.observerTokenId,
+        actor: scene.creatures.find(({ id }) => id === state.observerTokenId) || null,
+        owned:
+          state.gameplay.ownedTokens.find(({ tokenId }) => tokenId === state.observerTokenId) ||
+          null,
+        turn: state.gameplay.turn,
+      })
+    );
+    while (contexts.size > 32) contexts.delete(contexts.keys().next().value);
+  }
+
+  canRebaseCommand(session, campaignId, command, scene, gameplay, profile) {
+    const contexts = this.authorityContexts.get(session);
+    const baseline = contexts?.get(
+      [campaignId, command.sceneRevision, command.charactersRevision, command.observerTokenId].join(
+        ':'
+      )
+    );
+    if (
+      !baseline ||
+      baseline.campaignId !== campaignId ||
+      baseline.observerTokenId !== command.observerTokenId ||
+      command.tokenId !== command.observerTokenId
+    )
+      return false;
+    const actor = scene.creatures.find(({ id }) => id === command.observerTokenId) || null;
+    const owned =
+      gameplay.ownedTokens.find(({ tokenId }) => tokenId === command.observerTokenId) || null;
+    return (
+      isDeepStrictEqual(baseline.characterIds, profile.characterIds) &&
+      isDeepStrictEqual(baseline.actor, actor) &&
+      isDeepStrictEqual(baseline.owned, owned) &&
+      isDeepStrictEqual(baseline.turn, gameplay.turn)
+    );
   }
 
   async validatePresentations(

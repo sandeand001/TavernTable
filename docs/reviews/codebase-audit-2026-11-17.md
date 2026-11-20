@@ -299,6 +299,25 @@ lint and layering checks. `M5-06` remains open until the owner confirms this
 build natively: no click rejection, correct peer and DM facing, continuous
 intermediate motion, and convergence during true overlap.
 
+**Follow-up 2026-11-20 (C1 second native retest):** the owner confirmed facing
+was corrected but found three remaining defects: DM motion paused at every tile,
+player clicks could inherit the selected moving DM sprite or a wall-face hit,
+and continuous DM checkpoints still produced repeated player 409 responses.
+DM movement presentations now carry an explicit `continuing` marker. Approved
+locomotion remains active across continuing checkpoints and transitions to idle
+only at a completed route, while completed player receipts retain immediate
+settlement. Player map movement always targets the active assigned observer;
+selecting a visible DM sprite remains inspection-only and non-floor surface hits
+use the nearest reachable floor candidate. Local-host player authority now
+remembers each authorized observer snapshot and may accept an older global
+revision only when the current raw actor, owned gameplay, turn and assignment
+set exactly match that trusted snapshot; a same-actor change still returns
+`stale-revision`. Regressions cover eight consecutive unrelated DM revisions,
+wall/sprite hit routing, and append-before-idle tile streaming. The focused
+multiplayer/authority/cloud matrix passed 268/268 tests, with formatting, lint
+and layering clean. `M5-06` remains open pending the owner's next native
+two-window overlap result.
+
 ### C3 and C10. Player camera follows the selected assigned creature
 
 The player viewer creates unrestricted

@@ -213,9 +213,10 @@ export function validateBudget(budget) {
 
 export function validatePlayerMotion(motion, maps = null) {
   if (
-    !only(motion, ['kind', 'completed', 'from', 'route']) ||
+    !only(motion, ['kind', 'completed', 'from', 'route', 'continuing']) ||
     !['walk', 'fly', 'fall', 'traverse'].includes(motion.kind) ||
     motion.completed !== true ||
+    (motion.continuing !== undefined && typeof motion.continuing !== 'boolean') ||
     !Array.isArray(motion.route) ||
     !motion.route.length ||
     motion.route.length > 10000

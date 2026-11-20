@@ -181,6 +181,7 @@ test('a shared DM move publishes its safe checkpoint while the route is still ac
   expect(writes).toHaveBeenCalledTimes(1);
   expect(adapter.isMovementInProgress(actor)).toBe(true);
   expect(autosave.status.state).toBe('saved');
+  expect(writes.mock.calls[0][1].presentations[0].motion.continuing).toBe(true);
   expect(writes.mock.calls[0][1].presentations[0].motion.route[0].gridX).toBe(3);
   checkpoint(4);
   await jest.advanceTimersByTimeAsync(100);
@@ -191,6 +192,7 @@ test('a shared DM move publishes its safe checkpoint while the route is still ac
     motion: {
       from: { gridX: 3 },
       route: [expect.objectContaining({ gridX: 4 })],
+      continuing: true,
     },
   });
   expect(adapter.isMovementInProgress(actor)).toBe(true);
@@ -207,7 +209,7 @@ test('multiplayer regression: DM autosave sends the actual safe route separately
   expect(change.presentations[0]).toMatchObject({
     tokenId: actor.id,
     kind: 'move',
-    motion: { kind: 'walk', completed: true, from: { gridX: 1 } },
+    motion: { kind: 'walk', completed: true, continuing: false, from: { gridX: 1 } },
   });
   expect(change.presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([2, 3, 4]);
   expect(JSON.parse(change.scene)).not.toHaveProperty('presentations');
@@ -217,6 +219,7 @@ test('multiplayer regression: DM autosave sends the actual safe route separately
   finish();
   await autosave.flush();
   expect(writes.mock.calls[0][1].presentations[0].motion.from.gridX).toBe(4);
+  expect(writes.mock.calls[0][1].presentations[0].motion.continuing).toBe(false);
   expect(writes.mock.calls[0][1].presentations[0].motion.route.map(({ gridX }) => gridX)).toEqual([
     5,
   ]);

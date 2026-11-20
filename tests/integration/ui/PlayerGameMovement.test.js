@@ -631,8 +631,10 @@ test('multiplayer regression: a player renders another visible creature moving w
     expect(own.world.x).toBe(1.5);
     expect(gm.threeSceneManager.snapshotView()).toEqual(camera);
     expect(app.input.movementBudget(own).spentFeet).toBe(0);
-    await expect(app.input.requestMove(remote, { gridX: 3, gridY: 1 })).rejects.toMatchObject({
-      code: 'active-assigned-character-required',
+    const send = jest.spyOn(app.commands, 'send').mockResolvedValue({ applied: true });
+    await app.input.requestMove(remote, { gridX: 3, gridY: 1 });
+    expect(send).toHaveBeenCalledWith('move', own.id, {
+      target: { mapId: 'main', gridX: 3, gridY: 1 },
     });
   } finally {
     await cleanup();
