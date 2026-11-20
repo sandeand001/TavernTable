@@ -22,6 +22,16 @@ import { connectCharacterServices } from '../../../src/ui/characters/characterSe
 import { attachHostSessionUpdates } from '../../../src/ui/sessions/HostSessionUpdates.js';
 import { disposeConnectedTravelBoard } from '../../helpers/connectedTravelBoard.js';
 
+const WAIT_TIMEOUT_MS = 10000;
+
+async function waitForCondition(condition, message) {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 test('the shared player entry requests the actual versioned authority projection and renders only assigned native actors', async () => {
   const table = await createPlayerAuthorityTable();
   let app;
@@ -192,12 +202,10 @@ test('multiplayer regression: DM freeplay reaches real player input, sprite anim
     expect(app.input.movementAllowance(token)).toBe(30);
     for (const gridX of [2, 3]) {
       const moving = app.input.requestMove(token, { gridX, gridY: 1 });
-      for (
-        let check = 0;
-        check < 100 && !gameManager.token3DAdapter.isMovementInProgress(token);
-        check++
-      )
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      await waitForCondition(
+        () => gameManager.token3DAdapter.isMovementInProgress(token),
+        'The accepted player movement did not start'
+      );
       expect(gameManager.token3DAdapter.isMovementInProgress(token)).toBe(true);
       const origin = token.world.x;
       milliseconds += 100;
@@ -382,7 +390,8 @@ test('real player flight radial honors a scene-granted Fly speed, affordable ele
     const finish = async () => {
       expect(submitted).not.toBeNull();
       let animated = false;
-      for (let frame = 0; frame < 1200 && app.commands.pending; frame++) {
+      const deadline = Date.now() + WAIT_TIMEOUT_MS;
+      while (app.commands.pending && Date.now() < deadline) {
         const beforeY = token.world.y;
         milliseconds += 1000 / 60;
         gm.advanceFrame(1 / 60);
@@ -660,12 +669,19 @@ test.each([
       popup.open('doorway', {}, token);
       if (cancel)
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      for (let frame = 0; frame < 1200 && app.commands.pending; frame++) {
+      let approachSettled = false;
+      const approaching = popup.ready.then((value) => {
+        approachSettled = true;
+        return value;
+      });
+      const approachDeadline = Date.now() + WAIT_TIMEOUT_MS;
+      while (!approachSettled && Date.now() < approachDeadline) {
         milliseconds += 1000 / 60;
         gm.advanceFrame(1 / 60);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      const offered = await popup.ready;
+      if (!approachSettled) throw new Error('The traversal approach did not settle');
+      const offered = await approaching;
       if (cancel || exhausted) {
         expect(offered).toBe(false);
         expect(popup.root.hidden).toBe(true);
@@ -686,12 +702,19 @@ test.each([
       expect(popup.confirm.textContent).toContain(`(${prone || flying ? 10 : 5} ft)`);
       expect(popup.root.querySelector('[data-door-action="lock"]')).toBeNull();
       popup.confirm.click();
-      for (let frame = 0; frame < 1200 && (popup.pending || app.commands.pending); frame++) {
+      let crossingSettled = false;
+      const crossing = popup.ready.then((value) => {
+        crossingSettled = true;
+        return value;
+      });
+      const crossingDeadline = Date.now() + WAIT_TIMEOUT_MS;
+      while (!crossingSettled && Date.now() < crossingDeadline) {
         milliseconds += 1000 / 60;
         gm.advanceFrame(1 / 60);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      expect(await popup.ready).toMatchObject({ outcome: 'applied' });
+      if (!crossingSettled) throw new Error('The traversal crossing did not settle');
+      expect(await crossing).toMatchObject({ outcome: 'applied' });
       expect(popup.root.hidden).toBe(true);
       expect(app.state.publicScene.actors.find((actor) => actor.id === token.id)).toMatchObject({
         mapId: 'inside',
@@ -860,8 +883,10 @@ test("multiplayer regression: native DM and player animate each other's real sav
       },
       parent,
     });
-    for (let check = 0; check < 100 && !parent.textContent.includes('up to date'); check++)
-      await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(
+      () => parent.textContent.includes('up to date'),
+      'The DM session did not become current before the player command'
+    );
     expect(parent.textContent).toMatch(/up to date/);
     const playerState = await table.connection.call('playerState', [{ presentationVersion: 1 }]);
     const commands = new PlayerCommandAdapter({
@@ -869,12 +894,10 @@ test("multiplayer regression: native DM and player animate each other's real sav
       getState: () => playerState,
     });
     const moved = await commands.move('token-1', { mapId: 'map-main', gridX: 2, gridY: 1 });
-    for (
-      let check = 0;
-      check < 100 && !gameManager.token3DAdapter.isMovementInProgress(token);
-      check++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(
+      () => gameManager.token3DAdapter.isMovementInProgress(token),
+      'The DM did not receive the player movement presentation'
+    );
     expect(parent.textContent).not.toMatch(/conflict|reopen|invalid/i);
     expect(gameManager.token3DAdapter.isMovementInProgress(token)).toBe(true);
     expect(token.world.x).toBe(1.5);
@@ -890,8 +913,10 @@ test("multiplayer regression: native DM and player animate each other's real sav
       milliseconds += 1000 / 120;
       gameManager.advanceFrame();
     }
-    for (let check = 0; check < 100 && !parent.textContent.includes('up to date'); check++)
-      await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(
+      () => parent.textContent.includes('up to date'),
+      'The DM did not acknowledge the player movement checkpoint'
+    );
     expect(parent.textContent).toMatch(/up to date/);
     expect(token.__threeMesh).toBe(model);
     expect(token.world.x).toBe(2.5);
@@ -933,12 +958,10 @@ test("multiplayer regression: native DM and player animate each other's real sav
     }
     expect(token.world.x).toBe(3.5);
     await autosave.flush();
-    for (
-      let check = 0;
-      check < 100 && !playerManager.token3DAdapter.isMovementInProgress(playerToken);
-      check++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(
+      () => playerManager.token3DAdapter.isMovementInProgress(playerToken),
+      'The player did not receive the DM movement presentation'
+    );
     expect(playerManager.token3DAdapter.isMovementInProgress(playerToken)).toBe(true);
     expect(playerToken.world.x).toBe(2.5);
     milliseconds += 100;

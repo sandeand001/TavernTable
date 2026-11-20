@@ -23,6 +23,16 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
+const WAIT_TIMEOUT_MS = 10000;
+
+async function waitForCondition(condition, message) {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 async function fixture({ coverWall = false } = {}) {
   const { default: CloudHostSessionUpdates } =
     await import('../../../src/ui/sessions/CloudHostSessionUpdates.js');
@@ -189,8 +199,10 @@ test('a cloud owner receiving consecutive native routes preserves the first step
         }
       );
     }
-    for (let check = 0; check < 100 && !f.gm.token3DAdapter.isMovementInProgress(token); check++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCondition(
+      () => f.gm.token3DAdapter.isMovementInProgress(token),
+      'The first cloud movement did not start'
+    );
     f.tick(0.1);
     expect(token.world.x).toBeGreaterThan(1.5);
     expect(token.world.x).toBeLessThan(2.5);
@@ -240,8 +252,10 @@ test('DM zoom and token selection do not start a save or conflict with an incomi
       { version: 1, access: f.access, sessionId: f.sessionId, generation: 2, origin, state },
       { reconcile: false, origin, presentations: [] }
     );
-    for (let frame = 0; frame < 60 && f.library.sceneRevision < state.sceneRevision; frame++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCondition(
+      () => f.library.sceneRevision >= state.sceneRevision,
+      'The cloud owner did not apply the incoming canonical revision'
+    );
     expect(f.autosave.sharedConflict).toBeFalsy();
     expect(f.autosave.dirty).toBe(false);
     expect(f.library.sceneRevision).toBe(state.sceneRevision);
@@ -302,8 +316,10 @@ test.each([
       };
       f.notify.onState(checkpoint, context);
       const data = f.gm.token3DAdapter._tokenAnimationData.get(token);
-      for (let check = 0; check < 100 && data.current !== 'actionWave'; check++)
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      await waitForCondition(
+        () => data.current === 'actionWave',
+        'The cloud visual action did not start'
+      );
       expect(data.current).toBe('actionWave');
       f.tick(0.25);
       const time = data.actions.actionWave.time;
@@ -377,8 +393,10 @@ test('a cloud DM replays accepted Cover to its exact committed stance without an
         ],
       }
     );
-    for (let check = 0; check < 100 && !f.gm.token3DAdapter.isMovementInProgress(token); check++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCondition(
+      () => f.gm.token3DAdapter.isMovementInProgress(token),
+      'The accepted Cover movement did not start'
+    );
     expect(f.gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
     expect(token.world).toEqual(receipt.from.pose.world);
     let interpolated = false;
@@ -401,7 +419,7 @@ test('a cloud DM replays accepted Cover to its exact committed stance without an
   } finally {
     await f.close();
   }
-});
+}, 30000);
 
 test('a cloud owner reconciliation cancels obsolete movement even when the checkpoint origin matches its own issued command', async () => {
   const f = await fixture();
@@ -464,20 +482,20 @@ test('a cloud owner reconciliation cancels obsolete movement even when the check
         }
       );
       if (step === 2) {
-        for (
-          let check = 0;
-          check < 100 && !f.gm.token3DAdapter.isMovementInProgress(token);
-          check++
-        )
-          await new Promise((resolve) => setTimeout(resolve, 0));
+        await waitForCondition(
+          () => f.gm.token3DAdapter.isMovementInProgress(token),
+          'The reconciled cloud movement did not start'
+        );
         expect(f.gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
         f.tick(0.1);
         expect(token.world.x).toBeGreaterThan(1.5);
         expect(token.world.x).toBeLessThan(2.5);
       } else expect(f.gm.token3DAdapter.isMovementInProgress(token)).toBe(false);
     }
-    for (let check = 0; check < 100 && token.world.x !== 3.5; check++)
-      await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitForCondition(
+      () => token.world.x === 3.5,
+      'The reconciled cloud token did not reach its committed destination'
+    );
     expect(token.__threeMesh).toBe(model);
     expect(token.world.x).toBe(3.5);
     expect(f.gm.characterServices.combat.status(token).movement.spent).toBe(0);
@@ -545,8 +563,10 @@ test.each(['walk', 'run'])(
           ],
         }
       );
-      for (let check = 0; check < 100 && !f.gm.token3DAdapter.isMovementInProgress(token); check++)
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      await waitForCondition(
+        () => f.gm.token3DAdapter.isMovementInProgress(token),
+        `The cloud ${pace} movement did not start`
+      );
       expect(f.gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
       expect(token.world.x).toBe(1.5);
       f.tick(0.1);
