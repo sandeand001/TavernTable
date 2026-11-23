@@ -5,6 +5,8 @@ const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { createCanvas } = require('canvas');
 const { test, expect } = require('@playwright/test');
+// Keep the CSS viewport while reducing software rendering work on hosted runners.
+const wetTest = test.extend({ deviceScaleFactor: process.env.CI ? 0.5 : 1 });
 const { encryptProtectedAsset } = require('../../tools/cloud/protected-assets.js');
 const { syntheticGlb } = require('../helpers/protectedModel.js');
 const { PURE_POLY_ASSETS } = require('../../src/config/assets/PurePolyAssets.js');
@@ -3418,7 +3420,7 @@ test('wet Blood Marsh retains supported density-controlled scenery', async ({ pa
   expect(signature(restored.placements)).toEqual(signature(result.small.placements));
 });
 
-test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, browser }) => {
+wetTest('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, browser }) => {
   setBrowserTestTimeout(120000);
   // This scenario tests grounding and persistence, not software-rendered shadows.
   if (process.env.CI) {
@@ -3529,7 +3531,10 @@ test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, 
     await library.store.sessionCall('assignCharacter', [gm.campaign.id, invitation.id, id, true]);
     return invitation.invite;
   });
-  const playerContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const playerContext = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    deviceScaleFactor: process.env.CI ? 0.5 : 1,
+  });
   try {
     if (process.env.CI) {
       await playerContext.addInitScript(() => {
