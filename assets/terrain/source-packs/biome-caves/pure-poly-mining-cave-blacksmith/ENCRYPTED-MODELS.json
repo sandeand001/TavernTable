@@ -599,11 +599,130 @@
       "sha256": "1422bd1fcaf94b8ec90e5a17be91b6f2cfb1486b18dbcd0b441c605689f61041"
     },
     {
+      "assetId": "pure-poly-ore-01-green",
+      "source": "PP_Stone_Veins_01_Green.fbx",
+      "path": "assets/protected/pure-poly-ore-01-green.ttasset",
+      "bytes": 15488,
+      "sha256": "f5749e7d3d747f17a9e21923ffa3cebe117641a8338be901d992a8b1331dcf58"
+    },
+    {
       "assetId": "pure-poly-ore-01-iron",
       "source": "PP_Stone_Veins_01_Iron.fbx",
       "path": "assets/protected/pure-poly-ore-01-iron.ttasset",
       "bytes": 15484,
       "sha256": "144c44cb553a2a75b1cfe781ad90e87cde938be1433aa09248cc7ee4b009cc2f"
+    },
+    {
+      "assetId": "pure-poly-ore-01-red",
+      "source": "PP_Stone_Veins_01_Red.fbx",
+      "path": "assets/protected/pure-poly-ore-01-red.ttasset",
+      "bytes": 15548,
+      "sha256": "15d79805ed040e6f13db2e0671c1f71c285e04111f489cd07dbcb1d2e9732fe5"
+    },
+    {
+      "assetId": "pure-poly-ore-01-silver",
+      "source": "PP_Stone_Veins_01_Silver.fbx",
+      "path": "assets/protected/pure-poly-ore-01-silver.ttasset",
+      "bytes": 15488,
+      "sha256": "7da5c0cbc38f4377e21f597355cfbc287a4da82744b811d02f8cee63fbe7e91e"
+    },
+    {
+      "assetId": "pure-poly-ore-02-blue",
+      "source": "PP_Stone_Veins_02_Blue.fbx",
+      "path": "assets/protected/pure-poly-ore-02-blue.ttasset",
+      "bytes": 22980,
+      "sha256": "655940fe207a8151cccd6b42493812a00cb0a96e3f340159c15aa1c50e21078c"
+    },
+    {
+      "assetId": "pure-poly-ore-02-copper",
+      "source": "PP_Stone_Veins_02_Copper.fbx",
+      "path": "assets/protected/pure-poly-ore-02-copper.ttasset",
+      "bytes": 22980,
+      "sha256": "2a093570d9e66848f77bf8e4d1314ba0afc519ae8edbe320f4709cd962a091d5"
+    },
+    {
+      "assetId": "pure-poly-ore-02-gold",
+      "source": "PP_Stone_Veins_02_Gold.fbx",
+      "path": "assets/protected/pure-poly-ore-02-gold.ttasset",
+      "bytes": 22980,
+      "sha256": "05042f5ed68b86768ca40be5efc5b43e51dd2a32d177bfd141bc79293ff294f2"
+    },
+    {
+      "assetId": "pure-poly-ore-02-green",
+      "source": "PP_Stone_Veins_02_Green.fbx",
+      "path": "assets/protected/pure-poly-ore-02-green.ttasset",
+      "bytes": 22980,
+      "sha256": "376bc72112cc67486cadbea8c0f93bae1f928b8952d15b4f2f839a1edc88b2d4"
+    },
+    {
+      "assetId": "pure-poly-ore-02-iron",
+      "source": "PP_Stone_Veins_02_Iron.fbx",
+      "path": "assets/protected/pure-poly-ore-02-iron.ttasset",
+      "bytes": 22980,
+      "sha256": "66ca7d40f20c604e6c65fb9ef7843b1d16cd2190fca1c3f805f7af76c983c24a"
+    },
+    {
+      "assetId": "pure-poly-ore-02-red",
+      "source": "PP_Stone_Veins_02_Red.fbx",
+      "path": "assets/protected/pure-poly-ore-02-red.ttasset",
+      "bytes": 22980,
+      "sha256": "830a78d98b73f277091ba81e5757082c8cf6f1edcf5c62a2dd297117f3bcd2d3"
+    },
+    {
+      "assetId": "pure-poly-ore-02-silver",
+      "source": "PP_Stone_Veins_02_Silver.fbx",
+      "path": "assets/protected/pure-poly-ore-02-silver.ttasset",
+      "bytes": 22980,
+      "sha256": "c2ae892d0dda393229dac79ba214f6af65e6f7ab72be73f921c2067653b8fcfb"
+    },
+    {
+      "assetId": "pure-poly-ore-03-blue",
+      "source": "PP_Stone_Veins_03_Blue.fbx",
+      "path": "assets/protected/pure-poly-ore-03-blue.ttasset",
+      "bytes": 22376,
+      "sha256": "90cc263c11a1a8ae0ec4cd925d45991e8c5300eddd4f02bebe5f9cb53338e1c4"
+    },
+    {
+      "assetId": "pure-poly-ore-03-copper",
+      "source": "PP_Stone_Veins_03_Copper.fbx",
+      "path": "assets/protected/pure-poly-ore-03-copper.ttasset",
+      "bytes": 22380,
+      "sha256": "39a80cbd945b03e355ea44fb9f56e4963cc3f124acee50b3319dfaa4620923cc"
+    },
+    {
+      "assetId": "pure-poly-ore-03-gold",
+      "source": "PP_Stone_Veins_03_Gold.fbx",
+      "path": "assets/protected/pure-poly-ore-03-gold.ttasset",
+      "bytes": 22376,
+      "sha256": "9a57b1afa2eb54a10a3260dfe29ea22a9e9fc9c4d9426646be77553c38c8ab94"
+    },
+    {
+      "assetId": "pure-poly-ore-03-green",
+      "source": "PP_Stone_Veins_03_Green.fbx",
+      "path": "assets/protected/pure-poly-ore-03-green.ttasset",
+      "bytes": 22380,
+      "sha256": "684eb24b09dc8260879b16a1c539e5acb038336c14251b07a6b738c0aa81c48d"
+    },
+    {
+      "assetId": "pure-poly-ore-03-iron",
+      "source": "PP_Stone_Veins_03_Iron.fbx",
+      "path": "assets/protected/pure-poly-ore-03-iron.ttasset",
+      "bytes": 22376,
+      "sha256": "d951ba2bc65abc3995359ad91a87e61681889ff7e57dc6cd3d7a595afe1bc6ab"
+    },
+    {
+      "assetId": "pure-poly-ore-03-red",
+      "source": "PP_Stone_Veins_03_Red.fbx",
+      "path": "assets/protected/pure-poly-ore-03-red.ttasset",
+      "bytes": 22440,
+      "sha256": "f87b5408ced357f5a067b8bff77908b1aee66f6357f1396fedc41d4a95cdf685"
+    },
+    {
+      "assetId": "pure-poly-ore-03-silver",
+      "source": "PP_Stone_Veins_03_Silver.fbx",
+      "path": "assets/protected/pure-poly-ore-03-silver.ttasset",
+      "bytes": 22380,
+      "sha256": "5fe3fde114fa2831349a9adfa79a1a36bf48d4856d40e80728a3afc913e50080"
     }
   ]
 }

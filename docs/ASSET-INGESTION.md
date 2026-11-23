@@ -139,7 +139,7 @@ The repository catalog currently identifies these representative paths:
 | Kenney Retro Fantasy   | Low-poly fallback/testing kit, equipment and props            |
 
 These entries are pack planning assignments. Nine previously reviewed representatives
-and 86 selected Pure Poly derivatives are runtime placeables; whole packs remain
+and 103 selected Pure Poly derivatives are runtime placeables; whole packs remain
 source-only. Town generation uses
 four other Village wall, roof, gable and balcony models. The Village door-wall
 ID is a generation marker and manual placeable, not the door leaf used in a
@@ -274,7 +274,7 @@ These are filename-based planning categories, not gameplay assignments. In
 particular, human-made mining props and light fixtures are candidates for
 deliberate occupied sites, **not** automatic scenery in a natural cavern.
 Entrances, tunnel shells and water still require independent physical and
-gameplay validation. Eighty-six selected formations, rocks, pebbles, crystal
+gameplay validation. One hundred and three selected formations, rocks, pebbles, crystal
 clusters, trees, grass, cacti, fungi, ore and deliberate-site props have encrypted
 derivatives registered as manual placeables. Seventy-one natural models are also available
 through the **Pure Poly scenery** generation choice for appropriate biomes.
@@ -292,7 +292,7 @@ New Dead Forests use leafless legacy trees with a small chance of green survivor
 The protected profile also mixes in six reviewed leafless Pure Poly shapes.
 The previously dominant legacy “bare” model has a crimson canopy and is no longer
 generated in Dead or Petrified Forests. Existing placements are unchanged.
-The other 2,511 variants remain source-only candidates. Production distribution
+The other 2,494 variants remain source-only candidates. Production distribution
 and user visual acceptance remain open.
 
 | Selected family | Models | Remaining review |
@@ -303,7 +303,7 @@ and user visual acceptance remain open.
 | Grass | 6 | Small ground cover is passable and does not obstruct sight. |
 | Pebble clusters | 6 | Small ground cover is passable and does not obstruct sight. |
 | Mine, forge, storage and furnishing props | 10 | Rails, structural modules and equipment need fit and interaction review. |
-| Ore stones | 4 | Additional ores and mined states need gameplay review. |
+| Ore stones | 21 | Three shapes and seven colors are manual-only; mined states need gameplay review. |
 | Lantern | 1 | Additional fixtures are for deliberate built sites only. |
 
 Wall fungi, stalactites, tunnel shells and entrances remain source-only until

@@ -113,6 +113,31 @@ describe('Biome-appropriate exotic populations', () => {
     ).toBe(true);
   });
 
+  test('ore variants are manually placeable and passable, not random cavern scenery', () => {
+    const engine = new TerrainEngine(25, 25);
+    engine.setBiome('cavern', { generateIfFlat: false });
+    const edits = [];
+    engine.onPlaceableChanged((edit) => edits.push(edit));
+    for (const [index, id] of [
+      'pure-poly-ore-01-green',
+      'pure-poly-ore-02-silver',
+      'pure-poly-ore-03-red',
+    ].entries()) {
+      expect(engine.setSelectedPlaceable(id)).toBe(true);
+      engine.emitPlaceableChanged(index, 0, id);
+      expect(edits.at(-1)).toMatchObject({ gridX: index, gridY: 0, placeableId: id });
+      expect(blocksCreatureMovement({ type: 'plant', modelKey: id })).toBe(false);
+    }
+    const plan = engine.planBiomeGeneration('cavern', {
+      seed: 42,
+      densityMultiplier: 1.65,
+      assetPack: 'pure-poly',
+    });
+    expect(plan.placements.some(({ modelKey }) => getPurePolyAsset(modelKey)?.kind === 'ore')).toBe(
+      false
+    );
+  });
+
   test('protected Dead Forest scenery includes varied purchased leafless trees', () => {
     const engine = new TerrainEngine(25, 25);
     const placements = [1, 42, 99].flatMap(

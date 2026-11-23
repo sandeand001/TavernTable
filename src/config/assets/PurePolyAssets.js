@@ -514,9 +514,94 @@ export const PURE_POLY_ASSETS = Object.freeze([
         'assets/protected/pure-poly-ore-01-gold.ttasset',
       ],
       [
+        'pure-poly-ore-01-green',
+        'PP_Stone_Veins_01_Green',
+        'assets/protected/pure-poly-ore-01-green.ttasset',
+      ],
+      [
         'pure-poly-ore-01-iron',
         'PP_Stone_Veins_01_Iron',
         'assets/protected/pure-poly-ore-01-iron.ttasset',
+      ],
+      [
+        'pure-poly-ore-01-red',
+        'PP_Stone_Veins_01_Red',
+        'assets/protected/pure-poly-ore-01-red.ttasset',
+      ],
+      [
+        'pure-poly-ore-01-silver',
+        'PP_Stone_Veins_01_Silver',
+        'assets/protected/pure-poly-ore-01-silver.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-blue',
+        'PP_Stone_Veins_02_Blue',
+        'assets/protected/pure-poly-ore-02-blue.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-copper',
+        'PP_Stone_Veins_02_Copper',
+        'assets/protected/pure-poly-ore-02-copper.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-gold',
+        'PP_Stone_Veins_02_Gold',
+        'assets/protected/pure-poly-ore-02-gold.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-green',
+        'PP_Stone_Veins_02_Green',
+        'assets/protected/pure-poly-ore-02-green.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-iron',
+        'PP_Stone_Veins_02_Iron',
+        'assets/protected/pure-poly-ore-02-iron.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-red',
+        'PP_Stone_Veins_02_Red',
+        'assets/protected/pure-poly-ore-02-red.ttasset',
+      ],
+      [
+        'pure-poly-ore-02-silver',
+        'PP_Stone_Veins_02_Silver',
+        'assets/protected/pure-poly-ore-02-silver.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-blue',
+        'PP_Stone_Veins_03_Blue',
+        'assets/protected/pure-poly-ore-03-blue.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-copper',
+        'PP_Stone_Veins_03_Copper',
+        'assets/protected/pure-poly-ore-03-copper.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-gold',
+        'PP_Stone_Veins_03_Gold',
+        'assets/protected/pure-poly-ore-03-gold.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-green',
+        'PP_Stone_Veins_03_Green',
+        'assets/protected/pure-poly-ore-03-green.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-iron',
+        'PP_Stone_Veins_03_Iron',
+        'assets/protected/pure-poly-ore-03-iron.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-red',
+        'PP_Stone_Veins_03_Red',
+        'assets/protected/pure-poly-ore-03-red.ttasset',
+      ],
+      [
+        'pure-poly-ore-03-silver',
+        'PP_Stone_Veins_03_Silver',
+        'assets/protected/pure-poly-ore-03-silver.ttasset',
       ],
     ]
   ),
