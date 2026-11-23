@@ -3421,7 +3421,8 @@ test('wet Blood Marsh retains supported density-controlled scenery', async ({ pa
 });
 
 wetTest('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, browser }) => {
-  setBrowserTestTimeout(120000);
+  // Four generated maps and three character loads take longer on software WebGL.
+  setBrowserTestTimeout(process.env.CI ? 720000 : 120000);
   // This scenario tests grounding and persistence, not software-rendered shadows.
   if (process.env.CI) {
     await page.addInitScript(() => {
