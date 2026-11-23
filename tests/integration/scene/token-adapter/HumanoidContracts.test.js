@@ -144,6 +144,11 @@ test('a failed eager animation reports the error and a later character load can 
   const loader = three.FileLoader.prototype.load;
   const original = loader.getMockImplementation();
   const errors = jest.spyOn(GameErrors, 'rendering').mockImplementation(() => {});
+  const definition = TOKEN_3D_MODELS.mannequin;
+  const animations = definition.animations;
+  definition.animations = Object.fromEntries(
+    ['idle', 'walk', 'run', 'runBackward', 'sprint'].map((key) => [key, animations[key]])
+  );
   let unavailable = true;
   loader.mockImplementation(function (url, onLoad, onProgress, onError) {
     if (unavailable && decodeURIComponent(url).endsWith('/Walking.fbx')) {
@@ -164,6 +169,7 @@ test('a failed eager animation reports the error and a later character load can 
     expect(adapter.hasAnimation(token, 'walk')).toBe(true);
     expect(adapter.hasAnimation(token, 'run')).toBe(true);
   } finally {
+    definition.animations = animations;
     loader.mockImplementation(original);
     errors.mockRestore();
     adapter.onTokenRemoved(token);
