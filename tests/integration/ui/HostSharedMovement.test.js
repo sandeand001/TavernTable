@@ -7,6 +7,7 @@ import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { decodeScene, encodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { connectCharacterServices } from '../../../src/ui/characters/characterServices.js';
 import { attachHostSessionUpdates } from '../../../src/ui/sessions/HostSessionUpdates.js';
+import { sceneActorPlacement } from '../../../src/scene/token-adapter/SavedPlacements.js';
 import { createCampaignBoard } from '../../helpers/campaignBoard.js';
 import { installHumanoidAssetFiles } from '../../helpers/humanoid-fixture.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
@@ -18,7 +19,7 @@ beforeAll(() => {
 });
 afterAll(() => restoreFiles());
 
-async function fixture() {
+async function fixture({ connected = false } = {}) {
   const html = readFileSync(path.resolve(__dirname, '..', '..', '..', 'index.html'), 'utf8');
   document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
   const store = new CampaignStore({
@@ -31,7 +32,16 @@ async function fixture() {
   const characterId = await library.create('Scout');
   const saved = sceneState({ characterId, name: 'Scout' });
   saved.terrain.heights = Array.from({ length: 5 }, () => Array(5).fill(0));
-  const scene = CampaignWorld.fromScene(saved, { ruleset: '2014', library }).save();
+  const world = CampaignWorld.fromScene(saved, { ruleset: '2014', library });
+  if (connected)
+    world.addMap({
+      ...world.getMap('map-main'),
+      id: 'inside',
+      name: 'Connected area',
+      originFeet: { x: 25, y: 0, z: 0 },
+    });
+  const scene = world.save();
+  if (connected) scene.view.focusTokenId = 'token-1';
   const gm = createCampaignBoard(library);
   delete gm.__threeTestDouble;
   let milliseconds = 0;
@@ -167,6 +177,77 @@ test.each(['walk', 'run'])(
     }
   }
 );
+
+test('a focused DM follows an in-flight player transfer after the movement finishes', async () => {
+  const { store, campaign, library, gm, autosave, notify, tick, close } = await fixture({
+    connected: true,
+  });
+  try {
+    const token = gm.placedTokens[0];
+    const before = await store.readCharacters(campaign.id);
+    const scene = decodeScene(before.scene, { ruleset: library.ruleset, library });
+    const actor = scene.creatures[0];
+    const from = sceneActorPlacement(scene, actor);
+    actor.mapId = 'inside';
+    actor.pose.world = { x: 1.5, y: 0, z: 1.5 };
+    scene.view.mapId = 'inside';
+    scene.view.camera.target = { ...actor.pose.world };
+    const saved = await store.commitScene(campaign.id, {
+      ruleset: library.ruleset,
+      revision: before.sceneRevision,
+      charactersRevision: before.revision,
+      scene: encodeScene(scene, { ruleset: library.ruleset, library }),
+    });
+    notify({
+      type: 'campaign',
+      version: 1,
+      campaignId: campaign.id,
+      actorId: 'player-session',
+      kind: 'playerCommand',
+      sceneRevision: saved.revision,
+      charactersRevision: before.revision,
+      presentations: [
+        {
+          commandId: 'received-transfer-0001',
+          tokenId: token.id,
+          kind: 'move',
+          sceneRevision: saved.revision,
+          charactersRevision: before.revision,
+          motion: {
+            kind: 'traverse',
+            completed: true,
+            from,
+            route: [sceneActorPlacement(scene, actor)],
+          },
+        },
+      ],
+    });
+    for (let check = 0; check < 100 && !gm.token3DAdapter.isMovementInProgress(token); check++)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+    for (
+      let check = 0;
+      check < 100 && (library.sceneRevision !== saved.revision || gm.campaignViewBusy);
+      check++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(library.sceneRevision).toBe(saved.revision);
+    expect(gm.campaignViewBusy).toBe(false);
+    expect(gm.token3DAdapter.isMovementInProgress(token)).toBe(true);
+    expect(gm.campaignMapId).toBe('map-main');
+    for (let frame = 0; frame < 1200 && gm.campaignMapId !== 'inside'; frame++) {
+      tick(1 / 120);
+      if (frame % 16 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(gm.campaignMapId).toBe('inside');
+    expect(gm.campaignView.focusTokenId).toBe(token.id);
+    expect(gm.token3DAdapter.getSelectedToken()).toBe(token);
+    expect(token.world).toEqual(actor.pose.world);
+    expect(autosave.sharedConflict).toBeFalsy();
+  } finally {
+    close();
+  }
+}, 30000);
 
 test('multiplayer regression: queued player notices do not skip the first step of a DM-view route', async () => {
   const { store, campaign, library, gm, notify, tick, close } = await fixture();

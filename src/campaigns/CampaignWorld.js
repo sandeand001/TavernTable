@@ -27,6 +27,23 @@ const finitePoint = (value) =>
   typeof value === 'object' &&
   ['x', 'y', 'z'].every((axis) => Number.isFinite(value[axis]));
 
+export function focusCampaignSceneView(view, tokenId, mapId, position) {
+  const cameras = new Map((view.cameras || []).map(({ mapId: id, camera }) => [id, copy(camera)]));
+  cameras.set(view.mapId, copy(view.camera));
+  const previous = cameras.get(mapId);
+  const camera = copy(previous || view.camera);
+  camera.target = { ...position };
+  if (!previous) camera.zoom = 1;
+  cameras.set(mapId, camera);
+  return {
+    ...view,
+    mapId,
+    focusTokenId: tokenId,
+    camera,
+    cameras: [...cameras].map(([id, value]) => ({ mapId: id, camera: value })),
+  };
+}
+
 export default class CampaignWorld {
   static fromScene(scene, context) {
     return new CampaignWorld(scene, context);

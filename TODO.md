@@ -409,17 +409,20 @@ grid/reset work also underpins independent chamber generation.
       existing saves and the approved Village visuals. Package selected
       restricted models through encrypted delivery, keeping originals and keys
       private, and verify local/cloud behavior and release packaging.
-      Progress: 2,597 individual FBX variants are cataloged. Eighty-one
+      Progress: 2,597 individual FBX variants are cataloged. Eighty-six
       selected formations, rocks, pebbles, crystal clusters, trees, grass, cacti, fungi, ore and
       deliberate-site props are encrypted. The natural models default for new
       supported biome choices only after key access is verified; built-in scenery
       remains selectable and saved choices are preserved. Ore and built-site props are
-      manual-only. The other 2,516 remain source-only, not discarded or approved for runtime
+      manual-only. The other 2,511 remain source-only, not discarded or approved for runtime
       placement. Mining, forge, construction, equipment and other categories
       remain to be reviewed and integrated; visual acceptance remains open.
       Small Pure Poly grass and pebble clusters are passable ground cover in suitable biomes.
       Brighter mushroom clusters generate in fungal groves and temperate forests,
       not automatically in natural Cavern.
+      Six distinct leafless trees add variety to protected Dead Forest generation.
+      Both scenery choices use leafless legacy trees rather than the crimson-leafed
+      model previously labeled bare; existing placements are unchanged.
       New trees, cacti and rocks retain the existing grid-cell movement policy;
       physical footprint and cluster collision remain a separate open task.
 - [ ] **Organic natural routes and scenery clearance** - High-density Caverns
@@ -724,6 +727,9 @@ grid/reset work also underpins independent chamber generation.
       identity, movement and combat state through authorized transitions. Account
       for existing Dungeon room counts, layout cycling and campaign map limits;
       do not silently remodel existing saved Dungeons.
+      Progress: player passage travel now preserves canonical focus and camera
+      history when the DM follows that character, while an unfocused DM stays
+      on their own map. Connected-area sight and privacy policy remain open.
 - [ ] **Multiple depths for underground networks** - Allow Dungeons and
       caves/caverns to contain connected rooms or chambers at multiple depths.
       Define how the DM creates levels and connects them, how players travel
@@ -1250,7 +1256,12 @@ in the [archived handoff](./.attic/HANDOFF.md). Broader or unreproduced reports 
 - [ ] **Tree variety** — Review and fix tree variety across generated biomes.
       Manual family buttons now select actual variants rather than a fallback.
       The Pure Poly set adds fir, broadleaf, autumn birch and leafless
-      trees to suitable forest, highland and dry-land biomes.
+      trees to suitable forest, highland and dry-land biomes. New Dead and Petrified
+      Forests no longer generate the crimson-leafed legacy model labeled bare;
+      protected Dead Forest generation also mixes six purchased leafless shapes.
+      Staged density increases across 36 sampled size/seed cases in the corrected
+      forest and protected dry-land profiles. Petrified stone appearance and
+      visual review remain open.
       Bamboo Thicket currently samples generic tall, columnar and small plants;
       the audited inventory contains no model named bamboo. Review a suitable
       model and its license before replacing that biome's scenery.

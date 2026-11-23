@@ -2,6 +2,7 @@ import * as three from 'three';
 import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import {
   captureCampaignScene,
+  reconcileCampaignScene,
   restoreCampaignScene,
   changeCampaignView,
 } from '../../../src/campaigns/SceneWorld.js';
@@ -360,6 +361,213 @@ test('same-map sprite selection does not reload the map or interrupt another fre
   } finally {
     combat.finishMovement(ticket, 0);
     restore.mockRestore();
+    for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
+    gm.token3DAdapter.disposeMovementRange();
+  }
+});
+
+test.each([true, false])(
+  'reconciling a remote map transfer respects the DM follow state: %s',
+  async (follow) => {
+    const { gm, library } = await focusFixture();
+    const actor = gm.placedTokens[0];
+    const sourceCamera = { ...gm.threeSceneManager.snapshotView(), zoom: 1.4 };
+    const targetCamera = {
+      ...sourceCamera,
+      zoom: 2,
+      target: { x: 4, y: 0, z: 4 },
+    };
+    gm.campaignView.showMap('inside');
+    gm.campaignView.setCamera(targetCamera);
+    gm.campaignView.showMap('map-main');
+    if (follow) gm.campaignView.focus(actor.id);
+    await gm.token3DAdapter.setSelectedToken(follow ? actor : null);
+    gm.threeSceneManager.restoreView(sourceCamera);
+    const remote = gm.campaignWorld.save();
+    Object.assign(remote.creatures[0], {
+      mapId: 'inside',
+      gridX: 1,
+      gridY: 1,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    });
+    remote.view = {
+      ...remote.view,
+      mapId: 'inside',
+      focusTokenId: actor.id,
+      camera: { ...targetCamera, target: { ...remote.creatures[0].pose.world } },
+    };
+    gm.campaignViewBusy = true;
+    const pending = reconcileCampaignScene(gm, remote, library, gm.characterServices.combat);
+    let timer;
+    try {
+      const completed = await Promise.race([
+        pending.then(() => true),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(false), 500);
+        }),
+      ]);
+      expect(completed).toBe(true);
+      expect(gm.campaignMapId).toBe(follow ? 'inside' : 'map-main');
+      expect(gm.campaignView.focusTokenId).toBe(follow ? actor.id : null);
+      expect(gm.token3DAdapter.getSelectedToken()).toBe(follow ? actor : null);
+      expect(gm.threeSceneManager.snapshotView()).toMatchObject(
+        follow
+          ? { zoom: 2, target: remote.creatures[0].pose.world }
+          : { zoom: 1.4, target: sourceCamera.target }
+      );
+      if (follow) {
+        expect(
+          gm.campaignView.snapshot().cameras.find(({ mapId }) => mapId === 'map-main').camera
+        ).toEqual(sourceCamera);
+        expect(
+          gm.placedTokens
+            .filter((token) => token.mapId === 'inside')
+            .every((token) => token.__threeMesh?.visible)
+        ).toBe(true);
+      }
+    } finally {
+      clearTimeout(timer);
+      gm.campaignViewBusy = false;
+      gm.campaignRequests?.flush();
+      await Promise.race([
+        pending.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 200)),
+      ]);
+      for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
+      gm.token3DAdapter.disposeMovementRange();
+    }
+  }
+);
+
+test.each([true, false])(
+  'an in-flight followed transfer finishes without overriding a later deselection: %s',
+  async (keepFollowing) => {
+    const { gm, library } = await focusFixture();
+    const actor = gm.placedTokens[0];
+    let finish;
+    const done = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const movement = jest
+      .spyOn(gm.token3DAdapter, 'isMovementInProgress')
+      .mockImplementation((token) => token === actor);
+    gm.token3DAdapter._approvedMovements = new Map([[actor, { done }]]);
+    const remote = gm.campaignWorld.save();
+    Object.assign(remote.creatures[0], {
+      mapId: 'inside',
+      gridX: 1,
+      gridY: 1,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    });
+    remote.view = {
+      ...remote.view,
+      mapId: 'inside',
+      focusTokenId: actor.id,
+      camera: { ...remote.view.camera, target: { ...remote.creatures[0].pose.world } },
+    };
+    gm.campaignViewBusy = true;
+    const pending = reconcileCampaignScene(gm, remote, library, gm.characterServices.combat, {
+      preserveMovingActors: true,
+    });
+    let timer;
+    try {
+      const completed = await Promise.race([
+        pending.then(() => true),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve(false), 500);
+        }),
+      ]);
+      expect(completed).toBe(true);
+      expect(gm.campaignMapId).toBe('map-main');
+      expect(gm.token3DAdapter.getSelectedToken()).toBe(actor);
+      if (!keepFollowing) await gm.token3DAdapter.setSelectedToken(null);
+      Object.assign(actor, {
+        mapId: 'inside',
+        gridX: 1,
+        gridY: 1,
+        world: { ...remote.creatures[0].pose.world },
+      });
+      gm.token3DAdapter._approvedMovements.delete(actor);
+      movement.mockReturnValue(false);
+      gm.campaignViewBusy = false;
+      finish({ completed: true });
+      for (
+        let attempt = 0;
+        attempt < 50 && keepFollowing && gm.campaignMapId !== 'inside';
+        attempt++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(gm.campaignMapId).toBe(keepFollowing ? 'inside' : 'map-main');
+      expect(gm.campaignView.focusTokenId).toBe(keepFollowing ? actor.id : null);
+    } finally {
+      clearTimeout(timer);
+      finish({ completed: false });
+      gm.token3DAdapter._approvedMovements.delete(actor);
+      movement.mockRestore();
+      gm.campaignViewBusy = false;
+      gm.campaignRequests?.flush();
+      await Promise.race([
+        pending.catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 200)),
+      ]);
+      for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
+      gm.token3DAdapter.disposeMovementRange();
+    }
+  }
+);
+
+test('a different local selection does not pull the DM back off a followed transfer', async () => {
+  const { gm, library } = await focusFixture();
+  const [followed, selected] = gm.placedTokens;
+  const initial = gm.campaignWorld.save();
+  Object.assign(initial.creatures[1], {
+    mapId: 'map-main',
+    gridX: 3,
+    gridY: 2,
+    pose: { kind: 'ground', world: { x: 3.5, y: 0, z: 2.5 } },
+  });
+  gm.campaignWorld.acceptCheckpoint(initial);
+  Object.assign(selected, {
+    mapId: 'map-main',
+    world: { ...initial.creatures[1].pose.world },
+  });
+  await gm.token3DAdapter.setSelectedToken(selected);
+  gm.campaignView.focus(followed.id);
+  const remote = gm.campaignWorld.save();
+  Object.assign(remote.creatures[0], {
+    mapId: 'inside',
+    gridX: 1,
+    gridY: 1,
+    pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+  });
+  remote.view = {
+    ...remote.view,
+    mapId: 'inside',
+    focusTokenId: followed.id,
+    camera: { ...remote.view.camera, target: { ...remote.creatures[0].pose.world } },
+  };
+  gm.campaignViewBusy = true;
+  const pending = reconcileCampaignScene(gm, remote, library, gm.characterServices.combat);
+  let timer;
+  try {
+    const completed = await Promise.race([
+      pending.then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), 500);
+      }),
+    ]);
+    expect(completed).toBe(true);
+    expect(gm.campaignMapId).toBe('inside');
+    expect(gm.campaignView.focusTokenId).toBe(followed.id);
+    expect(gm.token3DAdapter.getSelectedToken()).toBeNull();
+  } finally {
+    clearTimeout(timer);
+    gm.campaignViewBusy = false;
+    gm.campaignRequests?.flush();
+    await Promise.race([
+      pending.catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 200)),
+    ]);
     for (const token of [...gm.placedTokens]) gm.tokenManager.removeToken(token);
     gm.token3DAdapter.disposeMovementRange();
   }

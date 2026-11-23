@@ -9,10 +9,11 @@ import {
 import { readPlaceablePlacements, captureCameraView } from '../scene/SceneSnapshotReaders.js';
 import { snapshotCombat } from '../entities/characters/combat/persistence.js';
 import { validateScene } from './CampaignScene.js';
-import CampaignWorld from './CampaignWorld.js';
+import CampaignWorld, { focusCampaignSceneView } from './CampaignWorld.js';
 import { prepareConnectionTravel } from './CampaignTravel.js';
 import { reconcileBuildingScene } from './BuildingAssembly.js';
 import ActionRequestQueue from './ActionRequestQueue.js';
+import { GameErrors } from '../utils/error/ErrorHandler.js';
 
 export function queueCampaignOperation(gm, key, operation) {
   if (!gm.campaignRequests) {
@@ -264,20 +265,13 @@ export function captureReadyCampaignScene(
       ? saved.view.focusTokenId
       : scene.selection;
     const landing = placements?.get(followedId);
-    if (landing) {
-      const previous = saved.view.cameras?.find((entry) => entry.mapId === landing.mapId)?.camera;
-      const camera = JSON.parse(JSON.stringify(previous || saved.view.camera));
-      camera.target = { ...landing.placement.pose.world };
-      if (!previous) camera.zoom = 1;
-      const cameras = new Map(
-        (saved.view.cameras || []).map((entry) => [entry.mapId, entry.camera])
+    if (landing)
+      saved.view = focusCampaignSceneView(
+        saved.view,
+        followedId,
+        landing.mapId,
+        landing.placement.pose.world
       );
-      cameras.set(landing.mapId, camera);
-      saved.view.focusTokenId = followedId;
-      saved.view.mapId = landing.mapId;
-      saved.view.camera = camera;
-      saved.view.cameras = [...cameras].map(([mapId, value]) => ({ mapId, camera: value }));
-    }
     const context = { ruleset: library.ruleset, library };
     return validateScene(
       reconcileBuildingScene(saved, context, {
@@ -412,30 +406,75 @@ export async function reconcileCampaignScene(
   const focusId = gm.campaignView?.focusTokenId || selectedId;
   const previousMapId = gm.campaignMapId;
   const previousMap = gm.campaignWorld?.getMap(previousMapId);
+  const previousWorld = gm.campaignWorld instanceof CampaignWorld ? gm.campaignWorld : null;
+  const previousView = previousWorld ? gm.campaignView : null;
   const protectedActors = preserveMovingActors
     ? new Set(gm.placedTokens.filter((token) => gm.token3DAdapter.isMovementInProgress(token)))
     : new Set();
+  const focused = scene.creatures.find(({ id }) => id === focusId);
+  if (scene.version === 3 && focused && previousMapId && focused.mapId !== previousMapId)
+    previousView?.setCamera(camera);
+  const focusedToken = gm.placedTokens.find(({ id }) => id === focusId);
+  const approved = gm.token3DAdapter._approvedMovements?.get(focusedToken);
+  const request = gm.token3DAdapter._approvedMovementRequests?.get(focusedToken);
+  const deferFollowing = !!(
+    preserveMovingActors &&
+    scene.version === 3 &&
+    focused &&
+    focusedToken &&
+    focused.mapId !== focusedToken.mapId &&
+    (protectedActors.has(focusedToken) || approved || request)
+  );
+  let movementCompletion = null;
+  if (deferFollowing) {
+    if (approved?.done) movementCompletion = approved.done;
+    else if (request?.ready)
+      movementCompletion = request.ready.then((ready) => {
+        if (!ready) return { completed: false };
+        if (!request.job?.done) throw new Error('The approved movement did not start');
+        return request.job.done;
+      });
+    else throw new SceneNotReadyError('Wait for the followed creature to finish moving');
+  }
   let world = null;
   if (scene.version === 3) {
-    if (gm.campaignWorld instanceof CampaignWorld) {
-      world = gm.campaignWorld;
+    if (previousWorld) {
+      world = previousWorld;
       world.acceptCheckpoint(scene);
     } else world = CampaignWorld.fromScene(scene, context);
   } else validateScene(scene, context);
-  const mapId = world ? previousMapId || scene.view.mapId : null;
+  const followsAcrossMaps = !!(
+    world &&
+    focused &&
+    previousMapId &&
+    focused.mapId !== previousMapId &&
+    !deferFollowing
+  );
+  const mapId = world
+    ? followsAcrossMaps
+      ? focused.mapId
+      : previousMapId || scene.view.mapId
+    : null;
   const map = world ? world.getMap(mapId) : scene;
   const assetsChanged = !previousMap || JSON.stringify(previousMap) !== JSON.stringify(map);
   const ids = new Set(scene.creatures.map(({ id }) => id));
+  if (followsAcrossMaps)
+    for (const token of gm.placedTokens) if (token.__threeMesh) token.__threeMesh.visible = false;
   for (const token of [...gm.placedTokens])
     if (!ids.has(token.id) && !protectedActors.has(token)) gm.tokenManager.removeToken(token);
   gm.campaignWorld = world;
   gm.campaignMapId = mapId;
-  gm.campaignView = world
-    ? world.createView({
-        mapId,
-        focusTokenId: ids.has(focusId) ? focusId : null,
-      })
-    : null;
+  if (world && previousView) {
+    previousView.showMap(mapId);
+    if (ids.has(focusId) && !deferFollowing) previousView.focus(focusId);
+    gm.campaignView = previousView;
+  } else
+    gm.campaignView = world
+      ? world.createView({
+          mapId,
+          focusTokenId: ids.has(focusId) && !deferFollowing ? focusId : null,
+        })
+      : null;
   if (assetsChanged) await applyMapTerrain(gm, map);
   const typeCounts = new Map(scene.tokenCounters.types);
   for (const creature of scene.creatures) {
@@ -497,16 +536,53 @@ export async function reconcileCampaignScene(
     await gm.token3DAdapter.onTokenAdded(token, creature);
     await gm.token3DAdapter.restoreStablePlacement(token, creature);
   }
+  if (followsAcrossMaps)
+    for (const token of gm.placedTokens)
+      if (token.mapId === mapId && token.__threeMesh) token.__threeMesh.visible = true;
   gm.tokenManager._nextTokenId = scene.tokenCounters.nextId;
   gm.tokenManager._tokenTypeCounts = typeCounts;
   combat.restore(scene.combat, gm.placedTokens);
-  await gm.token3DAdapter.setSelectedToken(
-    gm.placedTokens.find(({ id }) => id === selectedId) || null
-  );
-  gm.stateCoordinator.setViewMode(camera.topDown ? 'topdown' : 'isometric', { remember: false });
-  gm.threeSceneManager.restoreView(camera);
-  gm.campaignView?.setCamera(camera);
+  if (!deferFollowing) {
+    const selected = gm.placedTokens.find(({ id }) => id === selectedId) || null;
+    await gm.token3DAdapter.setSelectedToken(
+      followsAcrossMaps && selected?.mapId !== mapId ? null : selected
+    );
+  }
+  const restoredCamera = followsAcrossMaps ? gm.campaignView.camera : camera;
+  if (followsAcrossMaps) {
+    if (!gm.campaignView.hasCamera) restoredCamera.zoom = 1;
+    restoredCamera.target = { ...focused.pose.world };
+  }
+  gm.stateCoordinator.setViewMode(restoredCamera.topDown ? 'topdown' : 'isometric', {
+    remember: false,
+  });
+  gm.threeSceneManager.restoreView(restoredCamera);
+  gm.campaignView?.setCamera(restoredCamera);
   if (world) await gm.token3DAdapter.syncMapProjections();
+  if (deferFollowing) {
+    const view = gm.campaignView;
+    void movementCompletion
+      .then(async (result) => {
+        if (
+          !result?.completed ||
+          gm.campaignView !== view ||
+          gm.campaignView.focusTokenId !== null ||
+          gm.campaignMapId !== previousMapId ||
+          (gm.token3DAdapter.getSelectedToken()?.id || null) !== selectedId ||
+          !gm.placedTokens.includes(focusedToken) ||
+          gm.campaignRequests?.has('view')
+        )
+          return;
+        await changeCampaignView(gm, { focusTokenId: focusedToken.id });
+      })
+      .catch((error) =>
+        GameErrors.gameState(error, {
+          component: 'SceneWorld',
+          operation: 'followTransferredCreature',
+          tokenId: focusedToken.id,
+        })
+      );
+  }
 }
 
 export async function applyMapTerrain(gm, map) {

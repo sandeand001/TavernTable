@@ -1,4 +1,4 @@
-import CampaignWorld from './CampaignWorld.js';
+import CampaignWorld, { focusCampaignSceneView } from './CampaignWorld.js';
 import CombatSession from '../entities/characters/CombatSession.js';
 import {
   getTokenConditions,
@@ -40,6 +40,15 @@ import { mapLocationId } from './CampaignLocations.js';
 import { blocksCreatureMovement } from '../terrain/PlaceableCollision.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
+
+function followMovedCreature(scene, moved) {
+  if (
+    scene.version === 3 &&
+    scene.view.focusTokenId === moved.id &&
+    scene.view.mapId !== moved.mapId
+  )
+    scene.view = focusCampaignSceneView(scene.view, moved.id, moved.mapId, moved.pose.world);
+}
 
 function canPlayerEmote(saved, character, library) {
   return (
@@ -742,6 +751,7 @@ function moveFlyingActor(scene, library, runtime, actor, target, { closest = fal
   runtime.combat.finishMovement(ticket, costFeet);
   runtime.combat.completeFreeMovement(actor);
   next.combat = runtime.combat.snapshot();
+  followMovedCreature(next, moved);
   encodeScene(next, { ruleset: library.ruleset, library });
   return {
     scene: next,
@@ -1159,6 +1169,7 @@ export async function executePlayerCommand(
     actor.flightActive = moved.pose.kind === 'flight';
     runtime.combat.completeFreeMovement(actor);
     next.combat = runtime.combat.snapshot();
+    followMovedCreature(next, moved);
     encodeScene(next, { ruleset: library.ruleset, library });
     return {
       scene: next,
@@ -1230,6 +1241,7 @@ export async function executePlayerCommand(
       ...(landing.surfaceId ? { surfaceId: landing.surfaceId } : {}),
     };
     next.combat = runtime.combat.snapshot();
+    followMovedCreature(next, moved);
     encodeScene(next, { ruleset: library.ruleset, library });
     return {
       scene: next,
@@ -1315,6 +1327,7 @@ export async function executePlayerCommand(
       actor.world = { ...support.world };
     } else moved.pose = { kind: 'flight', world: position };
     next.combat = runtime.combat.snapshot();
+    followMovedCreature(next, moved);
     encodeScene(next, { ruleset: library.ruleset, library });
     return {
       scene: next,

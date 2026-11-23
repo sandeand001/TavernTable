@@ -1159,13 +1159,8 @@ test('cavern generation creates blank linked maps that a player can traverse', a
   await page.evaluate(
     async ({ characterId, cell }) => {
       const gm = window.gameManager;
-      const library = gm.characterServices.library;
-      const creature = gm.tokenManager.createCreatureByType('mannequin');
-      gm.tokenManager.addTokenToCollection(creature, cell.x, cell.y, 'mannequin');
-      const token = gm.placedTokens.at(-1);
-      const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-      linkTokenCharacter(token, library, characterId);
-      await token.__threeMeshPromise;
+      const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+      await placeSavedCharacter(gm, characterId, cell.x, cell.y, { appearance: 'mannequin' });
       await gm.sceneAutosave.flush();
     },
     { characterId, cell: network.actorCell }
@@ -1225,6 +1220,13 @@ test('cavern generation creates blank linked maps that a player can traverse', a
   );
   const arrived = await player.evaluate(() => window.gameManager.playerApplication.state);
   expect(arrived.publicScene.assets.maps.map((map) => map.id)).toEqual([network.target.mapId]);
+  await page.waitForFunction(
+    ({ mapId, tokenId }) =>
+      window.gameManager?.campaignMapId === mapId &&
+      window.gameManager?.campaignView?.focusTokenId === tokenId &&
+      !window.gameManager?.campaignViewBusy,
+    { mapId: network.target.mapId, tokenId: arrived.observerTokenId }
+  );
   await player.getByRole('tab', { name: /Settings/ }).click();
   await player.getByRole('button', { name: `Use ${network.target.side} passage` }).click();
   await expect(popup).toBeVisible();
@@ -1707,12 +1709,8 @@ test('cavern cutaways follow each viewer and preserve a clickable floor after re
     const library = gm.characterServices.library;
     const id = await library.create('Cavern cutaway explorer');
     await library.flush();
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, 12, 12, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, 12, 12, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
@@ -1978,12 +1976,8 @@ test('a foreground Dungeon boundary does not hide the usable floor', async ({ pa
     const library = gm.characterServices.library;
     const id = await library.create('Dungeon cutaway explorer');
     await library.flush();
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, 12, 23, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, 12, 23, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
@@ -2200,12 +2194,8 @@ test('Dungeon doorways are readable overhead without changing physical walls', a
     const normal = { x: -Math.sin(doorway.angleRadians), z: Math.cos(doorway.angleRadians) };
     const gridX = Math.floor((doorway.xFeet - normal.x * 2.5) / 5);
     const gridY = Math.floor((doorway.zFeet - normal.z * 2.5) / 5);
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, gridX, gridY, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, gridX, gridY, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
@@ -3062,12 +3052,8 @@ test('water surfaces render for host and player without changing terrain picking
     const library = gm.characterServices.library;
     const id = await library.create('Water viewer');
     await library.flush();
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, dry.x, dry.z, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, dry.x, dry.z, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
@@ -3434,6 +3420,12 @@ test('wet Blood Marsh retains supported density-controlled scenery', async ({ pa
 
 test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, browser }) => {
   setBrowserTestTimeout(120000);
+  // This scenario tests grounding and persistence, not software-rendered shadows.
+  if (process.env.CI) {
+    await page.addInitScript(() => {
+      window.__TT_ENABLE_SHADOWS__ = false;
+    });
+  }
   const campaignName = 'Playwright wetland scenery';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3524,11 +3516,10 @@ test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, 
           break;
         }
     if (!cell) throw new Error('No open Wetlands cell for a player');
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, cell.x, cell.y, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    const { token } = await placeSavedCharacter(gm, id, cell.x, cell.y, {
+      appearance: 'mannequin',
+    });
     await token.__threeMeshPromise;
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
@@ -3540,6 +3531,11 @@ test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, 
   });
   const playerContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   try {
+    if (process.env.CI) {
+      await playerContext.addInitScript(() => {
+        window.__TT_ENABLE_SHADOWS__ = false;
+      });
+    }
     const player = await playerContext.newPage();
     await player.goto(`${hostURL}/player.html#invite=${encodeURIComponent(invite)}`);
     await player.waitForFunction(
@@ -3796,12 +3792,8 @@ test('Fungal Grove mushrooms render for host and player and survive reopening', 
     const library = gm.characterServices.library;
     const id = await library.create('Fungal Grove explorer');
     await library.flush();
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, 12, 12, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, 12, 12, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
@@ -4066,12 +4058,8 @@ for (const biomeKey of ['cavern', 'crystalSpires']) {
       const library = gm.characterServices.library;
       const id = await library.create(`${key} explorer`);
       await library.flush();
-      const creature = gm.tokenManager.createCreatureByType('mannequin');
-      gm.tokenManager.addTokenToCollection(creature, 12, 12, 'mannequin');
-      const token = gm.placedTokens.at(-1);
-      const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-      linkTokenCharacter(token, library, id);
-      await token.__threeMeshPromise;
+      const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+      await placeSavedCharacter(gm, id, 12, 12, { appearance: 'mannequin' });
       await gm.sceneAutosave.flush();
       const invitation = await library.store.sessionCall('createInvite', [
         gm.campaign.id,
@@ -4489,13 +4477,8 @@ test('Dungeon generates constructed rooms from the Underground review and surviv
   await expect(page.getByLabel('Shared session status')).toContainText('up to date');
   await page.evaluate(async (id) => {
     const gm = window.gameManager;
-    const library = gm.characterServices.library;
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, 2, 2, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, 2, 2, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
   }, characterId);
   const invite = await page.evaluate(async (id) => {
@@ -4787,12 +4770,8 @@ test('underground lights stay map-local for the host and player and survive reop
     const library = gm.characterServices.library;
     const id = await library.create('Lighting explorer');
     await library.flush();
-    const creature = gm.tokenManager.createCreatureByType('mannequin');
-    gm.tokenManager.addTokenToCollection(creature, 9, 7, 'mannequin');
-    const token = gm.placedTokens.at(-1);
-    const { linkTokenCharacter } = await import('/src/entities/creatures/TokenMovement.js');
-    linkTokenCharacter(token, library, id);
-    await token.__threeMeshPromise;
+    const { placeSavedCharacter } = await import('/src/campaigns/SavedCharacterPlacement.js');
+    await placeSavedCharacter(gm, id, 9, 7, { appearance: 'mannequin' });
     await gm.sceneAutosave.flush();
     const invitation = await library.store.sessionCall('createInvite', [
       gm.campaign.id,
