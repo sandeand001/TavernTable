@@ -35,6 +35,7 @@ describe('Dead / Burnt forest flora composition', () => {
 
   test('bare trees dominate (>75%) with at least one survivor present across seeds', () => {
     let sawAnySurvivor = false;
+    const deadVariants = new Set();
     for (let s = 0; s < 6; s++) {
       const placeables = generate(1000 + s);
       let total = 0;
@@ -42,7 +43,10 @@ describe('Dead / Burnt forest flora composition', () => {
       for (const p of placeables) {
         if (p.type !== 'plant') continue;
         total++;
-        if (/bare/.test(p.variantKey)) bare++;
+        if (/^dead-tree-/.test(p.modelKey)) {
+          bare++;
+          deadVariants.add(p.modelKey);
+        }
         if (/green-(columnar|conifer|small)/.test(p.variantKey)) sawAnySurvivor = true;
       }
       if (total === 0) continue; // allow empty edge case but unlikely
@@ -50,5 +54,6 @@ describe('Dead / Burnt forest flora composition', () => {
       expect(bareRatio).toBeGreaterThan(0.75);
     }
     expect(sawAnySurvivor).toBe(true);
+    expect(deadVariants.size).toBeGreaterThanOrEqual(3);
   });
 });

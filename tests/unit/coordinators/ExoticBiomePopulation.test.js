@@ -113,6 +113,41 @@ describe('Biome-appropriate exotic populations', () => {
     ).toBe(true);
   });
 
+  test('protected Dead Forest scenery includes varied purchased leafless trees', () => {
+    const engine = new TerrainEngine(25, 25);
+    const placements = [1, 42, 99].flatMap(
+      (seed) =>
+        engine.planBiomeGeneration('deadForest', {
+          seed,
+          densityMultiplier: 1.65,
+          assetPack: 'pure-poly',
+        }).placements
+    );
+    const leafless = placements.filter(({ modelKey }) =>
+      modelKey.startsWith('pure-poly-leafless-tree-')
+    );
+    expect(new Set(leafless.map(({ modelKey }) => modelKey)).size).toBeGreaterThanOrEqual(3);
+    expect(leafless.length).toBeGreaterThanOrEqual(placements.length / 5);
+    expect(placements.some(({ modelKey }) => !getPurePolyAsset(modelKey))).toBe(true);
+  });
+
+  test.each([undefined, 'pure-poly'])(
+    'Dead Forest %s scenery excludes the crimson-leafed legacy tree',
+    (assetPack) => {
+      const engine = new TerrainEngine(25, 25);
+      const placements = [1, 42, 99].flatMap(
+        (seed) =>
+          engine.planBiomeGeneration('deadForest', {
+            seed,
+            densityMultiplier: 1.65,
+            assetPack,
+          }).placements
+      );
+      expect(placements.length).toBeGreaterThan(0);
+      expect(placements.some(({ modelKey }) => modelKey === 'twisted-bare-1')).toBe(false);
+    }
+  );
+
   test('fungal groves use purchased mushroom clusters without scattering them in natural caves', () => {
     const engine = new TerrainEngine(25, 25);
     const options = { seed: 42, densityMultiplier: 1.65, assetPack: 'pure-poly' };

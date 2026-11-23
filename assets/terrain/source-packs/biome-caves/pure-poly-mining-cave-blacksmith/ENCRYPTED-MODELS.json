@@ -459,11 +459,46 @@
       "sha256": "d3fc6d6950586d98a679ff60861d800f18ad790a3ebc844a3842ed7a25b78413"
     },
     {
+      "assetId": "pure-poly-leafless-tree-01",
+      "source": "PP_Leafless_Tree_01.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-01.ttasset",
+      "bytes": 101360,
+      "sha256": "fb3b4bc7af56b6e40b7aa84fa4180f91a94e8638c8b74b672f85904a5452d310"
+    },
+    {
       "assetId": "pure-poly-leafless-tree-04",
       "source": "PP_Leafless_Tree_04.fbx",
       "path": "assets/protected/pure-poly-leafless-tree-04.ttasset",
       "bytes": 46724,
       "sha256": "bf8ba2c3ea1fa95619344bf013c2f20143531f45541d47dcee5ea2966bb55343"
+    },
+    {
+      "assetId": "pure-poly-leafless-tree-05",
+      "source": "PP_Leafless_Tree_05.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-05.ttasset",
+      "bytes": 81544,
+      "sha256": "87a998bfe0b6fbb4bf660c7ac8e78d3dfaf9209f4c9f564ccc6bfbd2e2f8cfdd"
+    },
+    {
+      "assetId": "pure-poly-leafless-tree-07",
+      "source": "PP_Leafless_Tree_07.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-07.ttasset",
+      "bytes": 109032,
+      "sha256": "918f206a4bd26f6e5b85b585503cb59402651975110794b7a9bddc3bd62b40e7"
+    },
+    {
+      "assetId": "pure-poly-leafless-tree-08",
+      "source": "PP_Leafless_Tree_08.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-08.ttasset",
+      "bytes": 149768,
+      "sha256": "3c1d400739d2617c1f8200cc3faf03c2fad3c7c39a4aaf8115dcb170c111fdee"
+    },
+    {
+      "assetId": "pure-poly-leafless-tree-11",
+      "source": "PP_Leafless_Tree_11.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-11.ttasset",
+      "bytes": 97784,
+      "sha256": "ba3440f6070d0470a3d87b81cec128a5dab32ea76761403f6573bb284eb15f56"
     },
     {
       "assetId": "pure-poly-anvil-01",

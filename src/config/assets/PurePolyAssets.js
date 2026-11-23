@@ -365,9 +365,34 @@ export const PURE_POLY_ASSETS = Object.freeze([
     4.8,
     [
       [
+        'pure-poly-leafless-tree-01',
+        'PP_Leafless_Tree_01',
+        'assets/protected/pure-poly-leafless-tree-01.ttasset',
+      ],
+      [
         'pure-poly-leafless-tree-04',
         'PP_Leafless_Tree_04',
         'assets/protected/pure-poly-leafless-tree-04.ttasset',
+      ],
+      [
+        'pure-poly-leafless-tree-05',
+        'PP_Leafless_Tree_05',
+        'assets/protected/pure-poly-leafless-tree-05.ttasset',
+      ],
+      [
+        'pure-poly-leafless-tree-07',
+        'PP_Leafless_Tree_07',
+        'assets/protected/pure-poly-leafless-tree-07.ttasset',
+      ],
+      [
+        'pure-poly-leafless-tree-08',
+        'PP_Leafless_Tree_08',
+        'assets/protected/pure-poly-leafless-tree-08.ttasset',
+      ],
+      [
+        'pure-poly-leafless-tree-11',
+        'PP_Leafless_Tree_11',
+        'assets/protected/pure-poly-leafless-tree-11.ttasset',
       ],
     ]
   ),

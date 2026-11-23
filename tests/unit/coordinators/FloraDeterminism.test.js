@@ -6,8 +6,6 @@ import {
 } from '../../../src/terrain/flora/BiomePopulation.js';
 import { createTerrainWorld, floraContext } from '../../helpers/terrainWorld.js';
 
-const BARE_IDS = Object.keys(TERRAIN_PLACEABLES).filter((key) => /bare/i.test(key));
-
 function generateFloraSnapshot(biome, seed, cols = 12, rows = 12, structures = true) {
   const plants = [];
   const world = createTerrainWorld(cols, rows, {
@@ -144,7 +142,9 @@ describe('Deterministic flora placement', () => {
   test('petrified forest contains only bare trees', () => {
     const run = generateFloraSnapshot('petrifiedForest', 4242, 18, 10);
     expect(run.count).toBeGreaterThan(0);
-    expect(run.snapshot.filter((plant) => !BARE_IDS.includes(plant.id))).toHaveLength(0);
+    const models = run.snapshot.map(({ id }) => TERRAIN_PLACEABLES[id].modelKey);
+    expect(models.every((model) => /^dead-tree-/.test(model))).toBe(true);
+    expect(new Set(models).size).toBeGreaterThan(1);
   });
 
   test.each(['ruinedTown', 'ruinedUrban', 'ruinedCastle'])(

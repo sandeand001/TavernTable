@@ -324,22 +324,13 @@ const BIOME_FLORA_PROFILES = [
   // Dead / petrified refinements; Shadowfell has its own profile below.
   {
     re: /(deadForest)/i,
-    // Burnt / Dead forest: emphasize charred, lifeless canopy.
-    // Tweaks:
-    // - Slightly reduced density so gaps feel scorched/open.
-    // - Heavily weight bare trunks; retain tiny hint of living survivors.
-    // - Columnar silhouettes kept minimal for vertical contrast.
-    density: 0.18, // slightly lower to accentuate emptiness and increase bare ratio
+    density: 0.18,
     spacing: 1,
     weights: makeWeights({
-      // Bare trunks dominate overwhelmingly
-      'tree-bare-deciduous': 150,
-      // Reintroduced dead variants (visual variety) with small relative weights so they appear occasionally
-      'tree-dead-a': 2.5,
-      'tree-dead-b': 2.3,
-      'tree-dead-c': 2.1,
-      'tree-dead-d': 1.9,
-      // Tiny survivor presence (still allow at least one across sampled seeds)
+      'tree-dead-a': 45,
+      'tree-dead-b': 42,
+      'tree-dead-c': 38,
+      'tree-dead-d': 34,
       'tree-green-columnar': 0.5,
       'tree-green-conifer': 0.4,
       'tree-green-small': 0.35,
@@ -350,10 +341,11 @@ const BIOME_FLORA_PROFILES = [
     density: 0.07,
     spacing: 2,
     elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
-    // petrified: strictly bare trunks (no partial dead foliage) + sparse rocks/pebbles
-    // Adjusted to satisfy deterministic test expecting exclusively bare trees.
     weights: makeWeights({
-      'tree-bare-deciduous': 10,
+      'tree-dead-a': 3,
+      'tree-dead-b': 2.5,
+      'tree-dead-c': 2,
+      'tree-dead-d': 2.5,
     }),
   },
   {
@@ -766,7 +758,12 @@ function purePolyProfile(biomeKey) {
       'ashWastes',
     ].includes(biomeKey)
   ) {
-    add('tree', ['wasteland', 'graveyard', 'ashWastes'].includes(biomeKey) ? 3 : 10);
+    const purchasedWeight = ['wasteland', 'graveyard', 'ashWastes'].includes(biomeKey) ? 3 : 10;
+    if (biomeKey === 'deadForest') {
+      const legacyWeight = Object.values(weights).reduce((total, weight) => total + weight, 0);
+      for (const id of Object.keys(weights)) weights[id] *= purchasedWeight / legacyWeight;
+    }
+    add('tree', purchasedWeight);
     if (biomeKey === 'forestConifer' || biomeKey === 'hills') add('grass', 3);
     if (['forestConifer', 'hills', 'mountain', 'alpine'].includes(biomeKey)) add('pebble', 2);
   } else {

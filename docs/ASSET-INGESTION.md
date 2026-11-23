@@ -139,7 +139,7 @@ The repository catalog currently identifies these representative paths:
 | Kenney Retro Fantasy   | Low-poly fallback/testing kit, equipment and props            |
 
 These entries are pack planning assignments. Nine previously reviewed representatives
-and 81 selected Pure Poly derivatives are runtime placeables; whole packs remain
+and 86 selected Pure Poly derivatives are runtime placeables; whole packs remain
 source-only. Town generation uses
 four other Village wall, roof, gable and balcony models. The Village door-wall
 ID is a generation marker and manual placeable, not the door leaf used in a
@@ -274,9 +274,9 @@ These are filename-based planning categories, not gameplay assignments. In
 particular, human-made mining props and light fixtures are candidates for
 deliberate occupied sites, **not** automatic scenery in a natural cavern.
 Entrances, tunnel shells and water still require independent physical and
-gameplay validation. Eighty-one selected formations, rocks, pebbles, crystal
+gameplay validation. Eighty-six selected formations, rocks, pebbles, crystal
 clusters, trees, grass, cacti, fungi, ore and deliberate-site props have encrypted
-derivatives registered as manual placeables. Sixty-six natural models are also available
+derivatives registered as manual placeables. Seventy-one natural models are also available
 through the **Pure Poly scenery** generation choice for appropriate biomes.
 When the current account can obtain a working key and decrypt a selected model,
 new supported biome choices default to Pure Poly; built-in scenery remains
@@ -288,14 +288,18 @@ not randomly scattered in natural caves.
 The protected Scree Slope profile uses stone ground cover rather than woodland trees.
 The brighter mushroom clusters generate in fungal groves and temperate forests,
 but not automatically in natural Cavern.
-The other 2,516 variants remain source-only candidates. Production distribution
+New Dead Forests use leafless legacy trees with a small chance of green survivors.
+The protected profile also mixes in six reviewed leafless Pure Poly shapes.
+The previously dominant legacy “bare” model has a crimson canopy and is no longer
+generated in Dead or Petrified Forests. Existing placements are unchanged.
+The other 2,511 variants remain source-only candidates. Production distribution
 and user visual acceptance remain open.
 
 | Selected family | Models | Remaining review |
 | --------------- | -----: | ---------------- |
 | Stalagmites, rock columns and plain rocks | 20 | Ceiling-attached formations require actual ceiling support. |
 | Crystal clusters | 8 | More shapes and color variants remain candidates. |
-| Trees, cacti and fungi | 26 | Review additional vegetation and biome-specific colors. |
+| Trees, cacti and fungi | 31 | Review additional vegetation and biome-specific colors. |
 | Grass | 6 | Small ground cover is passable and does not obstruct sight. |
 | Pebble clusters | 6 | Small ground cover is passable and does not obstruct sight. |
 | Mine, forge, storage and furnishing props | 10 | Rails, structural modules and equipment need fit and interaction review. |
@@ -305,7 +309,9 @@ and user visual acceptance remain open.
 Wall fungi, stalactites, tunnel shells and entrances remain source-only until
 their attachment and passage behavior is supported. Rails, structural modules,
 tools and weapons also need appropriate placement or interaction; additional
-crystal, ore and treasure variants remain candidates for future review.
+crystal, ore and treasure variants remain candidates for future review. All 11
+leafless tree shapes were compared with their conversions; five additional shapes
+were selected for variety, while similar or higher-cost shapes remain source-only.
 
 Generated cavern routes and scenery intersections are checked against rendered
 model bounds. Movement still uses the existing grid-cell obstacle policy for
