@@ -8,6 +8,7 @@ import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibr
 import { sceneState } from '../../helpers/sceneState.js';
 import { encodeScene, decodeScene } from '../../../src/campaigns/CampaignScene.js';
 import { buildingLevels } from '../../../src/terrain/BuildingModel.js';
+import { mapFeetToCampaign } from '../../../src/campaigns/CampaignCoordinates.js';
 
 function fixture(roof = 'gable', kind = 'building') {
   localStorage.clear();
@@ -115,6 +116,40 @@ test('resizing preserves manual interior edits and floor identities instead of r
   expect(restored).toBeDefined();
   expect(restored.terrain.heights.flat()).toContain(1);
   expect(next.maps.filter((map) => map.building)).toHaveLength(3);
+});
+
+test('rotating a building preserves offset scenery positions and orientations', () => {
+  const { engine, scene, context } = fixture();
+  const assembled = reconcileBuildingScene(scene, context);
+  const floor = assembled.maps.find((map) => map.building?.floor === 1);
+  const formation = {
+    type: 'plant',
+    modelKey: 'source-cave-stalagmite',
+    gridX: 3,
+    gridY: 2,
+    gridOffsetX: 0.12,
+    gridOffsetY: -0.17,
+    angleRadians: Math.PI / 2,
+    persistedScale: { x: 0.4, y: 1, z: 0.4 },
+  };
+  floor.terrain.placeables.push(formation);
+  const position = (map, item) =>
+    mapFeetToCampaign(map, {
+      x: (item.gridX + 0.5 + item.gridOffsetX) * 5,
+      y: 0,
+      z: (item.gridY + 0.5 + item.gridOffsetY) * 5,
+    });
+  const before = position(floor, formation);
+  const beforeAngle = formation.angleRadians + (floor.quarterTurns * Math.PI) / 2;
+  engine.resizeStructure('house', { angleRadians: Math.PI / 2 });
+  assembled.maps[0].terrain.geometry = engine.geometry.save();
+  const next = reconcileBuildingScene(assembled, context);
+  const rotated = next.maps.find((map) => map.id === floor.id);
+  const saved = rotated.terrain.placeables[0];
+  const after = position(rotated, saved);
+  expect(after.x).toBeCloseTo(before.x);
+  expect(after.z).toBeCloseTo(before.z);
+  expect(saved.angleRadians + (rotated.quarterTurns * Math.PI) / 2).toBeCloseTo(beforeAngle);
 });
 
 test('building doors start closed and resizing preserves their open and locked states', () => {

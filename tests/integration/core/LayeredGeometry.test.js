@@ -4,6 +4,75 @@ import { TerrainMeshBuilder } from '../../../src/scene/terrain/TerrainMeshBuilde
 import { TerrainRebuilder } from '../../../src/scene/terrain/TerrainRebuilder.js';
 import { PickingService } from '../../../src/scene/picking/PickingService.js';
 import { createCurvedExamples } from '../../../src/terrain/CurvedExamples.js';
+import {
+  CONSTRUCTION_MATERIALS,
+  getConstructionAppearance,
+} from '../../../src/config/biome/ConstructionPalettes.js';
+
+test.each([true, false])(
+  'terrain swaps only a complete village kit (roof available: %s)',
+  async (loaded) => {
+    const world = createTerrainWorld(10, 10, null);
+    const gm = world.gm;
+    gm.threeSceneManager.scene = new three.Scene();
+    gm.threeSceneManager.three = three;
+    const createFacade = () => {
+      const facade = new three.Group();
+      const mesh = new three.Mesh(
+        new three.BoxGeometry(8, 10, 1),
+        new three.MeshBasicMaterial({ name: 'MI_Plaster' })
+      );
+      mesh.position.y = 5;
+      facade.add(mesh);
+      return facade;
+    };
+    const cachedFacade = createFacade();
+    let finishRoof;
+    const roofLoad = new Promise((resolve) => (finishRoof = resolve));
+    gm.modelAssetCache = {
+      getModel: async (key) =>
+        key === 'source-medieval-roof' ? roofLoad : cachedFacade.clone(true),
+    };
+    const rebuilder = new TerrainRebuilder({
+      gameManager: gm,
+      builder: new TerrainMeshBuilder({ hardEdges: true }),
+      debounceMs: 0,
+    });
+    world.engine.placeStructure({
+      id: 'town-house',
+      kind: 'building',
+      xFeet: 25,
+      zFeet: 25,
+      lengthFeet: 25,
+      widthFeet: 20,
+      heightFeet: 10,
+      appearance: {
+        ...getConstructionAppearance('town'),
+        facadeModelKey: 'source-medieval-wall-door',
+      },
+    });
+    const shell = world.engine.geometry.save();
+    try {
+      const mesh = rebuilder.rebuild({ three });
+      const drawsOldRoof = () =>
+        mesh.geometry
+          .getAttribute('constructionMaterial')
+          .array.includes(CONSTRUCTION_MATERIALS.tiles);
+      expect(mesh.getObjectByName('ConstructionAssets')).toBeUndefined();
+      expect(drawsOldRoof()).toBe(true);
+      finishRoof(loaded ? cachedFacade.clone(true) : null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const attached = mesh.getObjectByName('ConstructionAssets');
+      expect(
+        Boolean(attached?.getObjectByName('ConstructionAsset:town-house:source-medieval-roof'))
+      ).toBe(loaded);
+      expect(drawsOldRoof()).toBe(!loaded);
+      expect(world.engine.geometry.save()).toEqual(shell);
+    } finally {
+      world.dispose();
+    }
+  }
+);
 
 test('adding a volume through the terrain owner rebuilds a real playable bridge mesh', () => {
   const world = createTerrainWorld(10, 10, null);

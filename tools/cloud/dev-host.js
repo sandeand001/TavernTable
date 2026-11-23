@@ -12,6 +12,7 @@ const { createCloudHttpHandler } = require('./cloud-http.js');
 const { HostResources } = require('../host-resources.js');
 const { resolvePublicFile } = require('../public-files.js');
 const { validateApplicationRuntime } = require('../../src/campaigns/CloudRuntime.js');
+const { loadProtectedAssetKeys } = require('./protected-assets.js');
 
 const runtimeTag =
   /<script\b(?=[^>]*\bid="taverntable-runtime")(?=[^>]*\btype="application\/json")[^>]*>[\s\S]*?<\/script>/g;
@@ -48,13 +49,21 @@ async function createCloudDevHost({
   let server;
   try {
     root = await fs.realpath(root);
+    const protectedAssetKeys = await loadProtectedAssetKeys(
+      root,
+      process.env.TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE
+    );
     const index = await fs.readFile(path.join(root, 'index.html'), 'utf8');
     if ([...index.matchAll(runtimeTag)].length !== 1)
       throw new Error('The application shell requires exactly one JSON runtime tag');
     const manifest = JSON.parse(
       await fs.readFile(path.join(root, 'assets', 'data', 'resources', 'manifest.json'), 'utf8')
     );
-    const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
+    const access = new CloudAccountAccess({
+      auth: runtime.auth,
+      firestore: runtime.firestore,
+      eligibilityMode: process.env.TAVERNTABLE_CLOUD_ELIGIBILITY ?? 'pilot',
+    });
     const store = new CloudCampaignStore({
       firestore: runtime.firestore,
       access,
@@ -161,6 +170,7 @@ async function createCloudDevHost({
       access,
       store,
       allowedOrigins: [origin, `http://localhost:${address.port}`],
+      protectedAssetKeys,
     });
     let closing = null;
     return {

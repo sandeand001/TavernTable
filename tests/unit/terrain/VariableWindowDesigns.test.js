@@ -44,6 +44,50 @@ test('new seeded facade recipes vary actual dimensions, sills and positions, not
   }
 });
 
+test('symmetric fortress rhythm mirrors opposite facades and aligns windows vertically', () => {
+  const spec = createStructure({
+    ...hall(),
+    id: 'keep',
+    building: {
+      windowLayout: createWindowLayout(
+        'fortress',
+        ['north', 'east', 'south', 'west'],
+        42,
+        'symmetric'
+      ),
+    },
+  });
+  const windows = buildingWindows(spec);
+  expect(spec.building.windowLayout).toMatchObject({ version: 3, rhythm: 'symmetric' });
+  const signature = (window) => [window.u, window.widthFeet, window.heightFeet, window.sillFeet];
+  for (const level of buildingLevels(spec, { includeDeck: false }).slice(1)) {
+    for (const [left, right] of [
+      ['north', 'south'],
+      ['east', 'west'],
+    ]) {
+      const a = windows
+        .filter((window) => window.floor === level.id && window.side === left)
+        .map(signature);
+      const b = windows
+        .filter((window) => window.floor === level.id && window.side === right)
+        .map(signature);
+      expect(a).toEqual(b);
+    }
+  }
+  for (const side of ['north', 'east', 'south', 'west']) {
+    const positions = buildingLevels(spec, { includeDeck: false })
+      .slice(1)
+      .map((level) =>
+        windows
+          .filter((window) => window.floor === level.id && window.side === side)
+          .map((window) => window.u)
+      );
+    expect(positions.every((row) => JSON.stringify(row) === JSON.stringify(positions[0]))).toBe(
+      true
+    );
+  }
+});
+
 test.each(['residential', 'civic', 'fortress'])(
   '%s compositions preserve sparse wall sections and avoid overlapping generated openings',
   (style) => {

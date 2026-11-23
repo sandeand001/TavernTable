@@ -57,4 +57,26 @@ describe('PlaceableMeshPool (Phase 4 scaffold)', () => {
     const statsAfter = pool.getStats();
     expect(statsAfter.instances).toBe(0); // freed
   });
+
+  test('protected model access failures remain explicit and create no placeholder scenery', async () => {
+    const { PlaceableMeshPool } =
+      await import('../../../../src/scene/terrain/PlaceableMeshPool.js');
+    const pool = new PlaceableMeshPool({
+      gameManager: {
+        threeSceneManager: { scene: { add: jest.fn(), remove: jest.fn() } },
+        spatial: { gridToWorld: (x, y) => ({ x, y: 0, z: y }) },
+        is3DModeActive: () => true,
+        modelAssetCache: {
+          getModel: jest.fn().mockRejectedValue(new Error('Protected key access was denied')),
+        },
+      },
+    });
+    await expect(
+      pool.addPlaceable(
+        { gridX: 1, gridY: 2, type: 'plant', modelKey: 'pure-poly-stalagmite-05' },
+        { strict: true }
+      )
+    ).rejects.toThrow(/protected key access was denied/i);
+    expect(pool.getStats().instances).toBe(0);
+  });
 });

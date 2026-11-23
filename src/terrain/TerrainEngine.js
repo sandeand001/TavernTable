@@ -1,5 +1,6 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import { TERRAIN_CONFIG } from '../config/terrain/TerrainConstants.js';
+import { DUNGEON_ROOM_COUNT } from '../config/biome/BiomeConstants.js';
 import { TerrainDataStore } from './TerrainDataStore.js';
 import { TerrainBrushController } from './brush/TerrainBrushController.js';
 import { computeBrushFootprint, normalizeBrushSize } from './brush/BrushCommon.js';
@@ -18,9 +19,13 @@ import {
   STRUCTURE_TYPES,
 } from './ConstructionBlueprints.js';
 import { generateBiomeStructures } from './generation/BiomeStructures.js';
+import { planBiomePopulation } from './flora/BiomePopulation.js';
 import { buildingForHeight } from './BuildingModel.js';
 import { createBuildingSnapPreview, withBuildingSnapContext } from './BuildingSnaps.js';
 import { normalizeCavernRecipe } from './generation/CavernInteriors.js';
+import { isAssetAllowedInBiome } from '../config/assets/BiomeAssetMatrix.js';
+import { PURE_POLY_GENERATION_BIOMES } from '../config/assets/PurePolyAssets.js';
+import { sameJsonValue } from '../utils/JsonValue.js';
 
 function validateDimensions(cols, rows) {
   if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1) {
@@ -77,6 +82,80 @@ function validateDensity(density) {
   }
 }
 
+const GENERATION_RECIPE_FIELDS = [
+  'relief',
+  'saltFlatReliefVersion',
+  'roughness',
+  'waterBias',
+  'densityMultiplier',
+  'canvasScale',
+  'layoutFamily',
+  'outerWards',
+  'cavernExitCount',
+  'dungeonRoomCount',
+  'assetPack',
+];
+
+function normalizeGenerationRecipe(biomeKey, options) {
+  const values = {};
+  for (const field of GENERATION_RECIPE_FIELDS)
+    if (options[field] !== undefined) values[field] = options[field];
+  return { version: 1, biomeKey, values };
+}
+
+function validateGenerationRecipe(recipe) {
+  if (
+    !recipe ||
+    typeof recipe !== 'object' ||
+    Array.isArray(recipe) ||
+    recipe.version !== 1 ||
+    typeof recipe.biomeKey !== 'string' ||
+    recipe.biomeKey.length > 150 ||
+    !recipe.values ||
+    typeof recipe.values !== 'object' ||
+    Array.isArray(recipe.values) ||
+    Object.keys(recipe.values).some((key) => !GENERATION_RECIPE_FIELDS.includes(key))
+  )
+    throw new TypeError('Saved generation recipe is invalid');
+  const { values } = recipe;
+  if (
+    (values.relief !== undefined &&
+      (!Number.isFinite(values.relief) || values.relief < 0.1 || values.relief > 5)) ||
+    (values.saltFlatReliefVersion !== undefined &&
+      (recipe.biomeKey !== 'saltFlats' || values.saltFlatReliefVersion !== 1)) ||
+    (values.roughness !== undefined &&
+      (!Number.isFinite(values.roughness) || values.roughness < 0.1 || values.roughness > 5)) ||
+    (values.waterBias !== undefined &&
+      (!Number.isFinite(values.waterBias) || Math.abs(values.waterBias) > 5)) ||
+    (values.densityMultiplier !== undefined &&
+      (!Number.isFinite(values.densityMultiplier) ||
+        values.densityMultiplier < 0 ||
+        values.densityMultiplier > 100)) ||
+    (values.canvasScale !== undefined &&
+      (!Number.isFinite(values.canvasScale) ||
+        values.canvasScale < 0.5 ||
+        values.canvasScale > 2)) ||
+    (values.layoutFamily !== undefined &&
+      !['citadel', 'bailey', 'palace'].includes(values.layoutFamily)) ||
+    (values.outerWards !== undefined && typeof values.outerWards !== 'boolean') ||
+    (values.cavernExitCount !== undefined &&
+      (!Number.isInteger(values.cavernExitCount) ||
+        values.cavernExitCount < 1 ||
+        values.cavernExitCount > 4)) ||
+    (values.dungeonRoomCount !== undefined &&
+      (!Number.isInteger(values.dungeonRoomCount) ||
+        values.dungeonRoomCount < DUNGEON_ROOM_COUNT.min ||
+        values.dungeonRoomCount > DUNGEON_ROOM_COUNT.max)) ||
+    (values.assetPack !== undefined &&
+      (!['standard', 'pure-poly'].includes(values.assetPack) ||
+        (values.assetPack === 'pure-poly' &&
+          !PURE_POLY_GENERATION_BIOMES.includes(recipe.biomeKey))))
+  )
+    throw new TypeError('Saved generation recipe values are invalid');
+  validateBiome(recipe.biomeKey);
+  return JSON.parse(JSON.stringify(recipe));
+}
+
 export class TerrainEngine {
   constructor(cols, rows, baseHeights = null) {
     validateDimensions(cols, rows);
@@ -97,6 +176,7 @@ export class TerrainEngine {
     this._redo = [];
     this._isGenerating = false;
     this._biomeKey = null;
+    this._generationRecipe = null;
     this._cavern = null;
     this._structureGenerationEnabled = true;
     const settings = typeof window !== 'undefined' ? window.richShadingSettings : null;
@@ -209,6 +289,68 @@ export class TerrainEngine {
       return false;
     }
     return this._commitChanges(changes, 'Reset terrain', { allTiles: true });
+  }
+
+  clearMap() {
+    this.cancelBrushStroke();
+    const changes = [];
+    for (let y = 0; y < this.rows; y++)
+      for (let x = 0; x < this.cols; x++) {
+        const before = this.getHeightAt(x, y);
+        if (before !== TERRAIN_CONFIG.DEFAULT_HEIGHT)
+          changes.push({ x, y, before, after: TERRAIN_CONFIG.DEFAULT_HEIGHT });
+      }
+    const beforeGeometry = this.geometry.save();
+    const afterGeometry = { version: 1, volumes: [] };
+    const geometryChanged = JSON.stringify(beforeGeometry) !== JSON.stringify(afterGeometry);
+    const recipeChanged = this._cavern !== null || this._generationRecipe !== null;
+    if (!changes.length && !geometryChanged && !recipeChanged) {
+      this._emitAllTiles();
+      return false;
+    }
+    let geometry;
+    let receipt;
+    if (geometryChanged || recipeChanged) {
+      geometry = this._validatedGeometry(afterGeometry, {
+        clearingMap: true,
+        cavernGeneration: true,
+        previousCavern: this._cavern ? normalizeCavernRecipe(this._cavern) : null,
+      });
+      receipt = this._geometryReceipts.get(geometry);
+      this._applyValidatedGeometry(geometry);
+    }
+    if (changes.length)
+      this._dataStore.setMany(
+        changes.map(({ x, y, after }) => ({ x, y, height: after })),
+        { commit: true }
+      );
+    const before = {
+      cavern: this._cavern ? normalizeCavernRecipe(this._cavern) : null,
+      generationRecipe: this._generationRecipe
+        ? JSON.parse(JSON.stringify(this._generationRecipe))
+        : null,
+    };
+    this._cavern = null;
+    this._generationRecipe = null;
+    this._undo.push({
+      label: 'Clear map',
+      changes,
+      ...(geometry
+        ? {
+            geometry: { before: beforeGeometry, after: afterGeometry },
+            ...(receipt ? { context: { before: receipt.before, after: receipt.after } } : {}),
+          }
+        : {}),
+      terrain: {
+        before,
+        after: { cavern: null, generationRecipe: null },
+      },
+    });
+    if (this._undo.length > TERRAIN_CONFIG.HISTORY_LIMIT) this._undo.shift();
+    this._redo = [];
+    this._emitAllTiles();
+    this._changed(geometry ? 'geometry' : 'terrain');
+    return true;
   }
 
   isValidGridPosition(x, y) {
@@ -401,18 +543,26 @@ export class TerrainEngine {
     const geometry =
       edit.geometry && this._validatedGeometry(edit.geometry.before, edit.context?.before);
     if (geometry) this._applyValidatedGeometry(geometry);
+    if (edit.terrain) {
+      this._cavern = edit.terrain.before.cavern;
+      this._generationRecipe = edit.terrain.before.generationRecipe;
+    }
     this._undo.pop();
     this._redo.push(edit);
-    if (edit.geometry) {
+    if (edit.geometry && !edit.changes?.length) {
       this._changed('geometry');
       return true;
     }
-    const changes = edit.changes.map(({ x, y, before, after }) => ({
+    const changes = (edit.changes || []).map(({ x, y, before, after }) => ({
       x,
       y,
       before: after,
       after: before,
     }));
+    if (!changes.length) {
+      this._changed('terrain');
+      return true;
+    }
     return this._commitChanges(changes, edit.label, { history: false, kind: 'undo' });
   }
 
@@ -425,8 +575,16 @@ export class TerrainEngine {
     if (geometry) this._applyValidatedGeometry(geometry);
     this._redo.pop();
     this._undo.push(edit);
-    if (edit.geometry) {
+    if (edit.terrain) {
+      this._cavern = edit.terrain.after.cavern;
+      this._generationRecipe = edit.terrain.after.generationRecipe;
+    }
+    if (edit.geometry && !edit.changes?.length) {
       this._changed('geometry');
+      return true;
+    }
+    if (!edit.changes?.length) {
+      this._changed('terrain');
       return true;
     }
     return this._commitChanges(edit.changes, edit.label, { history: false, kind: 'redo' });
@@ -445,6 +603,13 @@ export class TerrainEngine {
       return this.generateBiomeElevation(biomeKey, { ...options, seed });
     }
     this._biomeKey = biomeKey;
+    if (
+      this._selectedPlaceable &&
+      this._biomeKey &&
+      !isAssetAllowedInBiome(this._selectedPlaceable, this._biomeKey)
+    )
+      this._selectedPlaceable = null;
+    if (this._generationRecipe?.biomeKey !== biomeKey) this._generationRecipe = null;
     this._biomeSeed = seed;
     this._emit('biomeChanged', { biomeKey, biomeSeed: seed });
     this.refreshAppearance();
@@ -458,36 +623,133 @@ export class TerrainEngine {
     return this.generateBiomeElevation(biomeKey, options);
   }
 
-  generateBiomeElevation(biomeKey, options = {}) {
-    if (this.isActive || this.isGenerating) return false;
+  planBiomeGeneration(
+    biomeKey,
+    options = {},
+    { cols = this.cols, rows = this.rows, clear = false } = {}
+  ) {
+    if (this.isActive || this.isGenerating)
+      throw new Error('Finish terrain editing before planning biome generation');
+    validateDimensions(cols, rows);
+    if (typeof clear !== 'boolean') throw new TypeError('Generation clearing must be explicit');
+    if (!clear && (cols !== this.cols || rows !== this.rows))
+      throw new Error('Clear the map before planning generation at a different grid size');
+    return this._planBiomeGeneration(biomeKey, options, { cols, rows, clear });
+  }
+
+  _planBiomeGeneration(
+    biomeKey,
+    options,
+    { cols = this.cols, rows = this.rows, clear = false } = {}
+  ) {
     validateBiome(biomeKey);
     if (biomeKey === null) throw new Error('Choose a biome before generating terrain');
     if (options.structures !== undefined && typeof options.structures !== 'boolean')
       throw new TypeError('Structure generation must be enabled or disabled');
+    if (options.densityMultiplier !== undefined) validateDensity(options.densityMultiplier);
+    if (
+      options.assetPack !== undefined &&
+      (!['standard', 'pure-poly'].includes(options.assetPack) ||
+        (options.assetPack === 'pure-poly' && !PURE_POLY_GENERATION_BIOMES.includes(biomeKey)))
+    )
+      throw new TypeError('The selected scenery source is unavailable for this biome');
+    if (
+      options.cavernExitCount !== undefined &&
+      (!Number.isInteger(options.cavernExitCount) ||
+        options.cavernExitCount < 1 ||
+        options.cavernExitCount > 4)
+    )
+      throw new TypeError('Cavern entrance count must be between one and four');
+    if (
+      options.dungeonRoomCount !== undefined &&
+      (!Number.isInteger(options.dungeonRoomCount) ||
+        options.dungeonRoomCount < DUNGEON_ROOM_COUNT.min ||
+        options.dungeonRoomCount > DUNGEON_ROOM_COUNT.max)
+    )
+      throw new TypeError('Dungeon room count must be between one and sixteen');
+    if (
+      options.cavernKind !== undefined &&
+      !['main', 'chamber', 'tunnel'].includes(options.cavernKind)
+    )
+      throw new TypeError('Choose a valid cavern area kind');
     const seed = options.seed ?? this._biomeSeed;
     validateSeed(seed);
+    const hint = getBiomeElevationScaleHint(biomeKey);
+    const heights = generateBiomeElevationField(biomeKey, rows, cols, {
+      ...options,
+      seed,
+      elevationUnit: hint,
+    });
+    validateHeights(heights);
+    const previous = this.save();
+    const plan = generateBiomeStructures({
+      biomeKey,
+      seed,
+      heights,
+      previousHeights: clear
+        ? TerrainHeightUtils.createHeightArray(rows, cols, TERRAIN_CONFIG.DEFAULT_HEIGHT)
+        : previous.heights,
+      geometry: clear ? { version: 1, volumes: [] } : this.geometry.save(),
+      feetPerLevel: this._feetPerLevel,
+      cavernExits: options.cavernManualExits || [],
+      cavernExitCount: options.cavernExitCount ?? null,
+      cavernKind: options.cavernKind ?? 'main',
+      dungeonRoomCount: options.dungeonRoomCount ?? DUNGEON_ROOM_COUNT.default,
+      layoutFamily: options.layoutFamily ?? null,
+      outerWards: options.outerWards ?? true,
+      enabled:
+        options.structures === undefined ? this._structureGenerationEnabled : options.structures,
+    });
+    const densityMultiplier = options.densityMultiplier ?? this._treeDensityMultiplier;
+    const getHeightAt = (x, y) => plan.heights[y][x];
+    const plannedTerrain = {
+      cols,
+      rows,
+      cavern: plan.cavern ?? null,
+      getHeightAt,
+      geometry: {
+        getStructures: () => plan.geometry.structures || [],
+        save: () => plan.geometry,
+      },
+    };
+    const flora = planBiomePopulation(
+      {
+        gameManager: { cols, rows, terrainEngine: plannedTerrain },
+        getTerrainHeight: getHeightAt,
+        getTreeDensityMultiplier: () => densityMultiplier,
+        _biomeSeed: seed,
+        assetPack: options.assetPack,
+      },
+      biomeKey,
+      seed
+    );
+    const placements = [...(plan.placements || []), ...flora];
+    return {
+      ...plan,
+      biomeKey,
+      seed,
+      hint,
+      previous,
+      placements,
+      generationRecipe: normalizeGenerationRecipe(biomeKey, options),
+      densityMultiplier,
+      elevationScale: plan.geometry.volumes.length ? this._elevationScale : hint,
+    };
+  }
+
+  generateBiomeElevation(biomeKey, options = {}) {
+    if (this.isActive || this.isGenerating) return false;
     this._isGenerating = true;
+    const previousDensity = this._treeDensityMultiplier;
+    let completed = false;
     try {
-      const heights = generateBiomeElevationField(biomeKey, this.rows, this.cols, {
-        ...options,
-        seed,
-      });
-      validateHeights(heights);
-      const previous = this.save();
+      const plan = this._planBiomeGeneration(biomeKey, options);
+      const { seed, hint, previous } = plan;
+      if (options.densityMultiplier !== undefined)
+        this._treeDensityMultiplier = options.densityMultiplier;
       const replacingGeneratedJoins = previous.geometry?.volumes.some(
         (volume) => volume.source === 'generated' && volume.id.startsWith('compound-opening-')
       );
-      const plan = generateBiomeStructures({
-        biomeKey,
-        seed,
-        heights,
-        previousHeights: previous.heights,
-        geometry: this.geometry.save(),
-        feetPerLevel: this._feetPerLevel,
-        cavernExits: options.cavernManualExits || [],
-        enabled:
-          options.structures === undefined ? this._structureGenerationEnabled : options.structures,
-      });
       const protectAuthoredCellars = [previous.geometry, plan.geometry].some((snapshot) =>
         snapshot?.structures?.some((spec) => spec.kind === 'cellar' && spec.building?.cellarLayout)
       );
@@ -509,9 +771,13 @@ export class TerrainEngine {
                 replacingGeneratedJoins: true,
                 protectAuthoredCellars,
                 cavernGeneration,
+                preserveCavernAreas: options.preserveCavernAreas === true,
+                preserveOtherMaps: options.preserveOtherMaps === true,
                 previousCavern: previous.cavern ?? null,
               }
-            : null
+            : options.preserveOtherMaps === true
+              ? { preserveOtherMaps: true }
+              : null
         );
         this._applyValidatedGeometry(geometry);
       } catch (error) {
@@ -523,9 +789,13 @@ export class TerrainEngine {
         throw error;
       }
       this._biomeKey = biomeKey;
+      if (
+        this._selectedPlaceable &&
+        !isAssetAllowedInBiome(this._selectedPlaceable, this._biomeKey)
+      )
+        this._selectedPlaceable = null;
       this._biomeSeed = seed;
       this._clearHistory();
-      const hint = getBiomeElevationScaleHint(biomeKey);
       if (!this.geometry.hasVolumes && Number.isFinite(hint) && hint !== this._elevationScale) {
         this._elevationScale = hint;
         TerrainHeightUtils.setElevationUnit(hint);
@@ -533,10 +803,13 @@ export class TerrainEngine {
       }
       this._emit('biomeChanged', { biomeKey, biomeSeed: seed });
       this._emitAllTiles();
-      this._emit('biomeGenerated', { biomeKey, biomeSeed: seed });
+      this._emit('biomeGenerated', { biomeKey, biomeSeed: seed, placements: plan.placements });
+      this._generationRecipe = plan.generationRecipe;
       this._changed('generation');
+      completed = true;
       return true;
     } finally {
+      if (!completed) this._treeDensityMultiplier = previousDensity;
       this._isGenerating = false;
       this._editorChanged();
     }
@@ -597,6 +870,8 @@ export class TerrainEngine {
     if (id !== null && id !== undefined && id !== '' && typeof id !== 'string') {
       throw new TypeError('A selected placeable must be a key or null');
     }
+    if (id && this._biomeKey && !isAssetAllowedInBiome(id, this._biomeKey))
+      throw new Error(`Terrain asset "${id}" is not allowed in biome "${this._biomeKey}"`);
     this.cancelBrushStroke();
     if (id) this._constructionTool = null;
     this._selectedPlaceable = id || null;
@@ -629,6 +904,8 @@ export class TerrainEngine {
 
   emitPlaceableChanged(gridX, gridY, placeableId, variant = null) {
     this._validatePosition(gridX, gridY);
+    if (placeableId && this._biomeKey && !isAssetAllowedInBiome(placeableId, this._biomeKey))
+      throw new Error(`Terrain asset "${placeableId}" is not allowed in biome "${this._biomeKey}"`);
     this._emit('placeableChanged', { gridX, gridY, placeableId, variant });
   }
 
@@ -911,6 +1188,9 @@ export class TerrainEngine {
       elevationScale: this._elevationScale,
       treeDensityMultiplier: this._treeDensityMultiplier,
       richShadingEnabled: this._richShadingEnabled,
+      ...(this._generationRecipe
+        ? { generationRecipe: JSON.parse(JSON.stringify(this._generationRecipe)) }
+        : {}),
       ...(this._cavern ? { cavern: normalizeCavernRecipe(this._cavern) } : {}),
       ...(!this._structureGenerationEnabled ? { structureGenerationEnabled: false } : {}),
       ...(this.geometry.hasVolumes || Number.isFinite(this.geometry.terrainThicknessFeet)
@@ -931,6 +1211,10 @@ export class TerrainEngine {
     const elevationScale = state.elevationScale ?? TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET;
     const treeDensity = state.treeDensityMultiplier ?? 1;
     const cavern = state.cavern === undefined ? null : normalizeCavernRecipe(state.cavern);
+    const generationRecipe =
+      state.generationRecipe === undefined
+        ? null
+        : validateGenerationRecipe(state.generationRecipe);
     if (cavern?.version === 1 && !state.geometry)
       throw new Error('A saved cavern interior requires its physical geometry');
     if (
@@ -953,6 +1237,13 @@ export class TerrainEngine {
     this._geometry = geometry;
     this._visibleLayers = null;
     this._biomeKey = biomeKey;
+    if (
+      this._selectedPlaceable &&
+      this._biomeKey &&
+      !isAssetAllowedInBiome(this._selectedPlaceable, this._biomeKey)
+    )
+      this._selectedPlaceable = null;
+    this._generationRecipe = generationRecipe;
     this._cavern = cavern;
     this._biomeSeed = biomeSeed;
     this._elevationScale = elevationScale;
@@ -1085,6 +1376,30 @@ export class TerrainEngine {
   }
   get canRedo() {
     return !this.hasPendingStroke && this._redo.length > 0;
+  }
+
+  captureHistory() {
+    if (this.hasPendingStroke)
+      throw new Error('Finish the terrain stroke before capturing history');
+    return { engine: this, terrain: this.save(), undo: [...this._undo], redo: [...this._redo] };
+  }
+
+  restoreHistory(checkpoint) {
+    if (
+      checkpoint?.engine !== this ||
+      !Array.isArray(checkpoint.undo) ||
+      !Array.isArray(checkpoint.redo) ||
+      this.hasPendingStroke ||
+      !sameJsonValue(checkpoint.terrain, this.save())
+    )
+      throw new Error('Terrain history does not match the restored map');
+    this._undo = [...checkpoint.undo];
+    this._redo = [...checkpoint.redo];
+    this._editorChanged();
+  }
+
+  get generationRecipe() {
+    return this._generationRecipe ? JSON.parse(JSON.stringify(this._generationRecipe)) : null;
   }
   get undoLabel() {
     return this.hasPendingStroke ? 'Cancel preview' : this._undo.at(-1)?.label;

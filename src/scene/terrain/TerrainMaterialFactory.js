@@ -55,16 +55,21 @@ export function getTerrainLayerColor(
   );
 }
 
+export function getTerrainMaterialStyle(span, floorAppearance, biomeKey) {
+  const style =
+    floorAppearance && span.materialColor === undefined
+      ? floorAppearance.floorMaterial
+      : span.id === 'terrain' && biomeKey === 'dungeon'
+        ? 'paving'
+        : (span.materialStyle ?? 'none');
+  return CONSTRUCTION_MATERIALS[style];
+}
+
 export function getMapTerrainAppearance(world, map) {
   const floor = getBuildingFloorAppearance(world, map.id);
   const feetPerLevel = (map.terrain.worldElevationUnit * 5) / map.grid.tileWorldSize;
   return {
-    getStyle: (_x, _z, _y, span) =>
-      CONSTRUCTION_MATERIALS[
-        floor && span.materialColor === undefined
-          ? floor.floorMaterial
-          : (span.materialStyle ?? 'none')
-      ],
+    getStyle: (_x, _z, _y, span) => getTerrainMaterialStyle(span, floor, map.terrain.biome),
     getColor: (x, z, height, span) => {
       if (
         (map.terrain.cavern?.version >= 2 || map.terrain.renderStyle === 'cavern') &&

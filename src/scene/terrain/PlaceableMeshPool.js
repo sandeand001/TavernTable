@@ -8,12 +8,16 @@ import {
   purgeAll as _purgeAll,
   validateHidden as _validateHidden,
   debugSnapshot as _debugSnapshot,
+  disposePlaceableDepthPrepass,
+  invalidatePlaceableBounds,
 } from './PlaceablePoolLifecycle.js';
 import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { createPlaceableModelGeometry } from './placeableModelGeometry.js';
-import { fitGeneratedTreeScale } from './treeSupport.js';
+import { fitTreeScale } from './treeSupport.js';
 import { readPlaceablePlacements } from '../SceneSnapshotReaders.js';
 import { isSightPlaceable } from '../../campaigns/CreatureVisibility.js';
+import { hash32 } from '../../utils/SeededRNG.js';
+import { getPurePolyAsset, isCaveFormationModel } from '../../config/assets/PurePolyAssets.js';
 import {
   disposePlaceableMaterials,
   preparePlaceableMaterials,
@@ -27,8 +31,14 @@ import {
 export class PlaceableMeshPool {
   // ── Constructor ───────────────────────────────────────────────────
 
-  constructor({ gameManager, initialCapacity = 256, maxCapacity = 4096 } = {}) {
+  constructor({
+    gameManager,
+    initialCapacity = 256,
+    maxCapacity = 4096,
+    publishMetrics = true,
+  } = {}) {
     this.gameManager = gameManager;
+    this._publishMetrics = publishMetrics;
     this._groups = new Map(); // key -> { instancedMesh, capacity, count, freeIndices[] }
     this._pendingGroups = new Map();
     this._pendingPlacements = new Set();
@@ -207,8 +217,8 @@ export class PlaceableMeshPool {
   // ── Public API: Add / Remove ─────────────────────────────────────
 
   /** Public: add a placeable instance; returns handle with group key + index (or null). */
-  addPlaceable(placeable) {
-    const pending = this._addPlaceable(placeable);
+  addPlaceable(placeable, { strict = false, fitManualTree = false } = {}) {
+    const pending = this._addPlaceable(placeable, { strict, fitManualTree });
     this._pendingPlacements.add(pending);
     pending.then(
       () => this._pendingPlacements.delete(pending),
@@ -237,32 +247,39 @@ export class PlaceableMeshPool {
       );
   }
 
-  async _addPlaceable(placeable) {
+  async _addPlaceable(placeable, { strict = false, fitManualTree = false } = {}) {
+    const unavailable = (message) => {
+      if (strict) throw new Error(message);
+      return null;
+    };
     const gm = this.gameManager;
     if (!gm || !gm.is3DModeActive?.()) {
-      return null;
+      return unavailable('The terrain placement renderer is unavailable');
     }
     // Capture epoch so we can detect if a clear happened while awaiting dynamic imports.
     const epochAtStart = this._clearEpoch;
     const biomeKey = placeable?.biomeKey ?? gm.terrainEngine?.biomeKey;
     const biomeSeed = placeable?.biomeSeed ?? gm.terrainEngine?.biomeSeed;
-    const appearance = resolvePlaceableAppearance(biomeKey, {
-      modelKey: placeable?.modelKey,
-      variantKey: placeable?.variantKey,
-      gridX: placeable?.gridX,
-      gridY: placeable?.gridY,
-      biomeSeed,
-    });
+    const appearance =
+      placeable?.modelKey === 'source-dungeon-torch'
+        ? null
+        : resolvePlaceableAppearance(biomeKey, {
+            modelKey: placeable?.modelKey,
+            variantKey: placeable?.variantKey,
+            gridX: placeable?.gridX,
+            gridY: placeable?.gridY,
+            biomeSeed,
+          });
     const three = await this._ensureThree();
     if (!three) {
-      return null;
+      return unavailable('The terrain placement renderer could not be loaded');
     }
     if (!gm.threeSceneManager?.scene) {
-      return null;
+      return unavailable('The terrain placement scene is unavailable');
     }
     // Abort if a clearAll occurred during the await window.
     if (epochAtStart !== this._clearEpoch) {
-      return null;
+      return unavailable('Terrain placement was interrupted by a map change');
     }
     const rawVariant = placeable?.variantKey;
     const modelKey = this._deriveKey(placeable);
@@ -275,7 +292,7 @@ export class PlaceableMeshPool {
     }
     // Debug aggregation of key mapping
     try {
-      if (typeof window !== 'undefined') {
+      if (this._publishMetrics && typeof window !== 'undefined') {
         const dbg = (window.__TT_PLACEABLE_KEYS__ = window.__TT_PLACEABLE_KEYS__ || {
           mappings: {},
           counts: {},
@@ -294,12 +311,14 @@ export class PlaceableMeshPool {
       placeable,
       appearance
     );
-    if (!group) return null;
+    if (!group)
+      return unavailable(
+        `Terrain asset "${placeable?.modelKey || modelKey}" could not be prepared`
+      );
     // Re-check epoch after potential async _createGroup work (defensive double-guard)
     if (epochAtStart !== this._clearEpoch) {
-      return null;
+      return unavailable('Terrain placement was interrupted by a map change');
     }
-    const { instancedMesh } = group;
     const profile =
       group.profile ||
       placeable?.renderProfile ||
@@ -320,30 +339,120 @@ export class PlaceableMeshPool {
     if (
       profile === 'model' &&
       !placeable.persistedScale &&
-      placeable.generatedBiome === true &&
-      /^tree-/.test(placeable.placeableId || '')
+      /^mushroom-(glow|giant-cap)$/.test(modelKey)
     ) {
-      try {
-        const fit = fitGeneratedTreeScale(gm, placeable, group.supportBounds);
-        if (fit === null) {
-          logMeshPoolDebug('[PlaceableMeshPool] unsupported generated tree site skipped', {
-            modelKey,
-            gridX: placeable.gridX,
-            gridY: placeable.gridY,
-          });
-          return null;
+      const tileSize = gm.spatial?.tileWorldSize;
+      if (!Number.isFinite(tileSize) || tileSize <= 0)
+        throw new Error('Fungal models require a valid tile size');
+      scale.x = scale.y = scale.z = tileSize;
+    }
+    let placementAngle = null;
+    let offsetX = 0;
+    let offsetZ = 0;
+    let hasFormationOffset = false;
+    if (profile === 'model' && isCaveFormationModel(modelKey)) {
+      if (placeable.angleRadians !== undefined && !Number.isFinite(placeable.angleRadians))
+        throw new Error('Saved cave formation orientation is invalid');
+      const hasX = placeable.gridOffsetX !== undefined;
+      const hasZ = placeable.gridOffsetY !== undefined;
+      if (
+        hasX !== hasZ ||
+        (hasX &&
+          (![placeable.gridOffsetX, placeable.gridOffsetY].every(Number.isFinite) ||
+            Math.abs(placeable.gridOffsetX) > 0.5 ||
+            Math.abs(placeable.gridOffsetY) > 0.5))
+      )
+        throw new Error('Saved cave formation offsets are invalid');
+      const identity = `${modelKey}:${biomeKey}:${biomeSeed}:${placeable.gridX}:${placeable.gridY}`;
+      placementAngle =
+        placeable.angleRadians ?? ((hash32(`${identity}:rotation`) % 4) * Math.PI) / 2;
+      if (hasX) {
+        offsetX = placeable.gridOffsetX;
+        offsetZ = placeable.gridOffsetY;
+        hasFormationOffset = true;
+      }
+      if (!placeable.persistedScale) {
+        const tileSize = gm.spatial?.tileWorldSize;
+        if (!Number.isFinite(tileSize) || tileSize <= 0)
+          throw new Error('Cave formations require a valid tile size');
+        const variation = hash32(`${identity}:height`) / 0x100000000;
+        const width = 0.34 + 0.3 * Math.sqrt(variation);
+        scale.x = scale.z = tileSize * width;
+        scale.y =
+          tileSize *
+          (biomeKey === 'crystalSpires' ? 0.65 + variation * 1.7 : 0.35 + variation * 1.5);
+        if (!hasFormationOffset) {
+          const margin = Math.min(0.18, Math.max(0, 0.48 - width * 0.74));
+          offsetX = (2 * (hash32(`${identity}:offsetX`) / 0x100000000) - 1) * margin;
+          offsetZ = (2 * (hash32(`${identity}:offsetZ`) / 0x100000000) - 1) * margin;
+          hasFormationOffset = true;
         }
-        scale.x *= fit;
-        scale.y *= fit;
-        scale.z *= fit;
+      }
+    } else if (profile === 'model' && getPurePolyAsset(modelKey)?.kind === 'tree') {
+      if (placeable.angleRadians !== undefined && !Number.isFinite(placeable.angleRadians))
+        throw new Error('Saved tree orientation is invalid');
+      if (placeable.generatedBiome || placeable.angleRadians !== undefined) {
+        const identity = `${modelKey}:${biomeKey}:${biomeSeed}:${placeable.gridX}:${placeable.gridY}`;
+        placementAngle =
+          placeable.angleRadians ?? (hash32(`${identity}:rotation`) / 0x100000000) * Math.PI * 2;
+      }
+    }
+    if (
+      profile === 'model' &&
+      !placeable.persistedScale &&
+      (placeable.generatedBiome === true || fitManualTree) &&
+      (/^tree-/.test(placeable.placeableId || '') ||
+        ['cactus', 'rock', 'prop', 'ore', 'light', 'tree'].includes(
+          getPurePolyAsset(placeable.placeableId)?.kind
+        ))
+    ) {
+      let fit;
+      try {
+        const support =
+          getPurePolyAsset(modelKey)?.kind === 'tree' && placementAngle !== null
+            ? group.supportBounds
+                .clone()
+                .applyMatrix4(new three.Matrix4().makeRotationY(placementAngle))
+            : group.supportBounds;
+        fit = fitTreeScale(gm, placeable, support);
       } catch (error) {
         logger.error(
-          '[PlaceableMeshPool] generated tree support failed',
+          '[PlaceableMeshPool] tree support failed',
           { modelKey, gridX: placeable.gridX, gridY: placeable.gridY, error: error.message },
           LOG_CATEGORY.RENDERING
         );
+        if (strict)
+          throw new Error(`Terrain asset "${modelKey}" could not be grounded`, { cause: error });
         return null;
       }
+      if (fit === null) {
+        if (fitManualTree && !placeable.generatedBiome) {
+          const error = Object.assign(
+            new Error(
+              ['cactus', 'rock', 'prop', 'ore', 'light'].includes(
+                getPurePolyAsset(placeable.placeableId)?.kind
+              )
+                ? 'This scenery needs more supported, level ground'
+                : 'The tree trunk needs more supported, level ground'
+            ),
+            {
+              code: 'tree-support-unavailable',
+            }
+          );
+          if (strict) throw error;
+          logger.warn(error.message, { modelKey, gridX: placeable.gridX, gridY: placeable.gridY });
+          return null;
+        }
+        logMeshPoolDebug('[PlaceableMeshPool] unsupported generated tree site skipped', {
+          modelKey,
+          gridX: placeable.gridX,
+          gridY: placeable.gridY,
+        });
+        return null;
+      }
+      scale.x *= fit;
+      scale.y *= fit;
+      scale.z *= fit;
     }
     placeable.__worldScale = scale;
     const heightOffset = Number.isFinite(placeable?.heightOffset)
@@ -351,6 +460,11 @@ export class PlaceableMeshPool {
       : profile === 'ground'
         ? 0.005
         : 0;
+    const supportOffset =
+      profile === 'model' && group.supportBounds ? group.supportBounds.min.y * (scale.y ?? 1) : 0;
+    const index = this._allocateIndex(group);
+    if (index < 0) return unavailable(`Terrain asset "${modelKey}" exceeds its instance capacity`);
+    const { instancedMesh } = group;
     // If this placeable is metrics-only (no visual), ensure group stays hidden
     try {
       if (placeable.metricsOnly) {
@@ -364,27 +478,32 @@ export class PlaceableMeshPool {
     } catch (_) {
       /* ignore visibility adjustments */
     }
-    const index = this._allocateIndex(group);
-    if (index < 0) return null; // capacity exhaustion (future: grow)
     let position = null;
     // Position from grid (approx center)
     try {
       const gx = placeable.gridX ?? 0;
       const gy = placeable.gridY ?? 0;
-      const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+      const world = gm.spatial.gridToWorld(gx + 0.5 + offsetX, gy + 0.5 + offsetZ, 0);
+      if (strict && (!Number.isFinite(world.x) || !Number.isFinite(world.z)))
+        throw new Error('The terrain position is not finite');
       const dummy = new three.Object3D();
       // Sample terrain height (grid center). Falls back to 0 if unavailable.
       let h = 0;
       try {
         if (typeof gm.getTerrainHeight === 'function') {
-          h = gm.getTerrainHeight(gx, gy) || 0; // height in elevation levels
+          const height = gm.getTerrainHeight(gx, gy);
+          if (strict && !Number.isFinite(height))
+            throw new Error('The terrain height is not finite');
+          h = height || 0; // height in elevation levels
         }
-      } catch (_) {
+      } catch (error) {
+        if (strict) throw error;
         h = 0;
       }
       const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-      position = { x: world.x, y: worldY + heightOffset, z: world.z };
+      position = { x: world.x, y: worldY + heightOffset - supportOffset, z: world.z };
       dummy.position.set(position.x, position.y, position.z);
+      if (placementAngle !== null) dummy.rotation.y = placementAngle;
       dummy.scale.set(scale.x ?? 1, scale.y ?? 1, scale.z ?? 1);
       dummy.updateMatrix();
       instancedMesh.setMatrixAt(index, dummy.matrix);
@@ -397,8 +516,10 @@ export class PlaceableMeshPool {
       } catch (_) {
         /* ignore */
       }
-    } catch (_) {
-      /* ignore positioning errors */
+      invalidatePlaceableBounds(group);
+    } catch (error) {
+      if (strict)
+        throw new Error(`Terrain asset "${modelKey}" could not be positioned`, { cause: error });
     }
     placeable.__meshPoolHandle = { key, index };
     const source = {
@@ -419,6 +540,11 @@ export class PlaceableMeshPool {
     }
     if (biomeKey !== undefined) source.biomeKey = biomeKey;
     if (biomeSeed !== undefined) source.biomeSeed = biomeSeed;
+    if (placementAngle !== null) source.angleRadians = placementAngle;
+    if (hasFormationOffset) {
+      source.gridOffsetX = offsetX;
+      source.gridOffsetY = offsetZ;
+    }
     const metaGroup = this._metadata.get(key) || new Map();
     metaGroup.set(index, {
       gx: source.gridX,
@@ -426,6 +552,7 @@ export class PlaceableMeshPool {
       scale,
       profile,
       heightOffset,
+      supportOffset,
       source,
       position,
     });
@@ -465,6 +592,7 @@ export class PlaceableMeshPool {
     hidden.updateMatrix();
     group.instancedMesh.setMatrixAt(handle.index, hidden.matrix);
     group.instancedMesh.instanceMatrix.needsUpdate = true;
+    invalidatePlaceableBounds(group);
     delete placeable.__meshPoolHandle;
     this._updateMetrics();
     this.gameManager.sceneAutosave?.changed('terrain placement removed');
@@ -499,6 +627,7 @@ export class PlaceableMeshPool {
       .then((group) => {
         if (!group) return null;
         if (epoch !== this._clearEpoch) {
+          disposePlaceableDepthPrepass(group);
           group.instancedMesh.geometry.dispose();
           disposePlaceableMaterials(group.instancedMesh.material);
           group.instancedMesh.dispose?.();
@@ -509,7 +638,8 @@ export class PlaceableMeshPool {
         this._metadata.set(key, new Map());
         this._updateMetrics();
         try {
-          const profile = this.gameManager.threeSceneManager?.getTimeOfDayProfile?.();
+          const scene = this.gameManager.threeSceneManager;
+          const profile = scene?.getSceneLightingProfile?.() || scene?.getTimeOfDayProfile?.();
           if (profile?.placeables) this.applyLightingProfile(profile.placeables);
         } catch (error) {
           logger.warn(
@@ -552,6 +682,54 @@ export class PlaceableMeshPool {
           modelGeom = prepared.geometry;
           if (modelGeom && prepared.material) {
             modelMat = preparePlaceableMaterials(three, prepared.material, appearance);
+            if (modelKey === 'mushroom-glow') {
+              for (const material of Array.isArray(modelMat) ? modelMat : [modelMat]) {
+                if (!material.emissive)
+                  throw new Error('Glowing mushrooms require an emissive model material');
+                material.emissive.setHex(0x9b69db);
+                material.emissiveMap = material.map;
+                material.emissiveIntensity = 0.3;
+                material.needsUpdate = true;
+              }
+            }
+            if (
+              /^source-cave-(stalagmite|column)$/.test(modelKey) &&
+              (placeable?.biomeKey ?? this.gameManager.terrainEngine?.biomeKey) === 'cavern'
+            ) {
+              const materials = Array.isArray(modelMat) ? modelMat : [modelMat];
+              for (const material of materials) {
+                if (!material?.color) throw new Error('A cave formation has no stone color');
+                if (!material.map) material.color.multiplyScalar(4);
+              }
+            }
+            if (
+              ['formation', 'rock', 'pebble'].includes(getPurePolyAsset(modelKey)?.kind) &&
+              (placeable?.biomeKey ?? this.gameManager.terrainEngine?.biomeKey) === 'cavern'
+            ) {
+              const gray = new three.Color().setRGB(
+                187 / 255,
+                187 / 255,
+                187 / 255,
+                three.SRGBColorSpace
+              );
+              const dark = new three.Color().setRGB(
+                115 / 255,
+                115 / 255,
+                115 / 255,
+                three.SRGBColorSpace
+              );
+              for (const material of Array.isArray(modelMat) ? modelMat : [modelMat]) {
+                if (!material?.color) throw new Error('A cave formation has no stone color');
+                material.color.multiplyScalar(dark.r / gray.r);
+              }
+            }
+            if (modelKey === 'source-dungeon-torch') {
+              const materials = Array.isArray(modelMat) ? modelMat : [modelMat];
+              const flame = materials.find((material) => material?.name === 'Fire');
+              if (!flame?.emissive) throw new Error('The dungeon torch has no flame material');
+              flame.emissive.setHex(0xff6a16);
+              flame.emissiveIntensity = 0.85;
+            }
             const instanced = new three.InstancedMesh(modelGeom, modelMat, capacity);
             instanced.name = `Placeables:${key}`;
             try {
@@ -568,6 +746,32 @@ export class PlaceableMeshPool {
             const baseColorRef = modelMat?.color
               ? { r: modelMat.color.r, g: modelMat.color.g, b: modelMat.color.b }
               : null;
+            let depthPrepass = null;
+            if (appearance?.biomeKey === 'crystalSpires' && isCaveFormationModel(modelKey)) {
+              // Resolve the nearest surface because transparent instances cannot be sorted.
+              for (const material of Array.isArray(modelMat) ? modelMat : [modelMat]) {
+                if (material.side === three.DoubleSide && !material.forceSinglePass) {
+                  // Preserve the combined opacity of the former front/back surface passes.
+                  material.opacity = 1 - (1 - material.opacity) ** 2;
+                }
+              }
+              const depthMaterial = new three.MeshBasicMaterial({
+                transparent: true,
+                colorWrite: false,
+                depthWrite: true,
+                side: three.DoubleSide,
+              });
+              depthMaterial.name = 'CrystalSpiresDepth';
+              depthMaterial.forceSinglePass = true;
+              depthPrepass = new three.InstancedMesh(modelGeom, depthMaterial, capacity);
+              depthPrepass.name = 'CrystalSpiresDepth';
+              depthPrepass.instanceMatrix = instanced.instanceMatrix;
+              depthPrepass.count = 0;
+              // Keep the grid visible beneath the translucent nearest surface.
+              depthPrepass.renderOrder = -1;
+              depthPrepass.raycast = () => {};
+              instanced.add(depthPrepass);
+            }
             return {
               key,
               type,
@@ -575,6 +779,7 @@ export class PlaceableMeshPool {
               appearance,
               tintCategory,
               instancedMesh: instanced,
+              depthPrepass,
               capacity,
               freeIndices: [],
               count: 0,
@@ -592,6 +797,10 @@ export class PlaceableMeshPool {
             { key, modelKey, error: modelErr.message },
             LOG_CATEGORY.RENDERING
           );
+          if (getPurePolyAsset(modelKey))
+            throw new Error(`Protected terrain asset "${modelKey}" failed: ${modelErr.message}`, {
+              cause: modelErr,
+            });
           return null;
         }
       }
@@ -738,7 +947,14 @@ export class PlaceableMeshPool {
                 const metaMap = this._metadata.get(gKey);
                 if (!metaMap) continue;
                 for (const [index, coords] of metaMap.entries()) {
-                  const { gx, gy, scale, heightOffset, position } = coords || {
+                  const {
+                    gx,
+                    gy,
+                    scale,
+                    heightOffset,
+                    supportOffset = 0,
+                    position,
+                  } = coords || {
                     gx: 0,
                     gy: 0,
                     scale: { x: 1, y: 1, z: 1 },
@@ -753,11 +969,15 @@ export class PlaceableMeshPool {
                     } catch (_) {
                       h = 0;
                     }
-                    const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+                    const world = gm.spatial.gridToWorld(
+                      gx + 0.5 + (coords.source?.gridOffsetX ?? 0),
+                      gy + 0.5 + (coords.source?.gridOffsetY ?? 0),
+                      0
+                    );
                     const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
                     instancePosition = {
                       x: world.x,
-                      y: worldY + (heightOffset || 0),
+                      y: worldY + (heightOffset || 0) - supportOffset,
                       z: world.z,
                     };
                     coords.position = instancePosition;
@@ -788,6 +1008,8 @@ export class PlaceableMeshPool {
                 }
                 try {
                   inst.instanceMatrix.needsUpdate = true;
+                  inst.boundingSphere = null;
+                  inst.boundingBox = null;
                 } catch (_) {
                   /* ignore */
                 }
@@ -819,6 +1041,7 @@ export class PlaceableMeshPool {
         { key, type, error: err.message },
         LOG_CATEGORY.RENDERING
       );
+      if (getPurePolyAsset(placeable?.modelKey)) throw err;
       // Capture error for diagnostics and attempt a fallback lightweight group so tests can proceed
       try {
         this._lastGroupCreateError = (err && err.message) || 'unknown';
@@ -890,9 +1113,15 @@ export class PlaceableMeshPool {
             newInst.setMatrixAt(i, m);
           }
         }
+        newInst.count = group.count;
         newInst.instanceMatrix.needsUpdate = true;
       } catch (_) {
         /* ignore copy failures */
+      }
+      if (group.depthPrepass) {
+        group.depthPrepass.instanceMatrix = newInst.instanceMatrix;
+        group.depthPrepass.count = newInst.count;
+        newInst.add(group.depthPrepass);
       }
       // Scene swap
       try {
@@ -906,6 +1135,7 @@ export class PlaceableMeshPool {
         /* ignore */
       }
       group.instancedMesh = newInst;
+      invalidatePlaceableBounds(group);
       // Migrate metadata map untouched; capacity change does not invalidate indices < count
       group.capacity = newCapacity;
       this._metrics.capacityExpansions += 1;
@@ -927,10 +1157,13 @@ export class PlaceableMeshPool {
   _updateMetrics() {
     this.gameManager?.sceneAutosave?.changed('terrain placements');
     let totalInstances = 0;
-    for (const g of this._groups.values()) totalInstances += g.count - g.freeIndices.length;
+    for (const g of this._groups.values()) {
+      totalInstances += g.count - g.freeIndices.length;
+      if (g.depthPrepass) g.depthPrepass.count = g.instancedMesh.count;
+    }
     this._metrics.groups = this._groups.size;
     this._metrics.instances = totalInstances;
-    if (typeof window !== 'undefined') {
+    if (this._publishMetrics && typeof window !== 'undefined') {
       window.__TT_METRICS__ = window.__TT_METRICS__ || {};
       window.__TT_METRICS__.placeables = {
         groups: this._metrics.groups,
@@ -1015,7 +1248,13 @@ export class PlaceableMeshPool {
         const metaMap = this._metadata.get(key);
         if (!metaMap) continue;
         for (const [index, coords] of metaMap.entries()) {
-          const { gx, gy, scale, heightOffset } = coords || {
+          const {
+            gx,
+            gy,
+            scale,
+            heightOffset,
+            supportOffset = 0,
+          } = coords || {
             gx: 0,
             gy: 0,
             scale: { x: 1, y: 1, z: 1 },
@@ -1027,11 +1266,20 @@ export class PlaceableMeshPool {
           } catch (_) {
             h = 0;
           }
-          const world = gm.spatial.gridToWorld(gx + 0.5, gy + 0.5, 0);
+          const world = gm.spatial.gridToWorld(
+            gx + 0.5 + (coords.source?.gridOffsetX ?? 0),
+            gy + 0.5 + (coords.source?.gridOffsetY ?? 0),
+            0
+          );
           const worldY = gm.spatial?.elevationUnit ? h * gm.spatial.elevationUnit : 0;
-          const position = { x: world.x, y: worldY + (heightOffset || 0), z: world.z };
+          const position = {
+            x: world.x,
+            y: worldY + (heightOffset || 0) - supportOffset,
+            z: world.z,
+          };
           coords.position = position;
           dummy.position.set(position.x, position.y, position.z);
+          dummy.rotation.set(0, coords.source?.angleRadians ?? 0, 0);
           if (group.profile === 'billboard' && gm.threeSceneManager?.camera) {
             const cameraPosition = gm.threeSceneManager.camera.position;
             dummy.lookAt?.(cameraPosition.x, cameraPosition.y, cameraPosition.z);
@@ -1047,10 +1295,12 @@ export class PlaceableMeshPool {
         }
         try {
           inst.instanceMatrix.needsUpdate = true;
+          invalidatePlaceableBounds(group);
         } catch (_) {
           /* ignore */
         }
       }
+      this._revision += 1;
     } catch (_) {
       /* ignore */
     } finally {

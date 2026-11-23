@@ -18,9 +18,9 @@ const castle = Object.freeze({
   kind: 'castle',
   cols: 50,
   rows: 50,
-  structures: 21,
+  structures: 28,
   volumes: 1100,
-  floorMaps: 64,
+  floorMaps: 80,
 });
 const profiles = Object.freeze({
   town,
@@ -33,11 +33,12 @@ const profiles = Object.freeze({
   ruinedCastle: castle,
 });
 const natural = Object.freeze({ structures: 8, volumes: 220, floorMaps: 16 });
+const dungeon = Object.freeze({ structures: 96, volumes: 220, floorMaps: 0 });
 
 export function getSettlementProfile(biomeKey) {
   return Object.hasOwn(profiles, biomeKey) ? profiles[biomeKey] : null;
 }
 
 export function getBiomeStructureBudget(biomeKey) {
-  return getSettlementProfile(biomeKey) ?? natural;
+  return getSettlementProfile(biomeKey) ?? (biomeKey === 'dungeon' ? dungeon : natural);
 }

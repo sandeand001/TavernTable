@@ -60,4 +60,23 @@ describe('TerrainBrushOverlay3D', () => {
 
     overlay.dispose();
   });
+
+  it('distinguishes per-cell placement feedback and resets it for ordinary brushes', () => {
+    const overlay = buildOverlay();
+    overlay.setHighlight([
+      { x: 0, y: 0, color: 0xf59e0b },
+      { x: 1, y: 0, color: 0xef4444 },
+    ]);
+    const color = new THREE.Color();
+    overlay._instanced.getColorAt(0, color);
+    expect(color.getHex()).toBe(0xf59e0b);
+    overlay._instanced.getColorAt(1, color);
+    expect(color.getHex()).toBe(0xef4444);
+
+    overlay.setHighlight([{ x: 0, y: 0 }]);
+    overlay._instanced.getColorAt(0, color);
+    expect(color.getHex()).toBe(0xffffff);
+    expect(overlay._instanced.material.color.getHex()).toBe(BRUSH_COLORS.preview);
+    overlay.dispose();
+  });
 });

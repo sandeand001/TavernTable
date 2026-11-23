@@ -3,6 +3,7 @@ import {
   connectionFeatureBounds,
   connectionOpeningAxis,
 } from './CampaignConnectionGeometry.js';
+import { getPurePolyAsset, isCaveFormationModel } from '../config/assets/PurePolyAssets.js';
 
 export function playerCreatureVisibility({
   world,
@@ -125,7 +126,11 @@ export function visiblePlayerMapIds(world, observer, options = {}) {
 export function isSightPlaceable(source) {
   return (
     source?.metricsOnly !== true &&
-    (/^tree-/.test(source?.placeableId || '') || source?.type === 'rock')
+    (/^tree-/.test(source?.placeableId || '') ||
+      source?.type === 'rock' ||
+      ['rock', 'tree'].includes(getPurePolyAsset(source?.modelKey || source?.placeableId)?.kind) ||
+      (source?.biomeKey === 'cavern' &&
+        isCaveFormationModel(source.modelKey || source.placeableId)))
   );
 }
 

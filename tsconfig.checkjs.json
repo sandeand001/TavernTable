@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "lib": ["ES2022", "DOM"],
+    "strict": false,
+    "noImplicitAny": false,
+    "types": []
+  },
+  "files": [
+    "src/campaigns/PlayerCommandProtocol.js",
+    "src/campaigns/PlayerPublicProtocol.js",
+    "src/campaigns/CloudOwnerProtocol.js",
+    "src/campaigns/CloudProtocol.js"
+  ]
+}

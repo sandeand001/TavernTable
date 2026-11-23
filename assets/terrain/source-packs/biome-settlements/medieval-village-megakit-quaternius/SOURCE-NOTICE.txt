@@ -1,0 +1,10 @@
+Medieval Village MegaKit
+Creator: Quaternius
+Source: https://quaternius.itch.io/medieval-village-megakit
+Acquired: 2026-11-20
+Acquired tier: Standard
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Included license: contents/Medieval Village MegaKit[Standard]/License_Standard.txt
+
+Standard is a partial free tier. The omitted Pro and Source tiers were not downloaded.

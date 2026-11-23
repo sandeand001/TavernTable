@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Preserve item source packs and track derived runtime dice assets.",
+  "runtimeIntegrated": true,
+  "packs": [
+    {
+      "id": "player-dice-set-ghosted",
+      "creator": "ghosted (dianaavlis2002)",
+      "name": "RPG Dice Set",
+      "source": "https://sketchfab.com/3d-models/rpg-dice-set-2498c370c56842f89fa3d7096c72ed56",
+      "tier": "Original FBX download",
+      "archive": "player-dice-set-ghosted/rpg-dice-set.zip",
+      "contents": "player-dice-set-ghosted/contents",
+      "sha256": "A643440330EFC031A575BEE4E40058AD3301053ED2D265E7A7761FAC9E7CE45B",
+      "formats": ["FBX", "PNG"],
+      "license": "Creative Commons Attribution 4.0 International",
+      "licenseFile": "player-dice-set-ghosted/LICENSE.txt",
+      "contentsSummary": {
+        "sourceModels": 1,
+        "textureVariants": 7,
+        "mapsPerVariant": ["BaseColor", "Normal", "Roughness", "Height"],
+        "listedGeometry": "700 triangles for all seven displayed variants; approximately 100 triangles per six-die set",
+        "dieTypes": ["d4", "d6", "d8", "d10", "d12", "d20"],
+        "textureResolution": "2048x2048"
+      },
+      "intendedUse": [
+        "player-selectable-dice-colors",
+        "physical-d4-d6-d8-d10-d12",
+        "player-physical-d20"
+      ],
+      "runtime": {
+        "model": "assets/Items/player-dice-set/player-dice-set.glb",
+        "modelSha256": "F63E0B301E9F5CFFD7828BC99E5074BC386A611D99B3FF093AD2F6329AE419A0",
+        "textureResolution": "512x512",
+        "textureVariants": 7
+      },
+      "integrationNotes": "Keep the existing gold d20 as the DM-only die. Optimize textures, separate each die, calibrate face mappings and collider geometry, and defer percentile d10 support.",
+      "status": "runtime-integrated"
+    }
+  ]
+}

@@ -7,6 +7,8 @@ import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { reconcileBuildingScene } from '../../../src/campaigns/BuildingAssembly.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { validatePlayerAssets } from '../../../src/campaigns/PlayerPublicProtocol.js';
+import PublicPlayerLocation from '../../../src/ui/sessions/PublicPlayerLocation.js';
+import { getConnectionTravelOption } from '../../../src/campaigns/CampaignTravel.js';
 
 function fixture() {
   const maps = new Map(
@@ -54,6 +56,54 @@ test('public assets exclude rooms outside the active observer visibility set', (
   const assets = playerRenderAssets(world, 'outside', { visibleMapIds: new Set(['outside']) });
   expect(assets.maps.map(({ id }) => id)).toEqual(['outside']);
   expect(JSON.stringify(assets)).not.toContain('UNENTERED ROOM');
+});
+
+test('a logical entrance is visible without publishing its hidden destination', () => {
+  const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+  const world = CampaignWorld.fromScene(sceneState(), { ruleset: '2014', library });
+  const remote = world.getMap('map-main');
+  world.addLocation({
+    id: 'hidden-location',
+    name: 'SECRET DESTINATION',
+    map: { ...remote, id: 'hidden-map', name: 'SECRET CHAMBER' },
+  });
+  world.addLogicalPassage({
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'hidden-map', side: 'west' },
+    ],
+  });
+  const assets = playerRenderAssets(world, 'map-main');
+  expect(assets.logicalPassages).toEqual([{ id: 'passage-1', mapId: 'map-main', side: 'east' }]);
+  expect(JSON.stringify(assets)).not.toContain('hidden-map');
+  expect(JSON.stringify(assets)).not.toContain('SECRET');
+  expect(() => validatePlayerAssets(assets)).not.toThrow();
+  const publicWorld = new PublicPlayerLocation(assets);
+  const actor = {
+    id: 'token-1',
+    mapId: 'map-main',
+    world: { x: 4.5, y: 0, z: 2.5 },
+  };
+  const gm = {
+    campaignWorld: publicWorld,
+    campaignMapId: 'map-main',
+    placedTokens: [actor],
+    terrainEngine: { hasPendingStroke: false, getHeightAt: () => 0 },
+    token3DAdapter: { isMovementInProgress: () => false },
+    characterServices: { library: { isSaving: false }, combat: { moves: new Map() } },
+    playerInput: {
+      commands: { pending: false, availability: () => ({ allowed: true }) },
+      movementBudget: () => ({ remainingFeet: 30 }),
+    },
+  };
+  expect(getConnectionTravelOption(gm, actor, 'passage-1')).toMatchObject({
+    allowed: true,
+    targetName: 'another area',
+    costFeet: 5,
+  });
 });
 
 test('public geometry retains physical support without exposing construction authoring records', () => {

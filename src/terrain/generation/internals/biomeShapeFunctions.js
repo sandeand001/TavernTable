@@ -5,7 +5,15 @@ import { fbm2, ridge, clamp, randFromSeed, radial, cliffBand } from '../NoisePri
 function _shapeGrassland(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 2.5;
   const rough = clamp(opts.roughness ?? 1.0, 0.25, 3);
-  const n = fbm2(nx * 2.2, ny * 2.2, seed, 4 + Math.round(rough), 1.9, 0.55);
+  const frequency = clamp(opts.surfaceFrequency ?? 1, 0.5, 2);
+  const n = fbm2(
+    nx * 2.2 * frequency,
+    ny * 2.2 * frequency,
+    seed,
+    4 + Math.round(rough),
+    1.9,
+    0.55
+  );
   const h = (n - 0.5) * r; // gentle rolls
   return h;
 }
@@ -13,8 +21,17 @@ function _shapeGrassland(x, y, nx, ny, seed, opts) {
 function _shapeHills(x, y, nx, ny, seed, opts) {
   const r = opts.relief ?? 4.0;
   const rough = clamp(opts.roughness ?? 1.1, 0.25, 3);
-  const base = fbm2(nx * 2.8, ny * 2.8, seed, 5 + Math.round(rough), 2.05, 0.5);
-  const bumps = fbm2(nx * 9.0, ny * 9.0, seed + 999, 3, 2.2, 0.5) * 0.3;
+  const frequency = clamp(opts.surfaceFrequency ?? 1, 0.5, 2);
+  const base = fbm2(
+    nx * 2.8 * frequency,
+    ny * 2.8 * frequency,
+    seed,
+    5 + Math.round(rough),
+    2.05,
+    0.5
+  );
+  const detail = clamp(frequency * 2 - 1, 0.5, 1);
+  const bumps = fbm2(nx * 9.0, ny * 9.0, seed + 999, 3, 2.2, 0.5) * 0.3 * detail;
   return (base - 0.5 + bumps) * r;
 }
 
@@ -84,9 +101,7 @@ function _shapeCoast(x, y, nx, ny, seed, opts) {
   const ax = Math.cos(theta);
   const ay = Math.sin(theta);
   // Signed distance along shoreline normal.
-  const t = nx * ax + ny * ay; // ~0..1 across board projected onto axis
-  // Recenter t around 0: t0 < 0 water side, t0 > 0 land side.
-  const t0 = t - 0.5;
+  const t0 = (nx - 0.5) * ax + (ny - 0.5) * ay;
   // Base broad slope: push land positive, water negative.
   let slope = t0 * (r * 1.1);
   // Add moderate noise so coast line meanders but stays monotonic overall.

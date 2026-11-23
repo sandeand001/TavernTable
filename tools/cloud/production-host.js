@@ -9,6 +9,7 @@ const { ImmutableCloudObjects } = require('./immutable-objects.js');
 const { PrivateCampaignAssets } = require('./campaign-assets.js');
 const { createCloudHttpHandler } = require('./cloud-http.js');
 const { HostResources } = require('../host-resources.js');
+const { loadProtectedAssetKeys } = require('./protected-assets.js');
 
 function jsonResponse(response, status, value, headers = {}) {
   const body = JSON.stringify(value);
@@ -27,10 +28,18 @@ async function createProductionHost() {
   let server;
   try {
     const root = path.resolve(__dirname, '..', '..');
+    const protectedAssetKeys = await loadProtectedAssetKeys(
+      root,
+      process.env.TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE
+    );
     const manifest = JSON.parse(
       await fs.readFile(path.join(root, 'assets', 'data', 'resources', 'manifest.json'), 'utf8')
     );
-    const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
+    const access = new CloudAccountAccess({
+      auth: runtime.auth,
+      firestore: runtime.firestore,
+      eligibilityMode: runtime.config.eligibilityMode,
+    });
     const store = new CloudCampaignStore({
       firestore: runtime.firestore,
       access,
@@ -43,6 +52,7 @@ async function createProductionHost() {
       access,
       store,
       allowedOrigins: runtime.config.allowedOrigins,
+      protectedAssetKeys,
     });
     server = http.createServer(async (request, response) => {
       try {

@@ -109,9 +109,19 @@ function houseProfile({
   };
 }
 
-export function createSettlementLayout({ biomeKey, seed, width, depth }) {
+export function createSettlementLayout({
+  biomeKey,
+  seed,
+  width,
+  depth,
+  layoutFamily = null,
+  outerWards = true,
+}) {
   const profile = getSettlementProfile(biomeKey);
   if (!profile) throw new Error('Choose a settlement biome for an architectural layout');
+  if (layoutFamily !== null && !['citadel', 'bailey', 'palace'].includes(layoutFamily))
+    throw new Error('Choose a valid castle plan family');
+  if (typeof outerWards !== 'boolean') throw new Error('Choose whether outer wards are enabled');
   const random = createSeededRNG((Math.imul(seed, 0x9e3779b1) ^ 0x74a6d329) >>> 0, 211);
   const damageRandom = createSeededRNG((Math.imul(seed, 0x85ebca6b) ^ 0x5b62a817) >>> 0, 223);
   const ruined = biomeKey.startsWith('ruined'),
@@ -209,7 +219,12 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
       angleRadians: extra.angleRadians ?? 0,
       ruined,
       name: extra.name ?? `${prefix} House ${structures.length + 1}`,
-      appearance,
+      appearance: {
+        ...appearance,
+        ...(profile.kind === 'town' && kind === 'building' && !ruined
+          ? { facadeModelKey: 'source-medieval-wall-door' }
+          : {}),
+      },
       building: {
         ...definition,
         windowLayout:
@@ -224,7 +239,8 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
             (seed ^
               Math.imul(Math.round(x * 2), 0x9e3779b1) ^
               Math.imul(Math.round(z * 2), 0x85ebca6b)) >>>
-              0
+              0,
+            profile.kind === 'castle' && kind !== 'turret' ? 'symmetric' : 'varied'
           ),
       },
     };
@@ -764,10 +780,15 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
       );
       return { structures, volumes };
     }
-    const family = choose(['citadel', 'bailey', 'palace']);
+    const family = layoutFamily ?? choose(['citadel', 'bailey', 'palace']);
+    const grandScale = Math.min(300, Math.max(200, Math.floor((size * 0.65) / 5) * 5));
     const span = grand
       ? Math.min(
-          choose(biomeKey === 'castle' ? [180, 190, 200] : [140, 150, 160, 170]),
+          choose(
+            biomeKey === 'castle'
+              ? [grandScale - 20, grandScale - 10, grandScale]
+              : [140, 150, 160, 170]
+          ),
           Math.floor((size - (biomeKey === 'castle' ? 50 : 70)) / 5) * 5
         )
       : medium
@@ -775,13 +796,17 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
         : choose([60, 65, 70]);
     const courtDepth = grand
       ? Math.min(
-          choose(biomeKey === 'castle' ? [180, 190, 200] : [140, 150, 160, 170]),
+          choose(
+            biomeKey === 'castle'
+              ? [grandScale - 20, grandScale - 10, grandScale]
+              : [140, 150, 160, 170]
+          ),
           Math.floor((size - (biomeKey === 'castle' ? 50 : 70)) / 5) * 5
         )
       : medium
         ? Math.min(choose([100, 110, 120]), Math.floor((size - 60) / 5) * 5)
         : Math.min(choose([60, 65, 70]), Math.floor((size - 40) / 5) * 5);
-    const frontSpan = span + (grand || medium ? choose([-20, 0, 20]) : 0);
+    const frontSpan = span;
     const wallHeight = grand ? choose([15, 20, 25]) : medium ? choose([15, 20]) : choose([10, 15]),
       wallWidth = grand ? 12 : 10;
     const keepLength = grand
@@ -859,78 +884,84 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
           },
           windowSides: ['north', 'east'],
         });
-        const westCourt = part(keepX - wingOffset, courtWingZ, 'West Court Wing', {
-          lengthFeet: frontDepth,
-          widthFeet: frontWidth,
-          heightFeet: 20,
-          angleRadians: -Math.PI / 2,
-          roof: 'gable',
-          roofRiseFeet: 6,
-          windowSides: ['north', 'west', 'south'],
-        });
-        const eastCourt = part(keepX + wingOffset, courtWingZ, 'East Court Wing', {
-          lengthFeet: frontDepth,
-          widthFeet: frontWidth,
-          heightFeet: 30,
-          angleRadians: Math.PI / 2,
-          roof: 'gable',
-          roofRiseFeet: 8,
-          windowSides: ['north', 'east', 'south'],
-        });
-        if (
-          !place(
-            {
-              kind: 'wall',
-              xFeet: keepX,
-              zFeet: gateZ,
-              lengthFeet: gateLength,
-              widthFeet: gateDepth,
-              heightFeet: 10,
-              baseFeet: 0,
-              diameterFeet: 30,
-              angleRadians: 0,
-              ruined: false,
-              style: 'plain',
-              opening: true,
-              openingWidthFeet: 12,
-              openingHeightFeet: 8,
-              openingShape: 'arch',
-              name: `${prefix} Gatehouse Arch`,
-              appearance: getConstructionAppearance(biomeKey, structures.length, heraldry),
-            },
-            { overlap: true }
-          )
-        )
-          throw new Error('The castle gatehouse arch does not fit');
-        const gate = part(keepX, gateZ, 'Keep Gatehouse', {
-          lengthFeet: gateLength,
-          widthFeet: gateDepth,
-          heightFeet: 20,
-          baseFeet: 10,
-          roof: 'battlement',
-          windowSides: ['north', 'south'],
-        });
-        const watch = part(
-          keepX - keepLength / 2 + 12.5,
-          keepZ - keepWidth / 2 - 12.5,
-          'Northern Watch',
-          {
-            lengthFeet: 25,
-            widthFeet: 25,
-            heightFeet: Math.min(100, keepHeight + 10),
-            roof: 'battlement',
-            windowSides: ['north', 'east', 'west'],
-          }
-        );
         joins.push(
           { sourceIndex: west, targetIndex: mainIndex },
-          { sourceIndex: east, targetIndex: mainIndex },
-          { sourceIndex: westCourt, targetIndex: west },
-          { sourceIndex: eastCourt, targetIndex: east },
-          { sourceIndex: gate, targetIndex: westCourt },
-          { sourceIndex: gate, targetIndex: eastCourt },
-          { sourceIndex: watch, targetIndex: mainIndex }
+          { sourceIndex: east, targetIndex: mainIndex }
         );
+        if (family !== 'bailey') {
+          const watch = part(
+            keepX - keepLength / 2 + 12.5,
+            keepZ - keepWidth / 2 - 12.5,
+            'Northern Watch',
+            {
+              lengthFeet: 25,
+              widthFeet: 25,
+              heightFeet: Math.min(100, keepHeight + 10),
+              roof: 'battlement',
+              windowSides: ['north', 'east', 'west'],
+            }
+          );
+          joins.push({ sourceIndex: watch, targetIndex: mainIndex });
+        }
+        if (family !== 'citadel') {
+          const westCourt = part(keepX - wingOffset, courtWingZ, 'West Court Wing', {
+            lengthFeet: frontDepth,
+            widthFeet: frontWidth,
+            heightFeet: 20,
+            angleRadians: -Math.PI / 2,
+            roof: 'gable',
+            roofRiseFeet: 6,
+            windowSides: ['north', 'west', 'south'],
+          });
+          const eastCourt = part(keepX + wingOffset, courtWingZ, 'East Court Wing', {
+            lengthFeet: frontDepth,
+            widthFeet: frontWidth,
+            heightFeet: 30,
+            angleRadians: Math.PI / 2,
+            roof: 'gable',
+            roofRiseFeet: 8,
+            windowSides: ['north', 'east', 'south'],
+          });
+          if (
+            !place(
+              {
+                kind: 'wall',
+                xFeet: keepX,
+                zFeet: gateZ,
+                lengthFeet: gateLength,
+                widthFeet: gateDepth,
+                heightFeet: 10,
+                baseFeet: 0,
+                diameterFeet: 30,
+                angleRadians: 0,
+                ruined: false,
+                style: 'plain',
+                opening: true,
+                openingWidthFeet: 12,
+                openingHeightFeet: 8,
+                openingShape: 'arch',
+                name: `${prefix} Gatehouse Arch`,
+                appearance: getConstructionAppearance(biomeKey, structures.length, heraldry),
+              },
+              { overlap: true }
+            )
+          )
+            throw new Error('The castle gatehouse arch does not fit');
+          const gate = part(keepX, gateZ, 'Keep Gatehouse', {
+            lengthFeet: gateLength,
+            widthFeet: gateDepth,
+            heightFeet: 20,
+            baseFeet: 10,
+            roof: 'battlement',
+            windowSides: ['north', 'south'],
+          });
+          joins.push(
+            { sourceIndex: westCourt, targetIndex: west },
+            { sourceIndex: eastCourt, targetIndex: east },
+            { sourceIndex: gate, targetIndex: westCourt },
+            { sourceIndex: gate, targetIndex: eastCourt }
+          );
+        }
       } else {
         for (const [side, title, height] of [
           [-1, 'Keep West Wing', 20],
@@ -938,7 +969,8 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
         ]) {
           const index = part(keepX + side * (keepLength / 2 + 10), keepZ, title, {
             lengthFeet: 20,
-            widthFeet: Math.min(keepWidth, 20),
+            // Leave a full five-foot approach between the wings and the compact bastions.
+            widthFeet: !medium && courtDepth <= 60 ? 15 : Math.min(keepWidth, 20),
             heightFeet: Math.min(height, keepHeight - 10),
             building: {
               version: 3,
@@ -954,8 +986,8 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
         }
       }
     }
-    const sideLength = Math.hypot(courtDepth, (frontSpan - span) / 2);
-    const eastAngle = Math.atan2(courtDepth, (frontSpan - span) / 2);
+    const sideLength = courtDepth;
+    const eastAngle = Math.PI / 2;
     const eastStairs = grand && family !== 'bailey' && architecture() > 0.35;
     for (const [index, x, z, angle, length] of [
       [0, cx, cz - courtDepth / 2, 0, span],
@@ -1001,18 +1033,20 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
     }
     const radius = grand ? choose([30, 35, 40]) : biomeKey === 'castle' && !medium ? 25 : 30;
     const chosenOuterHeight = grand ? choose([20, 30, 40]) : choose([20, 30]);
+    // The curtain overlaps each bastion, so its deck stairs need clearance above the wall.
     const outerHeight =
       biomeKey === 'castle' && !grand && !medium
         ? Math.min(chosenOuterHeight, keepHeight - 10)
-        : chosenOuterHeight;
+        : Math.max(chosenOuterHeight, Math.ceil((wallHeight + 5) / 10) * 10);
     for (const xSign of [-1, 1])
       for (const zSign of [-1, 1]) {
         if (!grand && !medium && zSign < 0) continue;
         const angle = zSign < 0 ? 0 : Math.PI;
+        const cornerInset = radius / 2 + wallWidth / 2 - 2.5;
         place(
           building(
             'turret',
-            cx + xSign * ((zSign < 0 ? span : frontSpan) / 2 - 12.5),
+            cx + xSign * ((zSign < 0 ? span : frontSpan) / 2 - cornerInset),
             cz + (zSign * courtDepth) / 2,
             {
               diameterFeet: radius,
@@ -1108,6 +1142,23 @@ export function createSettlementLayout({ biomeKey, seed, width, depth }) {
         });
         if (place(hall)) outbuildings++;
       }
+      if (outerWards && size >= 350)
+        for (const [xSign, zSign, name, roof] of [
+          [-1, -1, 'Barracks', 'hipped'],
+          [-1, 1, 'Stables', 'gable'],
+          [1, 1, 'Workshops', 'flat'],
+          [1, -1, 'Chapel', 'gable'],
+        ])
+          place(
+            building('building', cx + xSign * (span / 2 + 35), cz + zSign * courtDepth * 0.22, {
+              lengthFeet: 30,
+              widthFeet: 20,
+              heightFeet: zSign < 0 ? 20 : 10,
+              roof,
+              name: `Outer Ward ${name}`,
+              variant: name === 'Chapel' ? 2 : 1,
+            })
+          );
     }
     box(
       'garden',

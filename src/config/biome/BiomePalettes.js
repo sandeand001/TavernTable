@@ -187,6 +187,7 @@ function generateFromStops(stops) {
 
 // ── Base Triads (Biome Color Anchors) ────────────────────────
 const BIOME_BASE_TRIADS = {
+  dungeon: [0x303433, 0x777a76, 0xa6a59a],
   town: [0x454738, 0x899079, 0xcac1a3],
   city: [0x45484b, 0x93928a, 0xd2c7af],
   castle: [0x464b45, 0x969b8b, 0xcdd1be],
@@ -503,6 +504,7 @@ for (const key of SNOWCAP_BIOMES) {
 }
 
 const SUBTERRANEAN_BIOMES = new Set([
+  'dungeon',
   'cavern',
   'fungalGrove',
   'crystalFields',
@@ -520,7 +522,7 @@ const DEFAULT_SHORELINE_SAND_STRENGTH = resolveRichShadingSetting('shorelineSand
 const DEFAULT_RICH_SHADING_INTENSITY = resolveRichShadingSetting('intensity', 1.0);
 
 // ── Biome Key Normalization ─────────────────────────────────
-function normalizeBiomeKey(biomeKey) {
+export function normalizeBiomeKey(biomeKey) {
   const raw = String(biomeKey || '');
   const lc = raw.toLowerCase().replace(/\s+/g, '');
   if (lc === 'desert' || lc === 'hotdesert') return 'desertHot';

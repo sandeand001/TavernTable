@@ -635,6 +635,7 @@ test('multiplayer regression: a player renders another visible creature moving w
     await app.input.requestMove(remote, { gridX: 3, gridY: 1 });
     expect(send).toHaveBeenCalledWith('move', own.id, {
       target: { mapId: 'main', gridX: 3, gridY: 1 },
+      diceColor: 'ocean',
     });
   } finally {
     await cleanup();

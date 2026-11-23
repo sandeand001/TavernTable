@@ -1,0 +1,11 @@
+Fantasy Tavern - 104 Semi-Realistic Props
+Creator: cerberies3D
+Source: https://cerberies3d.itch.io/fantasy-tavern-104-semi-realistic-props
+Acquired: 2026-11-20
+Acquired tier: Free download; FBX archive
+License: Use in personal and commercial games and projects is permitted. Do not
+resell or redistribute the models themselves, alone or as another asset pack.
+Original packaging notes: contents/README.txt
+
+Status: Source archive only. No files from this pack are registered as TavernTable
+runtime assets until a separately reviewed biome ingest is performed.

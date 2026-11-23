@@ -1,14 +1,24 @@
 /**
- * flora.js - biome-driven automatic tree (plant) population (deterministic).
- * Determinism: All randomness is derived from a provided biome seed + biome key.
- * Non-invasive: only adds/removes placeables of type 'plant'.
- * Heuristics are intentionally coarse and can be tuned later.
+ * Biome-driven population planning. All randomness is derived from the biome
+ * seed and key; the adapter applies the resulting placements separately.
  */
 import { createSeededRNG, rngInt, makeWeightedPicker } from '../../utils/SeededRNG.js';
-import { BIOME_FLORA_PROFILES, DEFAULT_PROFILE } from '../../config/terrain/FloraProfiles.js';
+import {
+  discardedProfileWeights,
+  getBiomeFloraProfile,
+} from '../../config/terrain/FloraProfiles.js';
+import { SETTLEMENT_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import { isAssetAllowedInBiome } from '../../config/assets/BiomeAssetMatrix.js';
+import { getPurePolyAsset, isCaveFormationModel } from '../../config/assets/PurePolyAssets.js';
 import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
+import { logger, LOG_CATEGORY } from '../../utils/logger/Logger.js';
 import { structureBounds } from '../ConstructionBlueprints.js';
-import { cavernPassageCells, CAVERN_FLOOR_LEVEL } from '../generation/CavernInteriors.js';
+import {
+  cavernEntranceCells,
+  naturalCavernRoutes,
+  CAVERN_FLOOR_LEVEL,
+} from '../generation/CavernInteriors.js';
+import { requiresCavernRouteClearance } from '../PlaceableCollision.js';
 import {
   candidateFilters,
   isSpectralPlaceable,
@@ -20,14 +30,6 @@ import {
   isCoastlineTile,
 } from './floraHelpers.js';
 
-// ── Resolution Helpers ───────────────────────────────────
-
-function resolveProfile(biomeKey) {
-  if (!biomeKey) return DEFAULT_PROFILE;
-  const found = BIOME_FLORA_PROFILES.find((p) => p.re.test(biomeKey));
-  return found || DEFAULT_PROFILE;
-}
-
 function manhattan(a, b) {
   return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 }
@@ -37,16 +39,81 @@ function getBiomeRNG(baseSeed, biomeKey, salt) {
   return createSeededRNG(mix >>> 0, salt >>> 0);
 }
 
+function formationLimit(density) {
+  return Math.min(800, Math.max(1, Math.floor(400 * density)));
+}
+
+function addFormationClusters({ placements, placePlant, biomeKey, seed, density, cols, rows }) {
+  const anchors = placements.filter(({ modelKey }) => isCaveFormationModel(modelKey));
+  const limit = formationLimit(density);
+  let remaining = Math.max(0, limit - anchors.length);
+  if (!remaining) return;
+  const occupied = new Set(placements.map(({ gridX, gridY }) => `${gridX}:${gridY}`));
+  const random = getBiomeRNG(seed, biomeKey, 913);
+  const offsets = [];
+  for (let dz = -2; dz <= 2; dz++)
+    for (let dx = -2; dx <= 2; dx++)
+      if (dx * dx + dz * dz > 0 && dx * dx + dz * dz <= 4) offsets.push([dx, dz]);
+  const clusters = anchors.map((anchor) => {
+    const candidates = [...offsets];
+    for (let index = candidates.length - 1; index > 0; index--) {
+      const other = Math.floor(random() * (index + 1));
+      [candidates[index], candidates[other]] = [candidates[other], candidates[index]];
+    }
+    return {
+      anchor,
+      candidates,
+      next: 0,
+      placed: 0,
+      target: Math.floor(3 + 3.5 * density + random() * 2),
+    };
+  });
+  let progress = true;
+  while (remaining > 0 && progress) {
+    progress = false;
+    for (const cluster of clusters) {
+      if (!remaining || cluster.placed >= cluster.target) continue;
+      while (cluster.next < cluster.candidates.length) {
+        const [dx, dz] = cluster.candidates[cluster.next++];
+        const gridX = cluster.anchor.gridX + dx;
+        const gridY = cluster.anchor.gridY + dz;
+        const key = `${gridX}:${gridY}`;
+        if (gridX < 0 || gridX >= cols || gridY < 0 || gridY >= rows || occupied.has(key)) continue;
+        const before = placements.length;
+        placePlant({ ...cluster.anchor, gridX, gridY });
+        if (placements.length === before) continue;
+        occupied.add(key);
+        cluster.placed++;
+        remaining--;
+        progress = true;
+        break;
+      }
+    }
+  }
+}
+
 // ── Main Population Entry Point ───────────────────────────────────
 
-export function autoPopulateBiomeFlora(c, biomeKey, seed) {
-  if (!c?.gameManager?.placeableMeshPool) return;
-  const pool = c.gameManager.placeableMeshPool;
+export function planBiomePopulation(c, biomeKey, seed) {
+  if (!c?.gameManager) throw new Error('Biome population planning requires a terrain context');
+  const placements = [];
   const cavernEngine =
     c.gameManager.terrainEngine?.cavern?.version >= 2 ? c.gameManager.terrainEngine : null;
-  const cavernPassages = new Set(
+  const settlementScenery = biomeKey !== 'town' && SETTLEMENT_BIOME_KEYS.includes(biomeKey);
+  const cavernRoutes = new Set(
+    cavernEngine
+      ? naturalCavernRoutes({
+          cols: cavernEngine.cols,
+          rows: cavernEngine.rows,
+          getHeight: (x, z) => cavernEngine.getHeightAt(x, z),
+          exits: cavernEngine.cavern.exits,
+          seed: cavernEngine.cavern.seed ?? seed,
+        }).flatMap(({ cells }) => cells.map(({ x, z }) => `${x}:${z}`))
+      : []
+  );
+  const cavernEntrances = new Set(
     cavernEngine?.cavern.exits.flatMap((side) =>
-      cavernPassageCells(side, cavernEngine.cols, cavernEngine.rows).map(({ x, z }) => `${x}:${z}`)
+      cavernEntranceCells(side, cavernEngine.cols, cavernEngine.rows).map(({ x, z }) => `${x}:${z}`)
     ) || []
   );
   if (cavernEngine)
@@ -75,29 +142,48 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       )
       .map((volume) => volume.bounds) ?? [];
   const excluded = [...structures, ...reserved];
-  const placePlant = (placement) => {
-    const x = (placement.gridX + 0.5) * 5,
-      z = (placement.gridY + 0.5) * 5;
-    if (cavernEngine) {
-      if (
-        cavernEngine.getHeightAt(placement.gridX, placement.gridY) > -5 ||
-        cavernPassages.has(`${placement.gridX}:${placement.gridY}`)
-      )
-        return;
-    }
-    if (
-      excluded.some(
-        (bounds) =>
-          x >= bounds.min.x - 2.5 &&
-          x <= bounds.max.x + 2.5 &&
-          z >= bounds.min.z - 2.5 &&
-          z <= bounds.max.z + 2.5
-      )
-    )
-      return;
-    pool.addPlaceable(placement);
+  const isExcluded = (gridX, gridY, footprint = 2.5) => {
+    const x = (gridX + 0.5) * 5,
+      z = (gridY + 0.5) * 5;
+    return excluded.some(
+      (bounds) =>
+        x >= bounds.min.x - footprint &&
+        x <= bounds.max.x + footprint &&
+        z >= bounds.min.z - footprint &&
+        z <= bounds.max.z + footprint
+    );
   };
-  const profile = resolveProfile(biomeKey);
+  const isCavernFloor = (gridX, gridY) =>
+    cavernEngine.getHeightAt(gridX, gridY) <= -5 && !cavernEntrances.has(`${gridX}:${gridY}`);
+  const placePlant = (placement) => {
+    if (!isAssetAllowedInBiome(placement.placeableId, biomeKey))
+      throw new Error(
+        `Terrain asset "${placement.placeableId}" is not allowed in biome "${biomeKey}"`
+      );
+    if (cavernEngine) {
+      if (!isCavernFloor(placement.gridX, placement.gridY)) return false;
+      if (
+        requiresCavernRouteClearance(placement) &&
+        cavernRoutes.has(`${placement.gridX}:${placement.gridY}`)
+      )
+        return false;
+    }
+    const footprint =
+      getPurePolyAsset(placement.modelKey)?.kind === 'rock'
+        ? 7.5
+        : placement.modelKey === 'mushroom-giant-cap'
+          ? 5
+          : 2.5;
+    if (isExcluded(placement.gridX, placement.gridY, footprint)) return false;
+    if (cavernEngine && isCaveFormationModel(placement.modelKey)) {
+      const identity = `${biomeKey}:${seed}:${placement.modelKey}:${placement.gridX}:${placement.gridY}`;
+      placement.gridOffsetX = (2 * (hash32(`${identity}:x`) / 0x100000000) - 1) * 0.32;
+      placement.gridOffsetY = (2 * (hash32(`${identity}:z`) / 0x100000000) - 1) * 0.32;
+    }
+    placements.push(placement);
+    return true;
+  };
+  const profile = getBiomeFloraProfile(biomeKey, c.assetPack);
   const {
     density: profileDensity,
     spacing,
@@ -135,7 +221,14 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
 
   const baseDensity = Number.isFinite(profileDensity) ? profileDensity : 0;
   const effectiveDensity = Math.max(0, baseDensity * densityMultiplier);
-  if (!effectiveDensity) return;
+  if (!effectiveDensity) return placements;
+  const discarded = discardedProfileWeights(profileWeights);
+  if (discarded.length)
+    logger.warn(
+      'Biome generation omitted unavailable weighted assets',
+      { biomeKey, discarded },
+      LOG_CATEGORY.RENDERING
+    );
   const rows = c.gameManager.rows;
   const cols = c.gameManager.cols;
   const densityScale = densityMultiplier;
@@ -269,7 +362,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
         rowIndex++;
       }
     }
-    return;
+    return placements;
   }
 
   // ── Generic Candidate Collection & Placement ───────────────────
@@ -293,10 +386,11 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       }
       if (elevationFilter && !elevationFilter(c, h)) continue;
       if (filterFn && !filterFn(c, x, y, h, coordRng)) continue;
+      if (cavernEngine && (!isCavernFloor(x, y) || isExcluded(x, y))) continue;
       candidates.push([x, y, h]);
     }
   }
-  if (!candidates.length) return;
+  if (!candidates.length) return placements;
   const baseTargetRaw = candidates.length * effectiveDensity;
   const tropicalModifier = getTropicalDensityModifier(weights);
   const adjustedTargetRaw =
@@ -305,7 +399,20 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
   if (tropicalModifier === 1 && baseTargetRaw > 0 && target === 0) {
     target = 1;
   }
-  if (target <= 0) return;
+  // A small positive target otherwise makes sparse and dense scenery indistinguishable.
+  if (
+    !cavernEngine &&
+    biomeKey !== 'town' &&
+    tropicalModifier === 1 &&
+    densityMultiplier > 1 &&
+    candidates.length > 1
+  )
+    target = Math.max(target, 2);
+  if (cavernEngine && ['cavern', 'crystalFields', 'crystalSpires'].includes(biomeKey)) {
+    target = Math.max(1, Math.floor(target * 0.55));
+    target = Math.min(target, formationLimit(densityMultiplier));
+  }
+  if (target <= 0) return placements;
   const placed = [];
   let attempts = 0;
   const maxAttempts = target * 20;
@@ -348,7 +455,7 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       if (elevationFilter && !elevationFilter(c, placeHeight)) continue;
     }
     if (spacing > 0 && placed.some((p) => manhattan(p, [placeX, placeY]) < spacing)) continue;
-    placePlant({
+    const accepted = placePlant({
       generatedBiome: true,
       biomeKey,
       biomeSeed: seed ?? c._biomeSeed,
@@ -359,8 +466,26 @@ export function autoPopulateBiomeFlora(c, biomeKey, seed) {
       gridX: placeX,
       gridY: placeY,
     });
-    placed.push([placeX, placeY]);
+    // Keep other established surface-biome distributions until they are recalibrated.
+    if (accepted || (!cavernEngine && !settlementScenery)) placed.push([placeX, placeY]);
   }
+  if (cavernEngine && ['cavern', 'crystalFields', 'crystalSpires'].includes(biomeKey))
+    addFormationClusters({
+      placements,
+      placePlant,
+      biomeKey,
+      seed: seed ?? c._biomeSeed ?? 0,
+      density: densityMultiplier,
+      cols,
+      rows,
+    });
+  return placements;
+}
+
+export function autoPopulateBiomeFlora(c, biomeKey, seed) {
+  const pool = c?.gameManager?.placeableMeshPool;
+  if (!pool) return;
+  for (const placement of planBiomePopulation(c, biomeKey, seed)) pool.addPlaceable(placement);
 }
 
 function boostPalmWeights(weights, factor) {

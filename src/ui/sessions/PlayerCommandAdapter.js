@@ -243,8 +243,12 @@ export default class PlayerCommandAdapter {
       result?.commandId !== request.command.commandId
     )
       return false;
+    const needsFullReceipt = request.command.kind !== 'move' || result?.receipt?.roll !== undefined;
     try {
-      validatePlayerCommandAcknowledgement(result, { cachedAssets: this.getCachedAssets() });
+      validatePlayerCommandAcknowledgement(
+        result,
+        needsFullReceipt ? {} : { cachedAssets: this.getCachedAssets() }
+      );
     } catch (error) {
       GameErrors.input(error, {
         component: 'PlayerCommandAdapter',
@@ -260,6 +264,10 @@ export default class PlayerCommandAdapter {
       result.receipt.tokenId !== request.command.tokenId
     )
       return false;
+    if (result.receipt.kind !== 'move' || result.receipt.roll !== undefined) {
+      request.awaitingFullReceipt = true;
+      return false;
+    }
     request.acceptLive(result);
     return true;
   }
@@ -374,8 +382,8 @@ export default class PlayerCommandAdapter {
           }
           validatePlayerCommandResult(receipt, { cachedAssets: this.getCachedAssets() });
           if (
-            receipt.receipt.kind === 'roll' &&
-            (receipt.outcome === 'applied' || receipt.receipt.roll !== undefined)
+            receipt.receipt.roll !== undefined ||
+            (receipt.receipt.kind === 'roll' && receipt.outcome === 'applied')
           )
             validateAuthoritativeRoll(receipt.receipt.roll);
           if (

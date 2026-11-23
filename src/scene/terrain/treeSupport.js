@@ -1,8 +1,10 @@
+import { isTerrainCellSupported } from '../../terrain/TerrainSupport.js';
+
 const MIN_TREE_SCALE = 0.65;
 const SUPPORT_HEIGHT_TOLERANCE = 1e-4;
 
 /** Largest supported uniform scale, or null when the site would require a miniature tree. */
-export function fitGeneratedTreeScale(gameManager, placeable, bounds) {
+export function fitTreeScale(gameManager, placeable, bounds) {
   const { gridX, gridY } = placeable;
   const { cols, rows, spatial } = gameManager;
   const tileSize = spatial?.tileWorldSize;
@@ -20,7 +22,7 @@ export function fitGeneratedTreeScale(gameManager, placeable, bounds) {
     !Number.isFinite(tileSize) ||
     tileSize <= 0
   ) {
-    throw new Error('Generated tree support requires a valid grid and tile size');
+    throw new Error('Tree support requires a valid grid and tile size');
   }
   const limits = [bounds?.min.x, bounds?.max.x, bounds?.min.z, bounds?.max.z];
   if (
@@ -30,14 +32,36 @@ export function fitGeneratedTreeScale(gameManager, placeable, bounds) {
     bounds.min.z > 0 ||
     bounds.max.z < 0
   ) {
-    throw new Error('Generated tree support bounds must enclose the root anchor');
+    throw new Error('Tree support bounds must enclose the root anchor');
   }
   const baseHeight = gameManager.getTerrainHeight(gridX, gridY);
-  if (!Number.isFinite(baseHeight)) throw new Error('Generated tree support height is not finite');
+  if (!Number.isFinite(baseHeight)) throw new Error('Tree support height is not finite');
+  const building = gameManager.campaignWorld?.getMap(gameManager.campaignMapId).building;
+  const supportCache = new Map();
+  const cellSupported = (x, y, height) => {
+    if (typeof gameManager.isTerrainSupported === 'function')
+      return gameManager.isTerrainSupported(x, y, height);
+    if (!building) return true;
+    const key = `${x},${y}`;
+    if (!supportCache.has(key)) {
+      if (!Number.isFinite(spatial.elevationUnit) || spatial.elevationUnit < 0)
+        throw new Error('Tree support requires a valid elevation scale');
+      supportCache.set(
+        key,
+        isTerrainCellSupported(
+          gameManager.terrainEngine?.geometry,
+          x,
+          y,
+          (height * spatial.elevationUnit * 5) / tileSize
+        )
+      );
+    }
+    return supportCache.get(key);
+  };
   const center = spatial.gridToWorld(gridX + 0.5, gridY + 0.5, 0);
   const origin = spatial.gridToWorld(0, 0, 0);
   if (![center.x, center.z, origin.x, origin.z].every(Number.isFinite)) {
-    throw new Error('Generated tree support requires finite world coordinates');
+    throw new Error('Tree support requires finite world coordinates');
   }
   const clearance = tileSize * 0.01;
   const fits = (scale) => {
@@ -49,8 +73,8 @@ export function fitGeneratedTreeScale(gameManager, placeable, bounds) {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const height = gameManager.getTerrainHeight(x, y);
-        if (!Number.isFinite(height))
-          throw new Error('Generated tree support height is not finite');
+        if (!Number.isFinite(height)) throw new Error('Tree support height is not finite');
+        if (!cellSupported(x, y, height)) return false;
         if (Math.abs(height - baseHeight) > SUPPORT_HEIGHT_TOLERANCE) return false;
       }
     }

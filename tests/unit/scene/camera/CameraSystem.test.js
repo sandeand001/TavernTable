@@ -103,6 +103,40 @@ test('camera-only interactions never dirty scene state during a zoom sequence', 
   expect(changed).not.toHaveBeenCalled();
 });
 
+test('player camera follows the active assigned creature, ignores panning and permits close zoom', () => {
+  const camera = new CameraHarness({ cols: 60, rows: 60 });
+  const token = {
+    id: 'hero',
+    owned: true,
+    mapId: 'map-main',
+    world: { x: 17, y: 2, z: 23 },
+  };
+  camera.gameManager.playerInput = {};
+  camera.gameManager.placedTokens = [token];
+  camera.gameManager.campaignMapId = 'map-main';
+  camera.gameManager.campaignView = { focusTokenId: token.id };
+  camera.syncPlayerCameraFollow();
+  expect(camera.getCameraTarget()).toEqual({ x: 17, y: 2, z: 23 });
+
+  token.world = { x: 19, y: 2.5, z: 26 };
+  camera.syncPlayerCameraFollow();
+  expect(camera.getCameraTarget()).toEqual({ x: 19, y: 2.5, z: 26 });
+
+  camera.panBy(120, -80);
+  expect(camera.getCameraTarget()).toEqual({ x: 19, y: 2.5, z: 26 });
+  camera.setZoom(6);
+  expect(camera._targetZoom).toBe(6);
+  camera._screenToGround = jest
+    .fn()
+    .mockReturnValueOnce({ x: 10, y: 0, z: 10 })
+    .mockReturnValueOnce({ x: 12, y: 0, z: 12 });
+  camera.zoomAtScreenPoint(1.1, 50, 50);
+  expect(camera.getCameraTarget()).toEqual({ x: 19, y: 2.5, z: 26 });
+  camera.setCameraTarget(0, 0, 0);
+  camera.resetCameraTarget();
+  expect(camera.getCameraTarget()).toEqual({ x: 19, y: 2.5, z: 26 });
+});
+
 function project(manager, point) {
   manager.camera.updateMatrixWorld(true);
   const ndc = point.clone().project(manager.camera);

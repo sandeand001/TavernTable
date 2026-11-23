@@ -4,6 +4,8 @@
 // Runtime helper functions live in src/terrain/flora/floraHelpers.js.
 
 import { TERRAIN_PLACEABLES } from './TerrainPlaceables.js';
+import { BLOOD_MARSH_MIN_PLANT_LEVEL } from '../biome/BiomeConstants.js';
+import { PURE_POLY_ASSETS } from '../assets/PurePolyAssets.js';
 import { isSpectralPlaceable } from '../../terrain/flora/floraHelpers.js';
 
 const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
@@ -11,11 +13,16 @@ const ALL_PLANTS = Object.keys(TERRAIN_PLACEABLES).filter((k) => {
   // Families are menu selectors, not renderable model assets.
   return type === 'plant';
 });
+const UNAVAILABLE_WEIGHTED_ASSETS = new Map();
+const DISCARDED_PROFILE_WEIGHTS = new WeakMap();
 
 // ── Weight Utilities ─────────────────────────────────────────
 function pickIds(regex, { allowSpectral = false } = {}) {
   const list = ALL_PLANTS.filter(
-    (id) => regex.test(id) && (allowSpectral || !isSpectralPlaceable(id))
+    (id) =>
+      !TERRAIN_PLACEABLES[id].protectedKeyId &&
+      regex.test(id) &&
+      (allowSpectral || !isSpectralPlaceable(id))
   );
   const w = {};
   list.forEach((id) => (w[id] = 1));
@@ -24,11 +31,44 @@ function pickIds(regex, { allowSpectral = false } = {}) {
 
 function makeWeights(map, { allowSpectral = false } = {}) {
   const out = {};
+  const discarded = [];
+  const discard = (id, w, reason) => {
+    UNAVAILABLE_WEIGHTED_ASSETS.set(id, reason);
+    discarded.push({ id, weight: w, reason });
+  };
+  const add = (id, w) => {
+    if (!Number.isFinite(w) || w <= 0) {
+      discard(id, w, 'invalid-weight');
+      return;
+    }
+    if (!ALL_PLANTS.includes(id) || !TERRAIN_PLACEABLES[id].modelKey) {
+      discard(
+        id,
+        w,
+        Object.hasOwn(TERRAIN_PLACEABLES, id) ? 'not-renderable-plant' : 'missing-placeable'
+      );
+      return;
+    }
+    if (!allowSpectral && isSpectralPlaceable(id)) {
+      discard(id, w, 'spectral-not-allowed');
+      return;
+    }
+    out[id] = (out[id] || 0) + w;
+  };
   for (const [id, w] of Object.entries(map)) {
-    if (!ALL_PLANTS.includes(id)) continue;
-    if (!allowSpectral && isSpectralPlaceable(id)) continue;
-    out[id] = w;
+    const definition = TERRAIN_PLACEABLES[id];
+    if (
+      definition?.type === 'plant-family' &&
+      Array.isArray(definition.familyVariants) &&
+      definition.familyVariants.length
+    ) {
+      for (const variant of definition.familyVariants)
+        add(variant, w / definition.familyVariants.length);
+    } else {
+      add(id, w);
+    }
   }
+  DISCARDED_PROFILE_WEIGHTS.set(out, discarded);
   return out;
 }
 
@@ -101,18 +141,15 @@ const BIOME_FLORA_PROFILES = [
     weights: pickIds(/birch|oval/),
   },
   { re: /(sandDunes|saltFlats|desertHot|desertCold)/i, density: 0, spacing: 0 },
+  { re: /^dungeon$/i, density: 0, spacing: 0 },
   { re: /(glacier|frozenLake|packIce|ocean|coralReef)/i, density: 0, spacing: 0 },
   { re: /(crystalFields|obsidianPlain)/i, density: 0, spacing: 0 },
   {
     re: /(crystalSpires)/i,
-    density: 0.12,
-    spacing: 2,
+    density: 0.03,
+    spacing: 5,
     weights: makeWeights({
-      'rock-big-1': 1,
-      'rock-big-2': 1,
-      'rock-medium-4': 5,
-      'pebble-round-3': 2,
-      'pebble-square-3': 1.5,
+      'source-cave-stalagmite': 5,
     }),
   },
   {
@@ -155,12 +192,22 @@ const BIOME_FLORA_PROFILES = [
     re: /(ashWastes|wasteland|graveyard)/i,
     density: 0.02,
     spacing: 4,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
     weights: pickIds(/bare|yellow|small/),
   },
   {
-    re: /(screeSlope|geyserBasin)/i,
+    re: /geyserBasin/i,
+    density: 0.03,
+    spacing: 3,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
+    weights: pickIds(/bare|small|columnar/),
+  },
+  {
+    re: /screeSlope/i,
     density: 0.015,
     spacing: 4,
+    // Negative heights in a scree slope are exposed rock, not water.
+    elevationFilter: (c, h) => Number.isFinite(h),
     weights: pickIds(/bare|small|columnar/),
   },
   {
@@ -173,6 +220,7 @@ const BIOME_FLORA_PROFILES = [
     re: /(tundra)/i,
     density: 0.04,
     spacing: 3,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
     weights: pickIds(/bare|conifer|yellow/),
   },
   {
@@ -301,6 +349,7 @@ const BIOME_FLORA_PROFILES = [
     re: /(petrifiedForest)/i,
     density: 0.07,
     spacing: 2,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
     // petrified: strictly bare trunks (no partial dead foliage) + sparse rocks/pebbles
     // Adjusted to satisfy deterministic test expecting exclusively bare trees.
     weights: makeWeights({
@@ -396,6 +445,7 @@ const BIOME_FLORA_PROFILES = [
     re: /(steppe|prairie)/i,
     density: 0.02,
     spacing: 3,
+    elevationFilter: (c, h) => Number.isFinite(h) && h >= 0,
     weights: pickIds(/small|bare|oval/),
   },
   {
@@ -422,19 +472,19 @@ const BIOME_FLORA_PROFILES = [
       'plant-tropical-fern-c': 1.6,
     }),
   },
-  // Cavern biome: introduce sparse rocks & a few dead stumps for subterranean feel.
+  // Cavern biome: formations, scattered rocks and sparse mushrooms.
   {
     re: /(cavern)/i,
-    density: 0.06,
+    density: 0.1,
     spacing: 3,
     weights: makeWeights({
-      'rock-medium-4': 5,
-      'rock-medium-3': 4,
-      'rock-medium-2': 3,
-      'pebble-round-1': 2,
-      'pebble-round-2': 2,
-      'tree-dead-a': 0.8,
-      'tree-dead-b': 0.6,
+      'source-cave-stalagmite': 7,
+      'source-cave-column': 3,
+      'rock-medium-4': 1,
+      'rock-medium-3': 0.5,
+      'rock-medium-2': 0.5,
+      'pebble-round-1': 1,
+      'pebble-round-2': 1,
       'mushroom-common': 0.5,
       'mushroom-oyster': 0.3,
     }),
@@ -451,8 +501,6 @@ const BIOME_FLORA_PROFILES = [
       'mushroom-laetiporus': 3,
       'mushroom-glow': 2.5,
       'mushroom-giant-cap': 2,
-      'tree-bare-deciduous': 0.5,
-      'tree-dead-a': 0.4,
       'rock-medium-4': 0.3,
       'pebble-round-2': 0.2,
     }),
@@ -482,7 +530,7 @@ const BIOME_FLORA_PROFILES = [
     density: 0.2,
     spacing: 2,
     // Marsh vegetation can root in shallow wet ground, but not the deep basin.
-    elevationFilter: (c, h) => h >= -2,
+    elevationFilter: (c, h) => h >= BLOOD_MARSH_MIN_PLANT_LEVEL,
     weights: makeWeights({
       'tree-bare-deciduous': 6,
       'tree-green-willow': 1,
@@ -537,6 +585,7 @@ const BIOME_FLORA_PROFILES = [
     re: /(riverLake)/i,
     density: 0.14,
     spacing: 2,
+    elevationFilter: (_context, height) => Number.isFinite(height) && height >= 0,
     weights: pickIds(/willow|deciduous|oval|small/),
   },
   {
@@ -646,5 +695,112 @@ const DEFAULT_PROFILE = {
     'rock-medium-4': 0.2,
   }),
 };
+
+const baseProfile = (biomeKey) =>
+  BIOME_FLORA_PROFILES.find((profile) => profile.re.test(biomeKey)) || DEFAULT_PROFILE;
+
+function purePolyWeights(biomeKey, kind, total, predicate = () => true) {
+  const assets = PURE_POLY_ASSETS.filter(
+    (asset) => asset.kind === kind && asset.generatedBiomes.includes(biomeKey) && predicate(asset)
+  );
+  if (!assets.length) throw new Error(`Pure Poly ${kind} models are unavailable for ${biomeKey}`);
+  return Object.fromEntries(assets.map(({ id }) => [id, total / assets.length]));
+}
+
+function purePolyProfile(biomeKey) {
+  const base = baseProfile(biomeKey);
+  const weights = { ...base.weights };
+  const add = (kind, total, predicate) =>
+    Object.assign(weights, purePolyWeights(biomeKey, kind, total, predicate));
+  let density = base.density;
+  let spacing = base.spacing;
+  let elevationFilter = base.elevationFilter;
+  if (biomeKey === 'cavern') {
+    delete weights['source-cave-stalagmite'];
+    delete weights['source-cave-column'];
+    delete weights['rock-medium-2'];
+    delete weights['rock-medium-3'];
+    delete weights['rock-medium-4'];
+    add('formation', 7, ({ id }) => id.includes('stalagmite'));
+    add('formation', 3, ({ id }) => id.includes('column'));
+    add('rock', 2);
+    add('pebble', 2);
+    add('fungus', 0.8);
+  } else if (biomeKey === 'crystalSpires' || biomeKey === 'crystalFields') {
+    delete weights['source-cave-stalagmite'];
+    add('crystal', 5);
+    if (biomeKey === 'crystalFields') {
+      density = 0.03;
+      spacing = 5;
+    }
+  } else if (biomeKey === 'desertHot' || biomeKey === 'sandDunes') {
+    add('cactus', 4);
+    density = 0.035;
+    spacing = 4;
+    elevationFilter = (_context, height) => Number.isFinite(height) && height >= 0;
+  } else if (biomeKey === 'thornscrub' || biomeKey === 'oasis') {
+    add('cactus', biomeKey === 'oasis' ? 3 : 6);
+  } else if (biomeKey === 'grassland') {
+    add('grass', 8);
+    add('pebble', 1);
+  } else if (biomeKey === 'screeSlope') {
+    for (const id of Object.keys(weights)) delete weights[id];
+    add('pebble', 5);
+  } else if (biomeKey === 'fungalGrove' || biomeKey === 'forestTemperate') {
+    add('fungus', biomeKey === 'fungalGrove' ? 5 : 2);
+    if (biomeKey === 'forestTemperate') {
+      add('tree', 12);
+      add('grass', 3);
+      add('pebble', 2);
+    }
+  } else if (
+    [
+      'forestConifer',
+      'mountain',
+      'alpine',
+      'cedarHighlands',
+      'hills',
+      'deadForest',
+      'wasteland',
+      'graveyard',
+      'ashWastes',
+    ].includes(biomeKey)
+  ) {
+    add('tree', ['wasteland', 'graveyard', 'ashWastes'].includes(biomeKey) ? 3 : 10);
+    if (biomeKey === 'forestConifer' || biomeKey === 'hills') add('grass', 3);
+    if (['forestConifer', 'hills', 'mountain', 'alpine'].includes(biomeKey)) add('pebble', 2);
+  } else {
+    throw new Error(`Pure Poly scenery is not available for ${biomeKey}`);
+  }
+  return { ...base, density, spacing, elevationFilter, weights: makeWeights(weights) };
+}
+
+const PURE_POLY_PROFILES = Object.fromEntries(
+  [...new Set(PURE_POLY_ASSETS.flatMap((asset) => asset.generatedBiomes))].map((biomeKey) => [
+    biomeKey,
+    purePolyProfile(biomeKey),
+  ])
+);
+
+export function getBiomeFloraProfile(biomeKey, assetPack = 'standard') {
+  if (!['standard', 'pure-poly'].includes(assetPack))
+    throw new Error('Choose a valid biome scenery source');
+  if (assetPack === 'pure-poly') {
+    if (!Object.hasOwn(PURE_POLY_PROFILES, biomeKey))
+      throw new Error(`Pure Poly scenery is not available for ${biomeKey}`);
+    return PURE_POLY_PROFILES[biomeKey];
+  }
+  return biomeKey ? baseProfile(biomeKey) : DEFAULT_PROFILE;
+}
+
+export function unavailableWeightedAssets() {
+  return [...UNAVAILABLE_WEIGHTED_ASSETS]
+    .map(([id, reason]) => ({ id, reason }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function discardedProfileWeights(weights) {
+  return (DISCARDED_PROFILE_WEIGHTS.get(weights) || []).map((entry) => ({ ...entry }));
+}
 
 export { BIOME_FLORA_PROFILES, DEFAULT_PROFILE, SPECTRAL_VARIANTS };

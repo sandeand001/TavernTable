@@ -6,6 +6,7 @@ import {
 } from '../../../../../src/entities/creatures/TokenMovement.js';
 import { CharacterLibrary } from '../../../../../src/entities/characters/CharacterLibrary.js';
 import CombatSession from '../../../../../src/entities/characters/CombatSession.js';
+import { GameErrors } from '../../../../../src/utils/error/ErrorHandler.js';
 
 function fixture(getHeight = () => 0) {
   const mesh = new Group();
@@ -82,6 +83,80 @@ function advanceUntil(adapter, predicate) {
   }
   expect(predicate()).toBe(true);
 }
+
+test('a cold-loaded move waits and uses the latest requested destination', async () => {
+  const { adapter, token } = fixture();
+  const animation = adapter._tokenAnimationData.get(token);
+  adapter._tokenAnimationData.delete(token);
+  let release;
+  token.__threeMeshPromise = new Promise((resolve) => (release = resolve));
+  const first = adapter.requestMoveToGrid(token, 5, 4);
+  const latest = adapter.requestMoveToGrid(token, 3, 5);
+  expect(latest).toBe(first);
+  expect(token.world).toEqual({ x: 2.5, y: 0, z: 4.5 });
+  expect(adapter.isMovementInProgress(token)).toBe(false);
+  adapter._tokenAnimationData.set(token, animation);
+  release(token.__threeMesh);
+  expect(await first).toBeTruthy();
+  finish(adapter, token);
+  expect(token.world).toEqual({ x: 3.5, y: 0, z: 5.5 });
+});
+
+test('removing a creature cancels its pending cold-loaded move', async () => {
+  const { adapter, token, gm } = fixture();
+  const mesh = token.__threeMesh;
+  adapter._tokenAnimationData.delete(token);
+  let release;
+  token.__threeMeshPromise = new Promise((resolve) => (release = resolve));
+  const pending = adapter.requestMoveToGrid(token, 5, 4);
+  gm.placedTokens.splice(0, 1);
+  adapter.onTokenRemoved(token);
+  release(mesh);
+  expect(await pending).toBeNull();
+  expect(adapter._movementRoutes.has(token)).toBe(false);
+});
+
+test('a queued cold-loaded move is rejected if the viewed map changes', async () => {
+  const { adapter, token, gm } = fixture();
+  const animation = adapter._tokenAnimationData.get(token);
+  adapter._tokenAnimationData.delete(token);
+  let release;
+  token.__threeMeshPromise = new Promise((resolve) => (release = resolve));
+  const report = jest.spyOn(GameErrors, 'input').mockImplementation(() => {});
+  try {
+    const pending = adapter.requestMoveToGrid(token, 5, 4);
+    gm.campaignMapId = 'another-map';
+    adapter._tokenAnimationData.set(token, animation);
+    release(token.__threeMesh);
+    expect(await pending).toBeNull();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/creature or map changed/i) }),
+      expect.objectContaining({ operation: 'queuedLocomotion' })
+    );
+    expect(adapter._movementRoutes.has(token)).toBe(false);
+  } finally {
+    report.mockRestore();
+  }
+});
+
+test('failed animation loading reports the error and does not start movement', async () => {
+  const { adapter, token } = fixture();
+  adapter._tokenAnimationData.delete(token);
+  token.__threeMeshPromise = Promise.resolve(null);
+  const report = jest.spyOn(GameErrors, 'input').mockImplementation(() => {});
+  try {
+    expect(await adapter.requestMoveToGrid(token, 5, 4)).toBeNull();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringMatching(/animations could not be loaded/i),
+      }),
+      expect.objectContaining({ operation: 'queuedLocomotion' })
+    );
+    expect(adapter._movementRoutes.has(token)).toBe(false);
+  } finally {
+    report.mockRestore();
+  }
+});
 
 describe('Redirecting an active click route', () => {
   test('a redirect during a harmless fall takes over at landing, not the old distant endpoint', () => {
@@ -306,6 +381,19 @@ describe('Distance-limited click navigation', () => {
       expect(range.tiles.has('6,10')).toBe(false);
       setTokenMovementSettings(token, { speed: 35 });
       expect(adapter.getTokenMovementRange(token).tiles.get('6,10').cost).toBe(35);
+      adapter.disposeMovementRange();
+    }
+  );
+
+  test.each(['source-cave-stalagmite', 'pure-poly-grass-01', 'pure-poly-pebbles-01'])(
+    'decorative %s does not obstruct the local movement preview',
+    (modelKey) => {
+      const { adapter, token, gm } = fixture();
+      setTokenMovementSettings(token, { speed: 30 });
+      gm.terrainManager = {
+        placeables: new Map([['6,9', [{ placeableType: 'plant', modelKey }]]]),
+      };
+      expect(adapter.getTokenMovementRange(token).tiles.has('6,9')).toBe(true);
       adapter.disposeMovementRange();
     }
   );

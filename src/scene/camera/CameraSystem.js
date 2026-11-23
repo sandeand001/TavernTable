@@ -6,6 +6,34 @@ import { captureCameraView } from '../SceneSnapshotReaders.js';
 
 const PERSPECTIVE_FOV = 35;
 const TOP_DOWN_PITCH = (89.9 * Math.PI) / 180;
+const PLAYER_MAX_ZOOM = 6;
+
+function playerCameraFollowWorld(manager) {
+  const gm = manager.gameManager;
+  if (!gm?.playerInput || !gm.campaignView?.focusTokenId) return null;
+  const token = gm.placedTokens?.find(({ id }) => id === gm.campaignView.focusTokenId);
+  if (
+    !token?.owned ||
+    (token.mapId && gm.campaignMapId && token.mapId !== gm.campaignMapId) ||
+    !token.world ||
+    ![token.world.x, token.world.y, token.world.z].every(Number.isFinite)
+  )
+    return null;
+  return token.world;
+}
+
+function syncPlayerCameraFollow() {
+  const world = playerCameraFollowWorld(this);
+  if (!world) return;
+  const target = this.getCameraTarget();
+  if (
+    Math.abs(target.x - world.x) < 1e-6 &&
+    Math.abs(target.y - world.y) < 1e-6 &&
+    Math.abs(target.z - world.z) < 1e-6
+  )
+    return;
+  this.setCameraTarget(world.x, world.z, world.y);
+}
 
 function _getCameraViewport() {
   const canvas = this.canvas || this.renderer?.domElement;
@@ -603,7 +631,8 @@ function _updateZoom(dtMs) {
 
 function setZoom(z) {
   if (!Number.isFinite(z)) return;
-  const clamped = Math.min(this._maxZoom, Math.max(this._minZoom, z));
+  const maxZoom = this.gameManager?.playerInput ? PLAYER_MAX_ZOOM : this._maxZoom;
+  const clamped = Math.min(maxZoom, Math.max(this._minZoom, z));
   this._targetZoom = clamped;
 }
 function getZoom() {
@@ -675,7 +704,7 @@ function solveIsoPitchForTargetRatio(
  * Call on every mousemove during drag.
  */
 function panBy(screenDx, screenDy, origin = null) {
-  if (!this.camera || this.degraded) return;
+  if (!this.camera || this.degraded || playerCameraFollowWorld(this)) return;
   try {
     const { width, height } = this._getCameraViewport();
     const x = origin?.x ?? width / 2;
@@ -714,6 +743,11 @@ function setCameraTarget(cx, cz, cy = this.getCameraTarget().y) {
  * Reset camera target to board center and clear stored pan offset.
  */
 function resetCameraTarget() {
+  const followed = playerCameraFollowWorld(this);
+  if (followed) {
+    this.setCameraTarget(followed.x, followed.z, followed.y);
+    return;
+  }
   const cols = this.gameManager?.cols || 25;
   const rows = this.gameManager?.rows || 25;
   const tileSize = this.gameManager?.spatial?.tileWorldSize || 1;
@@ -732,12 +766,13 @@ function zoomAtScreenPoint(factor, mouseX, mouseY) {
   if (!this.camera || !Number.isFinite(factor) || factor <= 0 || this.degraded) return;
   try {
     const before = this._screenToGround(mouseX, mouseY);
-    const newZoom = Math.min(this._maxZoom, Math.max(this._minZoom, this._zoom * factor));
+    const maxZoom = this.gameManager?.playerInput ? PLAYER_MAX_ZOOM : this._maxZoom;
+    const newZoom = Math.min(maxZoom, Math.max(this._minZoom, this._zoom * factor));
     this._zoom = newZoom;
     this._targetZoom = newZoom;
     this.reframe();
     const after = this._screenToGround(mouseX, mouseY);
-    if (before && after) {
+    if (before && after && !playerCameraFollowWorld(this)) {
       const target = this.getCameraTarget();
       this.setCameraTarget(target.x + before.x - after.x, target.z + before.z - after.z);
     }
@@ -753,6 +788,7 @@ export function installCameraMethods(prototype) {
     return captureCameraView(this);
   };
   prototype.restoreView = restoreView;
+  prototype.syncPlayerCameraFollow = syncPlayerCameraFollow;
   prototype._getCameraViewport = _getCameraViewport;
   prototype.getCameraTarget = getCameraTarget;
   prototype._getCameraFraming = _getCameraFraming;

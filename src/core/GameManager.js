@@ -542,7 +542,10 @@ class GameManager {
    * Reset all terrain heights to default
    */
   resetTerrain() {
-    return this.terrainEngine.reset();
+    const changed = this.terrainEngine.clearMap();
+    const hadPlaceables = (this.placeableMeshPool?.getStats?.().instances || 0) > 0;
+    this.placeableMeshPool?.purgeAll();
+    return changed || hadPlaceables;
   }
 
   /**

@@ -31,6 +31,8 @@ async function productionEnvironment(t) {
     STORAGE_EMULATOR_HOST: undefined,
     FIREBASE_CONFIG: undefined,
     GOOGLE_APPLICATION_CREDENTIALS: undefined,
+    TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE: undefined,
+    TAVERNTABLE_CLOUD_ELIGIBILITY: undefined,
   };
   const previous = new Map(Object.keys(values).map((key) => [key, process.env[key]]));
   for (const [key, value] of Object.entries(values)) {
@@ -44,6 +46,7 @@ async function productionEnvironment(t) {
     }
     await fs.rm(home, { recursive: true, force: true });
   });
+  return home;
 }
 
 test('production configuration refuses development credentials, foreign projects and ambiguous origins', () => {
@@ -99,6 +102,33 @@ test('a misconfigured production process exits explicitly without printing crede
     code: 'invalid-production-runtime',
   });
   assert.equal(child.stderr.includes('PRIVATE CONFIGURATION MARKER'), false);
+});
+
+test('a configured private keyring is loaded at startup and an invalid path fails without disclosure', async (t) => {
+  const home = await productionEnvironment(t);
+  const { randomBytes } = require('node:crypto');
+  const keyring = path.join(home, 'protected-keyring.json');
+  await fs.writeFile(
+    keyring,
+    JSON.stringify({ version: 1, keys: { 'fixture-pack-v1': randomBytes(32).toString('base64') } })
+  );
+  process.env.TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE = keyring;
+  const host = await createProductionHost();
+  await host.close();
+  const child = spawnSync(
+    process.execPath,
+    [path.join(__dirname, '..', '..', 'tools', 'cloud', 'production-host.js')],
+    {
+      env: { ...process.env, TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE: 'PRIVATE KEYRING PATH MARKER' },
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true,
+    }
+  );
+  assert.ifError(child.error);
+  assert.equal(child.status, 1);
+  assert.deepEqual(JSON.parse(child.stderr.trim()), { version: 1, code: 'cloud-startup-failed' });
+  assert.equal(child.stderr.includes('PRIVATE KEYRING PATH MARKER'), false);
 });
 
 test(

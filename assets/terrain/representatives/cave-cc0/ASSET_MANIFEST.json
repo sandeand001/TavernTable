@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "path": "mine-frame.glb",
+      "source": "Free Mine Assets: mine_parts.blend, Wooden_14",
+      "sourceSha256": "61ddf987246e67b0d2394a0e3028b0abab3a571f443c3cd41f4a1dc64a4cf4a8",
+      "bytes": 6164,
+      "sha256": "d3e133fd20eca53901fdcb02fc4e6852eb32fa847c2e70e2342a83214f62f66e"
+    },
+    {
+      "path": "stalagmite-cluster.glb",
+      "source": "Free Mine Assets: mine_parts.blend, stalags_1_high",
+      "sourceSha256": "61ddf987246e67b0d2394a0e3028b0abab3a571f443c3cd41f4a1dc64a4cf4a8",
+      "bytes": 382540,
+      "sha256": "aba30a3c7805aa48d957fefc39e8580a4dab42dc2363cb8439279b43bd1a9020"
+    },
+    {
+      "path": "stone-column.glb",
+      "source": "Low Poly Cave Assets: cave_pillar1.obj",
+      "sourceSha256": "4358fd08bdd35c1fccc461ec1203f3636f508f3b34c4a3312db342c11c4351cd",
+      "bytes": 307636,
+      "sha256": "7ac188ed8aa6922564c4af0f1c08bf9ffdef54d7396716061236b68bd6089d68"
+    }
+  ],
+  "embeddedTextures": [
+    {
+      "source": "Free Mine Assets: textures/rock1.png, credited to Yughues",
+      "sourceSha256": "aaf4979333753a9fe1c6776f4891fbfe9546010170a974f43d33c02de7dd94d2",
+      "preparation": "Resized to 512px, grayscale, brightness and contrast adjusted",
+      "preparedSha256": "33358c39b9f894839aa34a60fc30abdd8579fc8288dfafe68264795edad01d58",
+      "embeddedIn": ["stalagmite-cluster.glb", "stone-column.glb"]
+    }
+  ]
+}

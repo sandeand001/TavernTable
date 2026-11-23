@@ -74,6 +74,38 @@ test.each(['cliffsideCastle', 'mountainCastle'])(
 );
 
 test.each(['cliffsideCastle', 'mountainCastle'])(
+  '%s joins two square curtain walls inside each corner-tower footprint',
+  (key) => {
+    const structures = createCastleSiteLayout({
+      biomeKey: key,
+      seed: 42,
+      width: 300,
+      depth: 300,
+    }).structures;
+    const walls = structures.filter((spec) => spec.kind === 'wall' && spec.style === 'battlement');
+    const endpoints = walls.flatMap((wall) => {
+      const dx = (Math.cos(wall.angleRadians) * wall.lengthFeet) / 2,
+        dz = (Math.sin(wall.angleRadians) * wall.lengthFeet) / 2;
+      return [
+        { x: wall.xFeet - dx, z: wall.zFeet - dz },
+        { x: wall.xFeet + dx, z: wall.zFeet + dz },
+      ];
+    });
+    const corners = structures.filter((spec) =>
+      /(?:Gate|Mountain) Bastion$|(?:Crown|Shoulder) Tower$/.test(spec.name)
+    );
+    expect(corners).toHaveLength(4);
+    for (const tower of corners) {
+      const joins = endpoints.filter(
+        (point) =>
+          Math.hypot(point.x - tower.xFeet, point.z - tower.zFeet) <= tower.diameterFeet / 2 + 1e-6
+      );
+      expect({ name: tower.name, joins: joins.length }).toMatchObject({ joins: 2 });
+    }
+  }
+);
+
+test.each(['cliffsideCastle', 'mountainCastle'])(
   '%s landforms respond to the existing elevation brush and Undo physically',
   (key) => {
     const engine = fixture(key, 42, 50, 50),

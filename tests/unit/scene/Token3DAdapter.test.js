@@ -299,6 +299,39 @@ describe('Token3DAdapter (Phase 3)', () => {
     expect(storeSizeAfter).toBe(0);
   });
 
+  test('selecting another assigned player sprite switches the active observer', async () => {
+    const three = require('three');
+    const token = {
+      id: 'hero-2',
+      owned: true,
+      creature: { sprite: { scale: { x: 1 } } },
+      __threeMesh: new three.Mesh(new three.PlaneGeometry(1, 1), new three.MeshBasicMaterial()),
+    };
+    const chooseObserver = jest.fn().mockResolvedValue(true);
+    const gm = {
+      is3DModeActive: () => true,
+      placedTokens: [token],
+      playerInput: {},
+      playerApplication: {
+        observerId: 'hero-1',
+        state: { observers: [{ id: 'hero-1' }, { id: 'hero-2' }] },
+        chooseObserver,
+      },
+      tokenManager: {
+        tokenFacingRight: true,
+        getTokenFacingRight() {
+          return this.tokenFacingRight;
+        },
+      },
+    };
+    const adapter = new Token3DAdapter(gm);
+    adapter._threePromise = Promise.resolve(three);
+
+    await adapter.setSelectedToken(token);
+
+    expect(chooseObserver).toHaveBeenCalledWith('hero-2');
+  });
+
   test('_finalizeClimbLanding attempts advance when eligible', () => {
     const gm = { is3DModeActive: () => true };
     const adapter = new Token3DAdapter(gm);

@@ -35,6 +35,61 @@ test('the trusted d20 returns its actual settled asset face and real physical tr
   expect(rolled.frames[0].position).not.toEqual(last.position);
 }, 30000);
 
+test.each([4, 6, 8, 10, 12, 20])(
+  'the player d%s returns a readable calibrated physical face',
+  async (sides) => {
+    const root = path.resolve(__dirname, '..', '..');
+    const program = `
+      const {PhysicalDice}=require(process.argv[1]);
+      let seed=${sides + 7};
+      const dice=new PhysicalDice({root:process.argv[2],random:()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}});
+      dice.playerDie({sides:${sides},color:'ocean',metrics:{cols:25,rows:25,tileSize:1},groundHeights:Array.from({length:25},()=>Array(25).fill(0)),obstacles:[]})
+        .then(result=>process.stdout.write(JSON.stringify(result))).catch(error=>{console.error(error);process.exitCode=1;});
+    `;
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      ['-e', program, path.join(root, 'tools', 'physical-dice.js'), root],
+      { cwd: root, timeout: 20000, maxBuffer: 2000000 }
+    );
+    const rolled = JSON.parse(stdout);
+    expect(rolled).toMatchObject({
+      version: 1,
+      type: 'physical-die',
+      sides,
+      color: 'ocean',
+      cocked: false,
+    });
+    expect(rolled.value).toBeGreaterThanOrEqual(1);
+    expect(rolled.value).toBeLessThanOrEqual(sides);
+    expect(rolled.frames.length).toBeGreaterThan(20);
+  },
+  30000
+);
+
+test('a default-color single d6 uses a physical d6 rather than the gold d20', async () => {
+  const root = path.resolve(__dirname, '..', '..');
+  const program = `
+    const {PhysicalDice}=require(process.argv[1]);
+    let seed=13;
+    const dice=new PhysicalDice({root:process.argv[2],random:()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}});
+    dice.roll(
+      {expression:'1d6',label:'Falling damage',mode:'normal'},
+      {metrics:{cols:25,rows:25,tileSize:1},groundHeights:Array.from({length:25},()=>Array(25).fill(0)),obstacles:[]}
+    ).then(result=>process.stdout.write(JSON.stringify(result))).catch(error=>{console.error(error);process.exitCode=1;});
+  `;
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    ['-e', program, path.join(root, 'tools', 'physical-dice.js'), root],
+    { cwd: root, timeout: 20000, maxBuffer: 2000000 }
+  );
+  const roll = JSON.parse(stdout);
+  expect(roll).toMatchObject({
+    physical: true,
+    physics: [{ type: 'physical-die', sides: 6, color: 'ocean', cocked: false }],
+  });
+  expect(roll.values).toEqual(roll.physics.map((die) => die.value));
+}, 30000);
+
 test('host all-d20 mode uses every supplied physical face in a multiple-d20 expression, never digital randomness', async () => {
   const faces = [4, 18];
   const roll = await rollDiceExpression(
@@ -56,6 +111,31 @@ test('host all-d20 mode uses every supplied physical face in a multiple-d20 expr
   });
   expect(roll.summary.breakdown).toContain('2d20 [4, 18]');
   expect(faces).toEqual([]);
+});
+
+test('host player-color mode physically rolls every supported die type without digital randomness', async () => {
+  const values = [1, 6, 3, 10, 9, 20];
+  const seen = [];
+  const roll = await rollDiceExpression(
+    { expression: 'd4+d6+d8+d10+d12+d20', label: 'Colored dice' },
+    {
+      physicalAllDice: true,
+      physicalRoll: async ({ sides }) => {
+        seen.push(sides);
+        return { success: true, value: values.shift() };
+      },
+      random: () => {
+        throw new Error('Colored physical dice must not use digital randomness');
+      },
+    }
+  );
+
+  expect(roll).toMatchObject({
+    physical: true,
+    values: [1, 6, 3, 10, 9, 20],
+    total: 49,
+  });
+  expect(seen).toEqual([4, 6, 8, 10, 12, 20]);
 });
 
 test.each([

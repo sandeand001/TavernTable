@@ -1,4 +1,5 @@
 import { lerpColor } from '../../utils/color/ColorUtils.js';
+import { getAssetDefinition } from '../assets/AssetCatalog.js';
 import { getSettlementProfile } from './SettlementProfiles.js';
 
 export const CONSTRUCTION_MATERIALS = Object.freeze({
@@ -15,6 +16,7 @@ export const CONSTRUCTION_MATERIALS = Object.freeze({
 });
 
 const PALETTES = [
+  [/^dungeon$/i, { masonry: 0x777a76, roof: 0x4d5152, rock: 0x626664 }],
   [/cliffsideCastle/i, { masonry: 0xb8b09a, roof: 0x526576, rock: 0x767e80 }],
   [/mountainCastle/i, { masonry: 0xa8acaa, roof: 0x4a5e6d, rock: 0x626e76 }],
   [
@@ -148,21 +150,28 @@ export function normalizeConstructionAppearance(value) {
   const colors = ['wallColor', 'roofColor', 'trimColor', 'accentColor', 'floorColor'];
   const materials = ['wallMaterial', 'roofMaterial', 'floorMaterial'];
   const keys = [...colors, ...materials, 'detail'];
+  const optionalKeys = ['facadeModelKey'];
   if (
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    Object.keys(value).some((key) => !keys.includes(key)) ||
+    Object.keys(value).some((key) => ![...keys, ...optionalKeys].includes(key)) ||
     colors.some(
       (key) => !Number.isInteger(value[key]) || value[key] < 0 || value[key] > 0xffffff
     ) ||
     materials.some(
       (key) => !Object.hasOwn(CONSTRUCTION_MATERIALS, value[key]) || value[key] === 'none'
     ) ||
-    !['timber', 'masonry', 'fortress'].includes(value.detail)
+    !['timber', 'masonry', 'fortress'].includes(value.detail) ||
+    (value.facadeModelKey !== undefined &&
+      getAssetDefinition(value.facadeModelKey)?.provenance.status !== 'reviewed')
   )
     throw new Error(
       'A building appearance requires valid colours, materials and architectural detail'
     );
-  return Object.fromEntries(keys.map((key) => [key, value[key]]));
+  return Object.fromEntries(
+    [...keys, ...optionalKeys]
+      .filter((key) => value[key] !== undefined)
+      .map((key) => [key, value[key]])
+  );
 }

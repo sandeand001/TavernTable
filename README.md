@@ -11,12 +11,14 @@ Open this project directory in VS Code: the directory containing this file and
 
 Requirements:
 
-- Node.js 24.4 or newer with npm (the local host uses built-in SQLite).
+- Node.js 24.4 with npm 11.4.2 (the local host uses built-in SQLite).
 - A modern browser with WebGL 2.
 - Internet access for the pinned Three.js modules and the large d20's cannon-es
   physics module loaded from jsDelivr.
 
 Verified development environment: Windows, Node.js 24.4.1 and npm 11.4.2.
+The project-local `.nvmrc`, `packageManager`, and `engines` fields define those
+runtime expectations.
 Node 24.4 currently prints an experimental-feature notice for its SQLite module.
 
 Run these commands from the project directory:
@@ -29,6 +31,10 @@ npm start
 Open <http://localhost:3000>. Stop the server with `Ctrl+C`.
 If port 3000 is occupied, use `npm run serve:alt1` and open
 <http://localhost:3001>.
+
+Run the focused real-browser smoke test with `npm run test:browser`. It starts
+an isolated loopback host, uses the installed Chrome channel, and leaves the
+normal campaign data untouched.
 
 Sign in as the DM with the private key in the host's `host-access-key` file.
 The terminal prints that file's location; on Windows the default is
@@ -54,6 +60,11 @@ modules and cached models.
 - The orbiting 3D view uses natural perspective. Tactical top-down stays
   orthographic, with parallel edges and no distance-based foreshortening.
 - OBJ/FBX model loading and instanced placeables are wired into the 3D scene.
+- Selected Pure Poly cave formations, rocks, crystals, trees, cacti, fungi, ore and
+  manual props are available as
+  opt-in encrypted scenery when protected-asset access is configured. Local
+  development key setup and cloud delivery are described in
+  [ASSET-INGESTION.md](./docs/ASSET-INGESTION.md#protected-model-delivery).
 - Automatic biome flora uses concrete model-backed plants, not virtual family
   menu entries. Instance-group creation is shared per model and invalidated
   when a map is cleared or regenerated.
@@ -68,8 +79,10 @@ modules and cached models.
   Menus retain emotes, add eight visual-only **Actions**, and open an in-app
   tabbed character sheet. Other planned commands share a
   disabled placeholder.
-- The single large d20 uses rigid-body physics and reads its actual resting face.
-  Other dice types and multiple-die rolls retain their existing behavior.
+- Dice can use one of seven player-selected CC BY dice colors. A single d4,
+  d6, d8, d10, d12 or d20 uses rigid-body physics and reads its actual resting
+  face. The separate **DM Gold d20** button retains the original large gold die
+  for special DM rolls. Percentile d100 remains digital for now.
 - **Roll Dice** and the right-side **Menu** each collapse with their header button.
   Only small tabs remain; click them to reopen. Collapse both for a full-width map.
   These choices are remembered in this browser, and opening a Compendium entry
@@ -111,10 +124,12 @@ old marker viewer, fake NPC records or client-local gameplay.
   DM and player moves publish their actual map-local waypoints for authorized
   receiving clients to animate. Foreign movement never includes private budgets.
   Busy-only animation notifications do not create another canonical save.
-- The host simulates physical D20s. Player dice display the original gold GLB
-  with its verified geometry key and actual recorded positions/quaternions.
-  No client face, forced orientation or substitute D20 result is submitted.
-  Cocked results require an explicit new user roll.
+- The host simulates player-selected d4/d6/d8/d10/d12/d20 rolls and records the
+  actual trajectories and face results. The player client replays the selected
+  color while verifying the host geometry key. The existing gold model remains
+  the DM-only special d20 and is not the player-command die. No client face,
+  forced orientation or substitute result is submitted. Cocked results require
+  an explicit new user roll.
 - The DM starts/advances turns; players may end only their advertised active
   turn. Existing trusted self HP, speed and resource edits remain available
   through assigned-record commits. These allowances are not anti-cheat.
@@ -238,7 +253,7 @@ until the account integration is complete.
 
 Cloud migration development uses a synthetic `demo-taverntable` project and
 loopback-only Auth/Firestore/Storage emulators, not the real default project.
-The [execution checklist](./docs/proposals/cloud-accounts-and-multiplayer-checklist.md)
+The [cloud release gates](./TODO.md#following-multiplayer-and-hosting-work)
 records progress and the separate deployment/cutover gates.
 
 Use Java 21+ for the pinned Firebase CLI. A portable JDK can be selected for the
@@ -255,14 +270,32 @@ Ordinary Jest tests do not need emulators; `tests/cloud` runs separately with
 Node's native test runner so native SDK upload/stream behavior is preserved.
 Both the stable Jest gate and `npm run test:cloud` are required for cloud
 milestone verification. SDK integrity checks are not disabled for testing.
-See [setup and compatibility evidence](./docs/proposals/cloud-migration-preparation.md#isolated-sdk-and-emulator-feedback-loop).
+See the [archived setup and compatibility evidence](./.attic/proposals/cloud-migration-preparation.md#isolated-sdk-and-emulator-feedback-loop).
 
 The pinned Storage emulator does not enforce GCS generation preconditions.
 Its explicit characterization test is not a create-only safety proof.
-The [separately approved real Storage canary](./docs/proposals/cloud-migration-preparation.md#immutable-object-primitive-approved-production-proof)
+The [separately approved real Storage canary](./.attic/proposals/cloud-migration-preparation.md#immutable-object-primitive-approved-production-proof)
 verified overwrite rejection and cleanup; production-only error branches also
 have focused external-service fault tests. Normal test commands never run that
 live canary or change IAM.
+
+### Protected 3D assets
+
+The local implementation can package self-contained GLB models as encrypted
+files and obtain their keys through current cloud campaign membership. Rendering
+remains in each browser. It is not enabled for any real asset and no key
+service has been deployed. Encryption deters casual extraction, but a client
+that renders a model can recover it; confirm each license separately.
+See the [protected asset procedure](./docs/ASSET-INGESTION.md#protected-model-delivery).
+
+Cloud accounts still default to the private pilot. An explicit
+`TAVERNTABLE_CLOUD_ELIGIBILITY=public` opt-in permits verified users to create
+their own campaigns and accept invitations without individual approval;
+disabled accounts remain blocked. Do not enable public access before the
+separate production, security and cost controls are approved. Joined games
+remain in the user's list until access is removed. To revoke an accepted
+player, the DM uses **Remove player access**; revoking an unused invitation
+only invalidates the link. Campaign deletion is still a separate backlog item.
 
 ## Initial local multiplayer sessions
 
@@ -515,6 +548,10 @@ focus, leaving the canvas, changing tools or brush size, or turning Terrain Mode
 off discards the unfinished preview. Wall height and Filled/Outline settings can
 be adjusted while a wall preview is open without applying it.
 
+For manual trees, the brush shows teal where the trunk fits, amber where it
+will be reduced, and red where the ground cannot support it. Family buttons
+choose a concrete tree for each placement; existing saved trees are unchanged.
+
 **Undo** and **Redo** are in **Edit History**. **Ctrl+Z** undoes;
 **Ctrl+Shift+Z** or **Ctrl+Y** redoes (Command works instead of Ctrl on macOS).
 Shortcuts are active only while editing terrain and do not replace text-field
@@ -713,6 +750,11 @@ Connected-map campaigns show a compact **Maps & focus** tab for the DM only:
 
 - **Map** browses a different grid without moving any creatures and clears
   viewing focus.
+- **Location overview** opens a DM-only, connected top-down snapshot of the
+  selected location. It includes linked cavern chambers, Dungeon walls and
+  openings, creature markers, and labeled links between building levels.
+  Choose a location, scroll or zoom, and select an area to browse it without
+  moving creatures or other viewers. **Refresh** updates the snapshot.
 - **Focus creature** switches to that creature's actual map and centers it.
   **No focus - browse map** leaves the current map open without creature focus.
 - **Center focused creature** recenters the camera without reloading terrain.
@@ -990,12 +1032,31 @@ seed or biome that would erase manually edited dungeon rooms is rejected rather
 than silently discarding them. Existing saved castles do not acquire underground
 areas merely by opening; explicitly **Generate** to use the new recipes.
 
-Fresh empty default canvases grow to **35 x 35** for villages, **45 x 45** for
-cities, **50 x 50** for ordinary castles and **60 x 60** for the cliff/mountain
-sites. Terrain castles require at least **20 x 20** squares. An automatically sized, unedited settlement
-can grow for the next selected biome during the same session, but never shrinks
-automatically. Populated maps, custom sizes and manually edited terrain/structures
-keep their dimensions. Palette selection alone never resizes a map.
+The generation review lets you set the exact grid width and height, including
+for settlements; generation does not silently expand the selected size. Terrain
+castles require at least **20 x 20** squares. Choosing a biome family is a draft
+and does not change the map. Use **Apply palette only** to recolor it without
+resizing, or **Generate** to review generation choices.
+
+Some controls are hidden for variants where they cannot currently apply. Asset
+density is unavailable when a variant generates no flora. Salt Flats offers
+gentle, balanced and dramatic low relief with compatible moisture settings;
+new generation uses a versioned recipe while existing maps retain their terrain.
+Saved settings are retained. New Coast layouts center the
+shoreline at any orientation; River / Lake, Floodplain and Mangrove layouts
+provide raised banks for vegetation alongside low ground. Water-oriented areas
+now render a translucent, biome-coloured surface over below-zero terrain,
+including visible projected surroundings. It is visual only and does not change
+movement, sight or ground picking. River / Lake can also place vegetation on
+zero-height shoreline without planting below the waterline. New Dead Forest,
+Ash Wastes, Wasteland and Graveyard scenery uses dry, supported ground. Blood
+Marsh, Swamp and Wetlands provide shallow, supported planting ground across
+moisture settings; dry Swamp and Wetlands retain a wet pocket. Existing saved
+maps are not regenerated on load. Steppe and Tundra can place appropriate
+scenery on level ground; Scree Slope can also populate exposed rock below zero
+elevation. New City, ruined settlement and Castle scenery retries sites rejected
+by structures, so denser settings can add trees without placing them inside
+buildings. The approved Village / Town generation remains unchanged.
 
 Building appearance is saved with its authoring definition. Original procedural
 plaster, masonry, timber, slate and paving patterns share vertex-coloured
@@ -1031,6 +1092,27 @@ their heights and rooflines differ. Compact 25- and 40-square layouts retain
 connected halls without cramped wing stairs. Existing grid sizing is unchanged,
 and reopening never remodels a saved castle. Visual acceptance remains open.
 
+For **Dungeon**, the generation review lets the DM choose **1-16 rooms**. Room
+sizes, doorway connections and straight, T-shaped or cross corridors vary with
+the seed, and the walls reach the selected grid's edges. A structured Dungeon
+needs at least 12 by 12 squares; the review explains when a requested room count
+needs a larger grid. After generating a Dungeon with **Structures & landmarks**
+enabled, use **Next Dungeon layout** to replace it with a different wall layout
+while keeping the grid size and room count. Cycling selects a new seed even when
+**Lock seed** is on; ordinary generation with the same locked seed stays
+repeatable. Older Dungeons without a saved room count must be generated once
+with a chosen count before they can be cycled. Overhead views hide generated
+doorway lintels locally so the openings remain visible and clickable; tilted
+views restore them without changing physical collision or sight.
+
+Cycling and biome generation replace the active map's terrain, structures,
+scenery and creature tokens; character sheets and other maps are retained.
+A warning appears by default. Select **Don't show me this again** when confirming
+to skip it in this browser, and turn **Warn before replacing** back on to restore
+it. Linked areas and connections must still pass their safety checks. Real lintels
+can conceal doorway gaps in an overhead view; the openings remain traversable at
+ground level.
+
 Suitable outdoor hills and mountains can contain three joined
 chambers, connecting passages and a surface entrance. The chambers share one
 floor, and their rooms and tunnel bores are carved after the joined rock shells
@@ -1044,33 +1126,49 @@ setting gives roughly **20 to 30 feet of wall relief**, rather than short
 eight-foot cutaway walls. Other elevation scales retain their own proportions.
 The walls and floors remain ordinary elevation terrain, with no dome shells or
 floor-mask system. Raise, Lower and the existing terrain tools still edit the cave.
-Procedural stalagmite/stalactite formations and their Build tools have been removed;
-new caverns use the existing biome assets instead. Explicitly **Generate** from the
-main cavern to clear previously generated formations and replace eligible automatic
-side chambers. Existing prototype saves still load without silently altering
-authored content; individual saved formations can be removed with **Select / resize
--> Remove**.
+Procedural stalagmite/stalactite formations and their Build tools have been removed.
+New Caverns instead scatter reviewed CC0 stalagmite clusters and stone-column
+models; their stone texture remains visible under ambient cave lighting.
+Crystal Spires uses tinted clusters with local glow. Formations vary in size
+and group into denser, irregular clusters as **Asset Density** rises,
+with sub-square offsets and open pockets between clusters. New generation keeps
+a winding, five-foot-wide supported gap between entrances, shaping the terrain
+and checking transformed scenery bounds. Existing cavern recipes and saved
+placements remain unchanged until explicitly regenerated. The formations are
+removable scenery, not movement-blocking geometry, though opaque Cavern
+formations still block sight.
+New Cavern generation checks transformed model bounds and omits formations that
+would intersect generated boulders; existing saved scenery is not rearranged.
+Fungal Grove also includes glowing purple mushroom clusters and giant red caps
+from the CC0 Asset Quest forest kit, with entrance passages kept clear.
+Existing prototype saves still load without silently altering authored content;
+individual saved formations can be removed with **Select / resize -> Remove**.
 
-With **Structures & landmarks** enabled, **Generate** also creates two connected
-side chambers. Disabling that option still creates the cavern interior, but omits
-automatic side areas. Each chamber is its own visual area in the same campaign
-location. Normal passage travel changes the displayed area and spends movement;
-**Maps & focus** can browse an area without moving creatures.
+The generation review can create additional, initially blank chamber maps and
+shared or separate outside maps. Their logical passages join separate locations
+without requiring the grids to align; each map can be generated or resized
+independently. **Maps & focus -> Add blank linked area** connects another
+available entrance later. Gold markers and passage buttons initiate paid travel,
+while browsing a map never moves a creature. The explicitly labeled physical
+tunnel/chamber control remains available for existing aligned cave areas.
 
-Inside a cavern, **Maps & focus -> Add tunnel / chamber** adds a named chamber or
-winding tunnel on a free side. Areas may branch from other chambers/tunnels too.
-Existing connections and overlapping maps reject invalid choices explicitly.
-The new terrain and connection are saved together without moving or recreating
-actors. Cave areas show only their own interior, rather than drawing all nearby
-chambers at once.
+All **Underground** variants, including Dungeon, use local visual lighting rather
+than the outdoor sun. Dungeon generation adds torches; enable **Terrain Mode**
+and add more from **Light Sources**, or remove them with **Remove Placeables**. Fungi
+and crystal-like scenery can also emit local light. To keep rendering bounded,
+up to eight nearby sources illuminate the current view without shadow maps; this
+does not implement gameplay darkness or darkvision.
 
 Existing saved caves and manual **Build -> Cave / Dome / Tunnel** shapes remain
-unchanged on load. Explicitly **Generate** from the main cavern to adopt the new
-layout or replace its automatic branches. Seed-locked generation preserves saved
-areas; edited or occupied side chambers and manual branches cannot be silently
-erased by regeneration. The terrain editor and normal Build controls remain
-available inside each area. Outside Terrain Mode, the grid stays on the low
-cave floors instead of being drawn over the tall rock masses.
+unchanged on load. Seed-locked generation from the main cavern can preserve saved
+areas and connections. A generation change that would remove a linked automatic
+area is refused, including when that area is unedited or occupied. The terrain editor
+and normal Build controls remain available inside each area. Outside Terrain Mode,
+the grid stays on the low cave floors instead of being drawn over the tall rock
+masses. Foreground cavern rock and generated Dungeon perimeter walls that
+obstruct the floor are cut away per viewer and restored as that viewer's camera
+moves; physical collision and character sight are unchanged. Other area types
+do not yet have this cutaway.
 Eligible natural landscapes, including forests, deserts and grassland, can
 occasionally contain intact homes, broken buildings or castle remnants on dry,
 gentle sites without changing the underlying biome. Oasis and coastal sites also
@@ -1078,21 +1176,24 @@ leave the shoreline vegetation band clear. Masonry, roofs and rock use
 biome-aware palettes, including weathered forest stone and desert sandstone.
 Generated flora avoids structures, streets, plazas, stalls and garden fences.
 
-Regeneration preserves manually authored structures and the ground beneath them.
-Resizing a generated structure adopts it as manual work. Natural landmarks retain
-the eight-structure / 220-volume budget. Settlement budgets allow meaningful
+Lower-level terrain regeneration can preserve manually authored structures and
+the ground beneath them; the Biomes **Generate** control instead replaces the
+active map as described above. Resizing a generated structure adopts it as manual
+work. Natural landmarks retain the eight-structure / 220-volume budget.
+Settlement budgets allow meaningful
 density while remaining bounded: **16 / 800** for towns, **32 / 1200** for cities
 and **21 / 1100** for castles (structures / generated volumes). Linked floor-map
 budgets are also bounded. Unsuitable or protected sites are skipped.
 New layouts and appearances apply on **Generate**, not when reopening an existing
 saved map. Lightweight drag ghosts do not rebuild the world's collision solids.
-Palette selection alone changes colours; it does not replace the existing castle
-or other generated structures. Generation progress, success and the actual failure
-reason appear directly beside **Generate**. Occupied structures cannot be replaced:
-move the creature off the structure, or remove test creatures before regenerating
-the whole board. Generation also refuses changes that would remove a creature's
-support or put it inside solid geometry. Rejected geometry changes retain the previous
-terrain, creature positions and seed.
+Choosing a family leaves the map unchanged. **Apply palette only** changes
+colours; it does not replace the existing castle or other generated structures.
+Generation review exposes surface character and moisture only where they are
+currently calibrated. The replacement warning is shown unless disabled in this
+browser. Generation is refused if it would alter or remove another saved map or
+connection. Progress, success and the actual failure reason appear directly
+beside **Generate**. Rejected replacements retain the previous terrain, creature
+positions and seed.
 Full geometry is rebuilt on commit, not on every pointer event.
 Idle floor rendering reuses its meshes and map geometry; actor-only checkpoints
 do not invalidate that geometry cache. This does not guarantee a particular frame
@@ -1153,7 +1254,7 @@ The new actions are animation previews, not combat or movement rules:
 
 Adding another compatible character or action requires an asset and one catalog
 entry, not another creature class or command switch. See the
-[import and authoring workflow](./HANDOFF.md#shared-humanoid-imports-and-action-authoring).
+[archived import and authoring workflow](./.attic/HANDOFF.md#shared-humanoid-imports-and-action-authoring).
 
 Character sheets share one non-modal window:
 
@@ -1345,9 +1446,10 @@ Equipment/spell **Details** buttons on the sheet open the same sidebar entry.
   slot and track concentration. Casting values, supported upcast/cantrip damage
   and class spell-slot progression are calculated. Concentration can be ended
   explicitly; **Long rest** restores HP/slots and clears concentration.
-- Roll buttons use the shared dice system and Dice Log. Normal d20 checks use
-  the physical d20 when available; advantage/disadvantage and damage rolls are
-  digital. Rolling damage does not cast a spell or spend another slot.
+- Roll buttons use the shared dice system and Dice Log. Single
+  d4/d6/d8/d10/d12/d20 rolls use the selected player color when the 3D renderer
+  is available. Authorized player commands can carry multiple physical dice in
+  the same roll. Rolling damage does not cast a spell or spend another slot.
 - **Reference** labels mean inventory/rules text only, not automated effects.
   Reviewed targeting profiles automate selection and projectile attack rolls,
   not hits, damage, saves or effect application. Unreviewed spells explicitly
@@ -1762,6 +1864,9 @@ Speed changes refresh the idle range and apply to the next accepted move.
 Pace/style can update during movement without retargeting the committed route.
 Free play uses a per-move allowance; manual combat shares one remaining allowance
 across committed moves. Run is not Dash.
+If a creature's locomotion animations are still loading, its requested move waits
+for them; a newer destination replaces the pending one. The move is rechecked
+before starting, and a loading failure is reported rather than sliding the model.
 
 **Changing destination while moving:** click another map location at any time
 during a click-to-move route. The latest click replaces the remaining route at
@@ -1804,6 +1909,10 @@ a fall. A reduced flying speed also interrupts the route so it can be replanned
 against the remaining allowance. Completed airborne positions
 and movement costs survive campaign save/reopen; unfinished animations/routes do
 not replay.
+
+Hosted player falls use the selected physical d6s. A cocked die requires another
+attempt without moving the creature or spending Slow Fall; unseen landing maps
+remain private until the fall succeeds.
 
 The sheet's Flying speed field represents **base/manual flight**. The reviewed
 **Fly** spell adds a scene-owned, token-specific temporary grant, using the higher
@@ -2001,23 +2110,27 @@ gradually instead of snapping upward. Refreshing a prone creature does not
 restart its held pose. These visual blends do not delay impact damage or spend
 additional movement/actions.
 
-## Large d20 rolls
+## Physical dice rolls
 
-With **Count: 1**, press **d20** to throw the gold die onto the board. Bounces,
-tumbling, friction, and quiet-body settling come from a fixed-step physics
-simulation rather than a scripted tour and a final face snap.
+Choose a dice color in **Roll Dice**, then use **Count: 1** and press d4, d6,
+d8, d10, d12 or d20. DMs can also press **DM Gold d20** for the original large
+gold die; player sessions do not expose that button. Bounces, tumbling,
+friction, and quiet-body settling come from a fixed-step physics simulation
+rather than a scripted tour and a final face snap.
 The low forward launch scales with the board's usable span, sending the die
 across the board with end-over-end tumble and a modest rebound from its boundary
 walls. Surface resistance keeps the finish from dragging on.
 
-The displayed result comes from the resting numbered face. If the die is caught
-between faces, the result says **D20 is cocked. Roll again.** The model stays
-visible for inspection, no number is logged, and you can press d20 again.
+The displayed result comes from the resting numbered face. D4 results use the
+down-facing face corresponding to the upward vertex convention. If a die is
+caught between faces, the result asks for a reroll. The model stays visible for
+inspection, no number is logged, and you can roll again.
 Clicking the die dismisses it; dismissing during a throw cancels that roll.
 On very small boards, its size is reduced enough to leave rolling room.
 
-Only an unavailable 3D renderer uses the existing 2D d20 fallback. A failed or
-unreadable physical roll never silently becomes a random result.
+Only an unavailable 3D renderer uses the existing 2D fallback. A failed or
+unreadable physical roll never silently becomes a random result. Host player
+commands replay the verified model geometry and trajectories.
 
 ## Exotic biome appearances
 
@@ -2025,13 +2138,13 @@ All biomes marked `exotic` use biome-specific appearances, including those liste
 outside the Exotic menu group. Choose a biome and press **Generate** to apply
 its population and appearance.
 
-| Biome             | Generated asset appearance                                                | Opacity range |
-| ----------------- | ------------------------------------------------------------------------- | ------------- |
+| Biome             | Generated asset appearance                                                | Profile opacity |
+| ----------------- | ------------------------------------------------------------------------- | --------------- |
 | Blood Marsh       | Crimson, burgundy, and muted red tones; suitable shallow-marsh vegetation | 65-85%        |
 | Mystic Grove      | Teal, mint, lavender, and pale gold                                       | 60-80%        |
 | Feywild Bloom     | Pink, aqua, lilac, and lime                                               | 50-75%        |
 | Shadowfell Forest | Muted blue-violet and ghostly gray dead trees                             | 30-60%        |
-| Crystal Spires    | Blue-purple rocks and pebbles                                             | 45-80%        |
+| Crystal Spires    | Blue-purple stalagmite spires                                             | 45-80%        |
 | Eldritch Rift     | Violet and eerie teal dead trees, fungi, and rocks                        | 30-65%        |
 | Lava Fields       | Dark ember-tinted rocks and pebbles only; no plants or foliage            | 80-95%        |
 | Astral Plateau    | Original natural texture colors, with transparency only                   | 35-65%        |
@@ -2041,14 +2154,22 @@ Lower opacity means more see-through. Variation is stable for the same biome,
 seed, model, and position, so locking the seed also preserves the appearance
 pattern. The palettes and opacity levels are defined in
 [ExoticBiomeAppearance.js](./src/config/biome/ExoticBiomeAppearance.js).
+Crystal formations resolve the nearest surface before blending their translucent
+color, so overlapping formations no longer appear to change depth as the camera
+turns. Their rendered opacity combines the former front/back contributions to
+preserve their appearance. This visual approximation does not change movement or
+character sight.
 
 Fantasy tinting retains the original texture detail and cutouts rather than
 substituting the generic multicolored atlas. Astral retains the original texture
 colors as well. Material copies are isolated from cached assets, so generating
 an exotic biome does not tint or fade a later ordinary biome.
 
-The **Asset Density** control scales generated trees, plants, and rocks. Changing
-the biome palette alone recolors the ground; regenerate to replace the assets.
+Where available, **Asset Density** scales generated trees, plants, and rocks.
+New Geyser Basin maps retain supported scenery sites across moisture choices;
+denser settings add more vegetation on those sites.
+Changing the biome through **Apply palette only** recolors the ground; regenerate
+to replace the assets.
 
 ## Biome plant placement
 
@@ -2127,8 +2248,8 @@ All test cases pass; the threshold and full-suite coverage selection are unchang
 - Cloud frontend packaging and production-host checks: **9/9 passing**.
 - The frontend packager traces runtime model/action/texture references and
   excludes unreachable assets without recompressing or modifying selected files.
-- [HANDOFF.md](./HANDOFF.md) contains the current maintenance baseline and
-  unfinished-work notes.
+- The [archived handoff](./.attic/HANDOFF.md) contains historical maintenance
+  context. Current setup and active work live here and in [TODO.md](./TODO.md).
 
 The humanoid contracts replay actual FBXs on every registered appearance:
 grounding, shared locomotion, live gait changes, movement budgets, double-cost
@@ -2144,7 +2265,7 @@ Cliff-motion regression coverage includes real Three.js hierarchy transforms,
 animation/root blending, terrain-edge detection, exact arrival budgets, input
 release, and landing clearance. Fresh-load browser replays with the actual FBX
 clips also cover walk/run/sprint, both inputs, adjacent height changes, elevation
-scales, and 30/60/120 FPS. See [HANDOFF.md](./HANDOFF.md) for motion invariants and
+scales, and 30/60/120 FPS. See the [archived handoff](./.attic/HANDOFF.md) for historical motion invariants and
 remaining limits; a green suite alone does not close every older movement report.
 Wall-cycle tests use the actual skinned skeleton at 30/60/120 FPS and uneven
 frame intervals, checking joint continuity, action weight, and animation/controller
@@ -2155,9 +2276,10 @@ heightfield-face picking.
 Fall regressions measure acceleration and airtime independently of recovery,
 including different tile/elevation scales, uneven frames, short drops, and actual
 FBX foot-contact timing.
-Large-d20 tests additionally use the real GLB geometry to cover all 20 numbered
-faces, physical ground contact, bounds/terrain, frame-rate independence, short
-throws, cancellation, cocked rolls, and result/log consistency.
+Dice tests additionally use the real gold and player GLB geometry to cover every
+numbered face, d4 downward-face handling, physical ground contact, bounds/terrain,
+frame-rate independence, color selection and authoritative replay, cancellation,
+cocked rolls, and result/log consistency.
 Camera tests use real Three.js projections to cover near/far edge widths,
 landscape/portrait framing, non-unit tiles, stored view modes, cursor zoom,
 ground-plane pan math, and picking after projection switches.
@@ -2198,7 +2320,9 @@ coverage report as evidence of current test health.
 - [CONTEXT.md](./CONTEXT.md): shared domain vocabulary.
 - [TODO.md](./TODO.md): current engineering follow-ups and feature backlog.
 - [CONVENTIONS.md](./CONVENTIONS.md): code organization and conventions.
-- [HANDOFF.md](./HANDOFF.md): concise maintenance handoff and cleanup context.
-- [November 2026 codebase audit](./docs/reviews/codebase-audit-2026-11-17.md):
+- [ASSET-INGESTION.md](./docs/ASSET-INGESTION.md): model provenance, support,
+  suitability, packaging, and save-identity contract for new asset packs.
+- [Archived handoff](./.attic/HANDOFF.md): historical maintenance and cleanup context.
+- [November 2026 codebase audit](./.attic/reviews/codebase-audit-2026-11-17.md):
   the cleanup starting point. Completed and outstanding work must be checked
   against the current branch before acting on it.

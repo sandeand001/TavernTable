@@ -21,6 +21,7 @@ import { GRID_CONFIG } from '../config/GameConstants.js';
 import { TOKEN_COMMANDS, getTokenCommand } from '../config/TokenCommandConfig.js';
 import { CHARACTER_DEFINITIONS } from '../config/CharacterCatalog.js';
 import { MANUAL_ACTIONS } from '../config/HumanoidActionCatalog.js';
+import { persistPlayerDiceColor, readPlayerDiceColor } from '../config/PlayerDiceCatalog.js';
 
 import {
   getCreatureButtons,
@@ -50,6 +51,7 @@ import { rollDice } from '../systems/dice/dice.js';
 import CampaignLauncher, { mountCampaignControls } from './campaigns/CampaignLauncher.js';
 import CloudSaveFeedback from './campaigns/CloudSaveFeedback.js';
 import { ensureSession } from './sessions/SessionLogin.js';
+import { createLocalProtectedAssetKeyProvider } from '../campaigns/SessionConnection.js';
 import CloudAccountLogin, {
   consumeCloudInvitation,
   reopenCloudInvitation,
@@ -700,6 +702,26 @@ function attachDynamicUIHandlers() {
       });
       btn.dataset.boundDiceHandler = 'true';
     });
+    const diceColor = document.querySelector('[data-dice-color]');
+    if (diceColor && !diceColor.dataset.boundDiceColor) {
+      diceColor.value = readPlayerDiceColor();
+      diceColor.addEventListener('change', () => {
+        try {
+          persistPlayerDiceColor(diceColor.value);
+        } catch (error) {
+          new ErrorHandler().handle(error, ERROR_SEVERITY.MEDIUM, ERROR_CATEGORY.INPUT, {
+            context: 'diceColor',
+            stage: 'selection',
+          });
+        }
+      });
+      diceColor.dataset.boundDiceColor = 'true';
+    }
+    const goldD20 = document.querySelector('[data-dm-gold-d20]');
+    if (goldD20 && !goldD20.dataset.boundDiceHandler) {
+      goldD20.addEventListener('click', () => rollDice(20, { goldD20: true, forceCount: 1 }));
+      goldD20.dataset.boundDiceHandler = 'true';
+    }
 
     // Grid apply button
     const { applySize } = getGridActionButtons();
@@ -983,7 +1005,7 @@ function resetTerrain() {
     // Confirm with user before resetting
     if (
       confirm(
-        'Reset all terrain to default height? You can undo this during the current editing session.'
+        'Clear the entire grid to its base state? This removes terrain edits, structures, placeables and generated connected areas. Undo can restore the terrain/building state, but cleared placeables cannot be restored.'
       )
     ) {
       window.gameManager.resetTerrain();
@@ -1173,6 +1195,7 @@ async function startCampaignApplication() {
       manager.cloudSaveFeedback = new CloudSaveFeedback({
         store: workspace.store,
         hasUnconfirmedCommand: () =>
+          workspace.store.pendingWorld?.scope.role === 'owner' ||
           !!(
             !manager.playerApplication?.pendingRecovered &&
             (manager.playerApplication?.commands.pending ||
@@ -1240,6 +1263,20 @@ async function startCampaignApplication() {
         services.saveFeedback = manager.cloudSaveFeedback;
         services.saveFeedback.bindAutosave(autosave);
       }
+    }
+    if (cloudMode) {
+      const store = workspace.store;
+      const campaignId = manager.campaign.id;
+      manager.modelAssetCache.setProtectedAssetKeyProvider((keyId) =>
+        store.getProtectedAssetKey(campaignId, keyId)
+      );
+      store.connection.subscribePrivateInvalidation((uid) => {
+        if (uid === store.uid) manager.modelAssetCache.setProtectedAssetKeyProvider(null);
+      });
+    } else if (identity?.localProtectedAssets === true) {
+      manager.modelAssetCache.setProtectedAssetKeyProvider(
+        createLocalProtectedAssetKeyProvider(identity, manager.campaign.id)
+      );
     }
     pauseControls();
     await manager.initialize();

@@ -3,11 +3,72 @@
  * Each entry is id -> { label, imgPath, type }
  * type: 'path' (coexists with tokens) | 'structure' (exclusive)
  */
+import { PURE_POLY_ASSETS } from '../assets/PurePolyAssets.js';
+
 // ── Base Terrain Placeables ───────────────────────────────────
 const TERRAIN_PLACEABLES = {
   // scaleMode: 'contain' (fit inside tile, preserve aspect),
   //            'cover'   (cover tile, preserve aspect, may overflow),
   //            'stretch' (force exact tile dimensions, may distort)
+};
+
+const SOURCE_PACK_REPRESENTATIVES = {
+  'source-medieval-wall-door': {
+    label: 'Medieval Wall with Door (Representative)',
+    img: null,
+    modelKey: 'source-medieval-wall-door',
+    type: 'structure',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-dungeon-wall': {
+    label: 'Modular Dungeon Wall (Representative)',
+    img: null,
+    modelKey: 'source-dungeon-wall',
+    type: 'structure',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-dungeon-torch': {
+    label: 'Torch (light source)',
+    img: null,
+    modelKey: 'source-dungeon-torch',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-cave-entrance': {
+    label: 'Cave Entrance Frame (Representative)',
+    img: null,
+    modelKey: 'source-cave-entrance',
+    type: 'structure',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-cave-stalagmite': {
+    label: 'Stalagmite Cluster',
+    img: null,
+    modelKey: 'source-cave-stalagmite',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-cave-column': {
+    label: 'Natural Rock Column',
+    img: null,
+    modelKey: 'source-cave-column',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'source-iron-chest': {
+    label: 'Iron Chest (Representative)',
+    img: null,
+    modelKey: 'source-iron-chest',
+    type: 'structure',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
 };
 
 // Tree groups (multi-variant placeables). Each key below points to an array of
@@ -833,6 +894,22 @@ const TREE_PLACEABLES = {
     scaleMode: 'contain',
     baselineOffsetPx: 2,
   },
+  'mushroom-glow': {
+    label: 'Glowing Mushroom Cluster',
+    img: null,
+    modelKey: 'mushroom-glow',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 2,
+  },
+  'mushroom-giant-cap': {
+    label: 'Giant Mushroom',
+    img: null,
+    modelKey: 'mushroom-giant-cap',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 2,
+  },
   'mushroom-oyster': {
     label: 'Mushroom Oyster',
     img: null,
@@ -945,6 +1022,22 @@ const TREE_PLACEABLES = {
   },
   // ── Rocks & Pebbles ─────────────────────────────────────────
   // Rocks / pebbles (as placeable decorative plants for variety layering)
+  'rock-medium-2': {
+    label: 'Rock Medium 2',
+    img: null,
+    modelKey: 'rock-medium-2',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
+  'rock-medium-3': {
+    label: 'Rock Medium 3',
+    img: null,
+    modelKey: 'rock-medium-3',
+    type: 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+  },
   'rock-medium-4': {
     label: 'Rock Medium 4',
     img: null,
@@ -1091,6 +1184,32 @@ const TREE_PLACEABLES = {
 Object.entries(TREE_PLACEABLES).forEach(([k, v]) => {
   TERRAIN_PLACEABLES[k] = v;
 });
+Object.entries(SOURCE_PACK_REPRESENTATIVES).forEach(([k, v]) => {
+  TERRAIN_PLACEABLES[k] = v;
+});
+for (const asset of PURE_POLY_ASSETS) {
+  const label = asset.id
+    .replace(/^pure-poly-/, '')
+    .split('-')
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
+  TERRAIN_PLACEABLES[asset.id] = {
+    label:
+      asset.kind === 'light'
+        ? `${label} (visual light)`
+        : ['prop', 'ore'].includes(asset.kind)
+          ? `${label} (decorative)`
+          : label,
+    img: null,
+    modelKey: asset.id,
+    type: asset.kind === 'prop' ? 'structure' : 'plant',
+    scaleMode: 'contain',
+    baselineOffsetPx: 0,
+    protectedKeyId: 'pure-poly-v1',
+    ...(asset.kind === 'light' ? { lightSource: true } : {}),
+    ...(asset.kind === 'tree' ? { treeModel: true } : {}),
+  };
+}
 
 // (Former forest billboard experimental group removed; placeholder comments pruned.)
 

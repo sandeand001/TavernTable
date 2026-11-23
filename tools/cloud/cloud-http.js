@@ -6,6 +6,7 @@ const { CloudError } = require('./cloud-error.js');
 const { CloudUsageLimits } = require('./usage-limits.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
 const { readLimitedBody, RequestBodyLimitError } = require('../http-body.js');
+const { isProtectedAssetId } = require('../../src/core/ProtectedAsset.js');
 const {
   isCloudUUID,
   isCloudAccessGeneration,
@@ -17,6 +18,7 @@ const {
 
 const MAX_CLOUD_REQUEST_BYTES = 24 * 1024 * 1024;
 const MAX_CLOUD_WORK_REQUESTS = 4;
+const MAX_WORLD_COMMAND_BYTES = 256 * 1024;
 let activeCloudWork = 0;
 
 async function opportunisticObjectMaintenance(store, principal) {
@@ -180,7 +182,12 @@ function jsonResponse(response, status, value, headers = {}) {
   response.end(body);
 }
 
-function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
+function createCloudHttpHandler({
+  access,
+  store = null,
+  allowedOrigins,
+  protectedAssetKeys = null,
+}) {
   if (
     typeof access?.verifyAuthorization !== 'function' ||
     !Array.isArray(allowedOrigins) ||
@@ -201,6 +208,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     throw new Error(
       'Cloud account HTTP requires verified access and exact secure/loopback frontend origins'
     );
+  if (protectedAssetKeys !== null && typeof protectedAssetKeys?.get !== 'function')
+    throw new Error('Protected model key delivery requires a private keyring');
   if (
     store !== null &&
     [
@@ -249,6 +258,8 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     throw new Error('Cloud campaign HTTP requires the explicit private campaign store interface');
   const origins = new Set(allowedOrigins);
   const usage = store?.usage || new CloudUsageLimits({ firestore: access.firestore, access });
+  const liveWorkAt = new Map();
+  let liveWorkRunning = false;
   return async (request, response) => {
     if (!URL.canParse(request.url, 'http://cloud.invalid')) {
       jsonResponse(response, 400, {
@@ -268,7 +279,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
       url.pathname
     );
     const campaign =
-      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status|presence\/(?:ack|close)))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments|arrivals))?$/.exec(
+      /^\/api\/cloud\/campaigns\/([^/]+)(?:\/(characters|assigned-characters|participant-state|participant-assets\/[a-f0-9]{64}|protected-asset-key|events|owner-events|owner-state|world-commands|scene|settings|live(?:\/(?:access|status|presence\/(?:ack|close)))?|backup|backups(?:\/(?:status|work|[a-f0-9-]{36}))?|assets(?:\/(?:[a-f0-9]{64}|manifest))?|access|participant-access|seats|invitations(?:\/revoke)?|members\/remove|assignments|arrivals))?$/.exec(
         url.pathname
       );
     if (
@@ -315,6 +326,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         'assets',
         'backups/work',
         'participant-state',
+        'protected-asset-key',
         'events',
         'world-commands',
         'owner-events',
@@ -345,6 +357,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
     else if (snapshot === 'arrivals') operation = 'campaign.arrival';
     else if (snapshot === 'settings') operation = 'campaign.settings';
     else if (snapshot === 'participant-state') operation = 'campaign.participant.read';
+    else if (snapshot === 'protected-asset-key') operation = 'campaign.protected-asset.key';
     else if (snapshot === 'events') operation = 'campaign.events';
     else if (snapshot === 'world-commands') operation = 'campaign.world.command';
     else if (['owner-events', 'owner-state'].includes(snapshot)) operation = 'campaign.owner.world';
@@ -416,9 +429,14 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         invitation: redeem,
         ...(snapshot === 'live/presence/ack' ? { transport: true } : {}),
       });
+      const worldRequest =
+        snapshot === 'world-commands' ? await requestJSON(request, MAX_WORLD_COMMAND_BYTES) : null;
       if (largeFile) releaseLargeFile = acquireLargeFileWork();
       if (
-        (request.method === 'POST' && !presenceControl) ||
+        (request.method === 'POST' &&
+          !presenceControl &&
+          snapshot !== 'protected-asset-key' &&
+          worldRequest?.command?.kind !== 'move') ||
         maintainsObjects ||
         (request.method === 'GET' && evaluatesBackups) ||
         ['scene', 'characters', 'assigned-characters', 'backup'].includes(snapshot) ||
@@ -443,6 +461,7 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         snapshot !== 'participant-access' &&
         snapshot !== 'assigned-characters' &&
         snapshot !== 'participant-state' &&
+        snapshot !== 'protected-asset-key' &&
         snapshot !== 'events' &&
         snapshot !== 'world-commands' &&
         snapshot !== 'owner-events' &&
@@ -506,6 +525,38 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.getAccess(principal, campaign[1]);
         } else if (snapshot === 'participant-access') {
           result = await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+        } else if (snapshot === 'protected-asset-key') {
+          const input = await requestJSON(request, 1024);
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== 1 ||
+            !isProtectedAssetId(input.keyId) ||
+            expectedAccess === null
+          )
+            throw new CloudError(
+              400,
+              'invalid-protected-asset-request',
+              'Choose a protected model key and current campaign access'
+            );
+          await store.getParticipantAccess(principal, campaign[1], expectedAccess);
+          if (protectedAssetKeys === null)
+            throw new CloudError(
+              503,
+              'protected-assets-unavailable',
+              'Protected models are not configured on this cloud host'
+            );
+          const key = protectedAssetKeys.get(input.keyId);
+          if (key === null)
+            throw new CloudError(404, 'protected-key-not-found', 'Protected model key unavailable');
+          if (
+            typeof key !== 'string' ||
+            !/^[A-Za-z0-9+/]{43}=$/.test(key) ||
+            Buffer.from(key, 'base64').toString('base64') !== key
+          )
+            throw new CloudError(503, 'protected-key-invalid', 'Protected model key is invalid');
+          result = { version: 1, keyId: input.keyId, key };
         } else if (snapshot === 'assigned-characters') {
           result =
             request.method === 'POST'
@@ -522,10 +573,10 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
           result = await store.commitWorldCommand(
             principal,
             campaign[1],
-            await requestJSON(request),
+            worldRequest,
             expectedAccess
           );
-          if (result.outcome === 'applied') {
+          if (result.outcome === 'applied' && !result.freeRoam) {
             await opportunisticAssignedBackupWork(store, principal, campaign[1], expectedAccess);
             await opportunisticChangeWork(store, principal, campaign[1], expectedAccess);
           }
@@ -711,6 +762,25 @@ function createCloudHttpHandler({ access, store = null, allowedOrigins }) {
         { version: 1, result },
         headers
       );
+      // Presence traffic drives periodic work without making movement receipts wait for it.
+      if (snapshot === 'live/presence/ack' && !liveWorkRunning) {
+        const id = campaign[1];
+        const now = Date.now();
+        if (now - (liveWorkAt.get(id) ?? 0) >= 60000) {
+          liveWorkAt.delete(id);
+          if (liveWorkAt.size >= 32) liveWorkAt.delete(liveWorkAt.keys().next().value);
+          liveWorkAt.set(id, now);
+          liveWorkRunning = true;
+          try {
+            if (expectedAccess.seatId === null)
+              await opportunisticLiveBackupWork(store, principal, id);
+            else await opportunisticAssignedBackupWork(store, principal, id, expectedAccess);
+            await opportunisticChangeWork(store, principal, id, expectedAccess);
+          } finally {
+            liveWorkRunning = false;
+          }
+        }
+      }
     } catch (error) {
       if (response.headersSent) {
         console.error(`[cloud-${subject}]`, {

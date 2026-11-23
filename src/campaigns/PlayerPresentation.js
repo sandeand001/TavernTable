@@ -50,6 +50,8 @@ export function playerRenderAssets(
           'type',
           'gridX',
           'gridY',
+          'gridOffsetX',
+          'gridOffsetY',
           'heightOffset',
           'persistedScale',
           'modelKey',
@@ -102,10 +104,16 @@ export function playerRenderAssets(
         fields(world.toCampaignSolid(entry.feature.mapId, cell), ['min', 'max', 'planes'])
       ),
     }));
+  const logicalPassages = (world.getLogicalPassages?.() || []).flatMap((passage) =>
+    passage.ends
+      .filter((end) => ids.has(end.mapId))
+      .map(({ mapId, side }) => ({ id: passage.id, mapId, side }))
+  );
   return {
     location: world.listLocations().find((entry) => entry.id === locationId),
     maps,
     connections,
     doorPanels,
+    ...(logicalPassages.length ? { logicalPassages } : {}),
   };
 }

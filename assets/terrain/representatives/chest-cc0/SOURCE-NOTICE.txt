@@ -1,0 +1,8 @@
+LowPoly Modular Dungeon Pack
+Creator: Quaternius
+Source: https://quaternius.itch.io/lowpoly-modular-dungeon-pack
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+The unmodified dungeon-chest.fbx is the source pack's FBX/Chest.fbx.
+SHA-256: 9f31e6bfa318626c4cc935e8629e65c3327dd6f4b28b134a08cb7c35b6638de8
+The runtime corrects the source's zero-opacity materials during import.

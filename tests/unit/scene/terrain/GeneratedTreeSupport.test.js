@@ -93,7 +93,29 @@ describe('Generated tree trunk support', () => {
     pool.dispose();
   });
 
-  test('does not resize manually placed trees', async () => {
+  test('fits a new manual tree using the same supported trunk rules', async () => {
+    const { pool } = fixture(1.2, (x) => (x === 3 ? 0 : 3));
+    const handle = await pool.addPlaceable(tree({ generatedBiome: false }), {
+      fitManualTree: true,
+      strict: true,
+    });
+    const scale = instanceScale(pool, handle);
+    expect(scale.x).toBeCloseTo(0.816666, 4);
+    expect(scale.y).toBeCloseTo(scale.x);
+    expect(scale.z).toBeCloseTo(scale.x);
+    pool.dispose();
+  });
+
+  test('rejects a new manual tree when the trunk cannot be supported at a useful size', async () => {
+    const { pool } = fixture(1.8, (x, y) => (x === 2 && y === 2 ? 3 : 0));
+    await expect(
+      pool.addPlaceable(tree({ generatedBiome: false }), { fitManualTree: true, strict: true })
+    ).rejects.toThrow(/support/i);
+    expect(pool.getStats().instances).toBe(0);
+    pool.dispose();
+  });
+
+  test('restoring an older manual tree does not silently resize it', async () => {
     const { pool } = fixture(1.8, (x, y) => (x === 2 && y === 2 ? 3 : 0));
     const handle = await pool.addPlaceable(tree({ generatedBiome: false }));
     expect(instanceScale(pool, handle).toArray()).toEqual([1, 1, 1]);

@@ -1,4 +1,5 @@
 import PlayerCommandAdapter from '../../../src/ui/sessions/PlayerCommandAdapter.js';
+import { validatePlayerCommandAcknowledgement } from '../../../src/campaigns/PlayerPublicProtocol.js';
 import { publicPlayerState } from '../../helpers/publicPlayerState.js';
 
 function fixture() {
@@ -96,6 +97,73 @@ test('a move submits only the active owned token intent and acknowledged revisio
   ]);
   expect(state.sceneRevision).toBe(12);
   expect(state.gameplay.ownedTokens[0].movement.remainingFeet).toBe(25);
+});
+
+test.each(['move', 'flight.drop'])(
+  'a %s acknowledgement with a fall roll waits for the full authoritative receipt',
+  (kind) => {
+    const { adapter, response, state } = fixture();
+    state.profile.id = 'player-session';
+    const accept = jest.fn();
+    adapter.pending = true;
+    adapter.lastRequest = {
+      campaignId: 'campaign',
+      command: { commandId: response.commandId, tokenId: 'real-scout', kind },
+      acceptLive: accept,
+    };
+    const acknowledgement = {
+      version: 1,
+      campaignId: 'campaign',
+      actorId: state.profile.id,
+      commandId: response.commandId,
+      outcome: 'applied',
+      applied: response.applied,
+      receipt: {
+        ...response.receipt,
+        kind,
+        roll: { expression: '1d6' },
+      },
+    };
+    expect(() =>
+      validatePlayerCommandAcknowledgement(acknowledgement, {
+        cachedAssets: state.publicScene.assets,
+      })
+    ).not.toThrow();
+    expect(adapter.acceptLive(acknowledgement)).toBe(false);
+    expect(accept).not.toHaveBeenCalled();
+  }
+);
+
+test('a fall into an uncached map waits for the scoped full receipt', () => {
+  const { adapter, response, state } = fixture();
+  state.profile.id = 'player-session';
+  const accept = jest.fn();
+  adapter.pending = true;
+  adapter.lastRequest = {
+    campaignId: 'campaign',
+    command: { commandId: response.commandId, tokenId: 'real-scout', kind: 'flight.drop' },
+    acceptLive: accept,
+  };
+  const route = [{ ...response.receipt.route[0], mapId: 'hidden-landing' }];
+  const acknowledgement = {
+    version: 1,
+    campaignId: 'campaign',
+    actorId: state.profile.id,
+    commandId: response.commandId,
+    outcome: 'applied',
+    applied: response.applied,
+    receipt: {
+      ...response.receipt,
+      kind: 'flight.drop',
+      route,
+      placement: route[0],
+      motion: { ...response.receipt.motion, kind: 'fall', route },
+      roll: { expression: '1d6' },
+    },
+  };
+  expect(adapter.acceptLive(acknowledgement)).toBe(false);
+  expect(adapter.lastRequest.awaitingFullReceipt).toBe(true);
+  expect(accept).not.toHaveBeenCalled();
 });
 
 test('scene mutations share the pending checkpoint lock and cannot bypass an uncertain gameplay command', async () => {

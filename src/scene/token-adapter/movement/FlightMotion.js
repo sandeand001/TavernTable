@@ -18,6 +18,7 @@ import {
 import { flightAvailability, movementSpeed } from '../../../rules/flight.js';
 import { canRemainAirborne } from '../../../rules/falling.js';
 import { boundsIntersectSolid } from '../../../terrain/ConvexGeometry.js';
+import { blocksCreatureMovement } from '../../../terrain/PlaceableCollision.js';
 import { isFloorSurface } from '../../../terrain/SurfaceNavigation.js';
 import { campaignLandingForSupport } from '../SavedPlacements.js';
 
@@ -292,7 +293,7 @@ function flightSolidCellBlocked(
   const groundY = groundHeight.call(this, gridX, gridY, worldY);
   if (allowLanding ? worldY < groundY - 1e-7 : worldY <= groundY + 1e-7) return true;
   for (const entry of gm.terrainManager?.placeables?.get(`${gridX},${gridY}`) || []) {
-    if (!['plant', 'structure'].includes(entry.placeableType)) continue;
+    if (!blocksCreatureMovement(entry)) continue;
     const handle = entry.__meshPoolHandle;
     const pool = gm.placeableMeshPool;
     const group = handle && pool?._groups?.get(handle.key);

@@ -18,6 +18,8 @@ import {
   resetDiceMaterialColors,
   applyCriticalRollTint,
 } from './DiceModelManager.js';
+import { ensurePlayerDie } from './PlayerDiceModelManager.js';
+import { getPlayerDiceDefinition, readPlayerDiceColor } from '../../config/PlayerDiceCatalog.js';
 import { scheduleRollAnimation } from './DiceAnimationScheduler.js';
 import './FaceCalibrationUI.js';
 
@@ -275,6 +277,146 @@ export async function playD20RollOnGrid(options = {}) {
       reason: 'exception',
       error,
     };
+  }
+}
+
+export async function playPlayerDieRollOnGrid(options = {}) {
+  if (!hasWindow()) return { success: false, value: null, reason: 'no-window' };
+  const manager = getSceneManager();
+  if (!manager || manager.degraded || !manager.scene) {
+    return { success: false, value: null, reason: 'no-manager' };
+  }
+
+  const sides = Number(options.sides);
+  const diceCount = Number.isInteger(options.diceCount) ? options.diceCount : 1;
+  if (diceCount < 1 || diceCount > 10)
+    return { success: false, value: null, reason: 'invalid-count' };
+  const color = options.color || readPlayerDiceColor();
+  let definition;
+  try {
+    definition = getPlayerDiceDefinition(sides);
+  } catch (error) {
+    return { success: false, value: null, reason: 'unsupported-die', error };
+  }
+
+  let mesh = null;
+  const animationStates = [];
+  let clickDismissCleanup = null;
+  try {
+    _clearActiveDie();
+    const three = await ensureThreeNamespace();
+    mesh = await ensurePlayerDie(sides, color);
+    const metrics = getBoardMetrics(manager);
+    const tileSize = metrics.tileSize || 1;
+    const rollGroup = new three.Group();
+    rollGroup.name = 'player-dice-roll';
+    const individualScale = tileSize * (options.scale ?? (diceCount > 1 ? 0.68 : 0.82));
+    mesh.scale.setScalar(individualScale);
+    resetDiceMaterialColors(mesh);
+    rollGroup.add(mesh);
+    for (let index = 1; index < diceCount; index += 1) {
+      const additional = await ensurePlayerDie(sides, color);
+      additional.scale.setScalar(individualScale);
+      resetDiceMaterialColors(additional);
+      rollGroup.add(additional);
+    }
+    rollGroup.userData.diceSides = sides;
+    rollGroup.userData.diceColor = color;
+    const upstreamOnSettle = typeof options.onSettle === 'function' ? options.onSettle : null;
+    if (options.dismissOnClick !== false) {
+      try {
+        clickDismissCleanup = _attachDieDismissOnClick(manager, rollGroup);
+      } catch (_) {
+        clickDismissCleanup = null;
+      }
+    }
+
+    const rollPromises = [];
+    for (const [index, die] of rollGroup.children.entries()) {
+      let settled = false;
+      let settleResolver;
+      const settlePromise = new Promise((resolve) => {
+        settleResolver = resolve;
+      });
+      const animationOptions = {
+        ...options,
+        playerDiceDefinition: definition,
+        restHeight: options.restHeight ?? DEFAULT_REST_HEIGHT,
+      };
+      animationOptions.onSettle = (payload) => {
+        if (settled) return;
+        settled = true;
+        const faceValue = Number.isInteger(payload?.faceInfo?.value)
+          ? payload.faceInfo.value
+          : null;
+        if (sides === 20) applyCriticalRollTint(die, faceValue);
+        if (upstreamOnSettle) {
+          try {
+            upstreamOnSettle(payload);
+          } catch (callbackError) {
+            logger.warn(
+              '[dice3d] upstream onSettle callback failed',
+              { error: toErrorPayload(callbackError) },
+              DICE_LOG_CATEGORY
+            );
+          }
+        }
+        settleResolver({ success: true, value: faceValue, faceInfo: payload?.faceInfo || null });
+      };
+      animationOptions.onCancel = () => {
+        if (settled) return;
+        settled = true;
+        settleResolver({ success: false, value: null, reason: 'cancelled' });
+      };
+      animationOptions.onCocked = () => {
+        if (settled) return;
+        settled = true;
+        settleResolver({ success: false, value: null, reason: 'cocked' });
+      };
+      animationOptions.onError = (error) => {
+        if (settled) return;
+        settled = true;
+        settleResolver({ success: false, value: null, reason: 'physics-error', error });
+      };
+      animationStates.push(await scheduleRollAnimation(manager, die, metrics, animationOptions));
+      rollPromises[index] = settlePromise;
+    }
+    manager.scene.add(rollGroup);
+    diceState.activeDieState = {
+      mesh: rollGroup,
+      dispose: () => {
+        for (const state of animationStates) state.dispose();
+        rollGroup.removeFromParent();
+      },
+      interactionCleanup: clickDismissCleanup,
+    };
+    const results = await Promise.all(rollPromises);
+    const failed = results.find((result) => !result.success);
+    if (failed) {
+      if (failed.reason !== 'cocked' && diceState.activeDieState?.mesh === rollGroup)
+        _clearActiveDie();
+      return failed;
+    }
+    const result = {
+      success: true,
+      values: results.map((entry) => entry.value),
+      value: results.length === 1 ? results[0].value : null,
+      faceInfo: results.length === 1 ? results[0].faceInfo : null,
+    };
+    if (!result.success && diceState.activeDieState?.mesh === rollGroup) {
+      _clearActiveDie();
+    }
+    return result;
+  } catch (error) {
+    clickDismissCleanup?.();
+    for (const state of animationStates) state.dispose();
+    if (!animationStates.length && mesh) mesh.material?.dispose();
+    logger.error(
+      '[dice3d] Unable to play player die animation',
+      { sides, color, error: toErrorPayload(error) },
+      DICE_LOG_CATEGORY
+    );
+    return { success: false, value: null, reason: 'exception', error };
   }
 }
 

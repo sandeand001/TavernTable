@@ -1,5 +1,7 @@
 // ── Imports & Logging Helpers ───────────────────────────────────
 import logger, { LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { loadProtectedAsset } from './ProtectedAsset.js';
+import { PURE_POLY_ASSETS } from '../config/assets/PurePolyAssets.js';
 
 import {
   postProcessModel as _postProcess,
@@ -76,7 +78,12 @@ class ModelAssetCache {
     this._loading = new Map();
     this._textureLoader = null;
     this._textureCache = null;
+    this._textureReadiness = new WeakMap();
+    this._modelReadiness = new WeakMap();
     this._fbxLoaderCtorPromise = null;
+    this._gltfLoaderCtorPromise = null;
+    this._protectedAssetKeyProvider = null;
+    this._protectedAccessVersion = 0;
     const base = 'assets/terrain/3d Assets/OBJ';
     this._registry = {
       'common-broadleaf-1': [`${base}/CommonTree_1.obj`],
@@ -169,6 +176,28 @@ class ModelAssetCache {
       'mushroom-redcap': [`${base}/Mushroom_RedCap.obj`],
       'mushroom-oyster': [`${base}/Mushroom_Oyster.obj`],
       'mushroom-laetiporus': [`${base}/Mushroom_Laetiporus.obj`],
+      'mushroom-glow': {
+        path: 'assets/terrain/representatives/fungal/Purple_Mushrooms_Cluster_3.fbx',
+        format: 'FBX',
+        resourcePath: 'assets/terrain/representatives/fungal',
+        textureBase: 'assets/terrain/representatives/fungal',
+        textures: { baseColor: 'Forest_Pack_BaseColor.png' },
+        centerAndGround: { alignXZ: true, alignY: true },
+        inferTextures: false,
+        inferFoliage: false,
+        opaqueMaterials: true,
+      },
+      'mushroom-giant-cap': {
+        path: 'assets/terrain/representatives/fungal/Fly_Agaric_Big.fbx',
+        format: 'FBX',
+        resourcePath: 'assets/terrain/representatives/fungal',
+        textureBase: 'assets/terrain/representatives/fungal',
+        textures: { baseColor: 'Forest_Pack_BaseColor.png' },
+        centerAndGround: { alignXZ: true, alignY: true },
+        inferTextures: false,
+        inferFoliage: false,
+        opaqueMaterials: true,
+      },
       'grass-common-short': [`${base}/Grass_Common_Short.obj`],
       'grass-common-tall': [`${base}/Grass_Common_Tall.obj`],
       'grass-wide-short': [`${base}/Grass_Wide_Short.obj`],
@@ -192,6 +221,84 @@ class ModelAssetCache {
       'pebble-square-6': [`${base}/Pebble_Square_6.obj`],
     };
     Object.assign(this._registry, {
+      'source-medieval-wall-door': {
+        path: 'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-wall-straight': {
+        path: 'assets/terrain/representatives/village/Wall_Plaster_Straight.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-wall-window-wide': {
+        path: 'assets/terrain/representatives/village/Wall_Plaster_Window_Wide_Flat.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-wall-window-thin': {
+        path: 'assets/terrain/representatives/village/Wall_Plaster_Window_Thin_Round.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-roof': {
+        path: 'assets/terrain/representatives/village/Roof_RoundTiles_6x8.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-balcony': {
+        path: 'assets/terrain/representatives/village/Balcony_Simple_Straight.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-medieval-roof-front': {
+        path: 'assets/terrain/representatives/village/Roof_Front_Brick6.gltf',
+        format: 'GLTF',
+        resourcePath: 'assets/terrain/representatives/village',
+      },
+      'source-dungeon-wall': {
+        path: 'assets/terrain/representatives/dungeon/Wall_Modular.fbx',
+        format: 'FBX',
+        resourcePath: 'assets/terrain/representatives/dungeon',
+        centerAndGround: { alignXZ: true, alignY: true },
+        // The source exports solid masonry with zero opacity.
+        opaqueMaterials: true,
+      },
+      'source-dungeon-torch': {
+        path: 'assets/terrain/representatives/dungeon/Torch.fbx',
+        format: 'FBX',
+        resourcePath: 'assets/terrain/representatives/dungeon',
+        centerAndGround: { alignXZ: true, alignY: true },
+        opaqueMaterials: true,
+      },
+      'source-cave-entrance': {
+        path: 'assets/terrain/representatives/cave-cc0/mine-frame.glb',
+        format: 'GLB',
+        resourcePath: 'assets/terrain/representatives/cave-cc0',
+      },
+      'source-cave-stalagmite': {
+        path: 'assets/terrain/representatives/cave-cc0/stalagmite-cluster.glb',
+        format: 'GLB',
+        resourcePath: 'assets/terrain/representatives/cave-cc0',
+        inferTextures: false,
+        inferFoliage: false,
+      },
+      'source-cave-column': {
+        path: 'assets/terrain/representatives/cave-cc0/stone-column.glb',
+        format: 'GLB',
+        resourcePath: 'assets/terrain/representatives/cave-cc0',
+        inferTextures: false,
+        inferFoliage: false,
+      },
+      'source-iron-chest': {
+        path: 'assets/terrain/representatives/chest-cc0/dungeon-chest.fbx',
+        format: 'FBX',
+        resourcePath: 'assets/terrain/representatives/chest-cc0',
+        centerAndGround: { alignXZ: true, alignY: true },
+        inferTextures: false,
+        inferFoliage: false,
+        opaqueMaterials: true,
+      },
       'tropical-palm-a': makeTropicalEntry(
         'SM_MZRa_Palm_B081',
         {
@@ -308,12 +415,55 @@ class ModelAssetCache {
       'palm-single-a': 'tropical-palm-a',
       'palm-double-a': 'tropical-palm-b',
     });
+    for (const asset of PURE_POLY_ASSETS) {
+      this._registry[asset.id] = {
+        path: asset.path,
+        format: 'GLB',
+        protectedKeyId: 'pure-poly-v1',
+        inferTextures: false,
+        inferFoliage: false,
+      };
+    }
   }
 
   // ── Registry Lookup ─────────────────────────────────────────────
 
   setThree(three) {
     this._three = three;
+  }
+
+  setProtectedAssetKeyProvider(provider) {
+    if (provider !== null && typeof provider !== 'function')
+      throw new Error('Protected model access requires an account-bound key provider');
+    this._protectedAssetKeyProvider = provider;
+    this._protectedAccessVersion++;
+    for (const [key, descriptor] of Object.entries(this._registry)) {
+      if (descriptor?.protectedKeyId !== undefined) {
+        this._cache.delete(key);
+        this._loading.delete(key);
+      }
+    }
+  }
+
+  hasProtectedAssetKeyProvider() {
+    return this._protectedAssetKeyProvider !== null;
+  }
+
+  async verifyProtectedAssetAccess(key) {
+    key = this._resolveKey(key);
+    const descriptor = this._loadRegistryEntry(key);
+    const provider = this._protectedAssetKeyProvider;
+    if (!descriptor || descriptor.format !== 'GLB' || !descriptor.protectedKeyId || !provider)
+      throw new Error('Protected model account access is unavailable');
+    const version = this._protectedAccessVersion;
+    await loadProtectedAsset({
+      path: descriptor.path,
+      keyId: descriptor.protectedKeyId,
+      assetId: key,
+      keyProvider: provider,
+    });
+    if (version !== this._protectedAccessVersion)
+      throw new Error('Protected model account access changed while checking availability');
   }
 
   hasKey(key) {
@@ -387,20 +537,41 @@ class ModelAssetCache {
 
   // ── Public API ──────────────────────────────────────────────────
 
+  async _clonePendingModel(key) {
+    const version = this._protectedAccessVersion;
+    const model = await this._loading.get(key);
+    if (
+      this._registry[key]?.protectedKeyId !== undefined &&
+      version !== this._protectedAccessVersion
+    )
+      throw new Error('Protected model account access changed while loading');
+    return model?.clone(true) ?? null;
+  }
+
   async getModel(key) {
     key = this._resolveKey(key);
     if (this._cache.has(key)) return this._cache.get(key).clone(true);
-    if (this._loading.has(key)) return (await this._loading.get(key)).clone(true);
+    if (this._loading.has(key)) return this._clonePendingModel(key);
     const descriptor = this._loadRegistryEntry(key);
     if (!descriptor || !descriptor.path) return null;
-    if (!this._three) await this._ensureThreeAndLoader();
+    if (!this._three) {
+      await this._ensureThreeAndLoader();
+      if (this._cache.has(key)) return this._cache.get(key).clone(true);
+      if (this._loading.has(key)) return this._clonePendingModel(key);
+    }
+    const protectedVersion = this._protectedAccessVersion;
     let promise;
-    if (descriptor.format === 'FBX') {
+    if (descriptor.protectedKeyId !== undefined) {
+      promise = this._loadProtectedGLB(this._three, key, descriptor);
+    } else if (descriptor.format === 'FBX') {
       promise = this._loadFBX(this._three, key, descriptor);
+    } else if (['GLB', 'GLTF'].includes(descriptor.format)) {
+      promise = this._loadGLTF(this._three, key, descriptor);
     } else {
       const primaryPath = descriptor.variants?.[0] || descriptor.path;
       promise = this._loadOBJ(this._three, key, primaryPath, descriptor);
     }
+
     this._loading.set(key, promise);
     let obj;
     try {
@@ -408,6 +579,11 @@ class ModelAssetCache {
     } finally {
       if (this._loading.get(key) === promise) this._loading.delete(key);
     }
+    if (
+      descriptor.protectedKeyId !== undefined &&
+      protectedVersion !== this._protectedAccessVersion
+    )
+      throw new Error('Protected model account access changed while loading');
     if (obj) this._cache.set(key, obj);
     else {
       logger.warn(
@@ -420,6 +596,127 @@ class ModelAssetCache {
       );
     }
     return obj ? obj.clone(true) : null;
+  }
+
+  async whenModelReady(key) {
+    key = this._resolveKey(key);
+    const root = this._cache.get(key);
+    if (!root) throw new Error(`Model "${key}" is not available`);
+    try {
+      const modelError = await this._modelReadiness.get(root);
+      if (modelError) throw modelError;
+      const textures = new Set();
+      root.traverse((node) => {
+        for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+          if (!material) continue;
+          for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+        }
+      });
+      const failures = await Promise.all(
+        [...textures].map((texture) => this._textureReadiness.get(texture))
+      );
+      const textureError = failures.find((error) => error);
+      if (textureError) throw textureError;
+      if ([...textures].some((texture) => !texture.image))
+        throw new Error(`A required texture for model "${key}" could not be loaded`);
+    } catch (error) {
+      if (this._cache.get(key) === root) this._cache.delete(key);
+      throw error;
+    }
+  }
+
+  async _ensureGLTFLoaderCtor() {
+    if (this._gltfLoaderCtorPromise) return this._gltfLoaderCtorPromise;
+    this._gltfLoaderCtorPromise = (async () => {
+      try {
+        const mod = await import('three/examples/jsm/loaders/GLTFLoader.js');
+        return mod.GLTFLoader || mod.default || null;
+      } catch (error) {
+        logger.error(
+          'GLTF loader import failed',
+          { error: toErrorPayload(error) },
+          MODEL_LOG_CATEGORY
+        );
+        return null;
+      }
+    })();
+    return this._gltfLoaderCtorPromise;
+  }
+
+  async _loadProtectedGLB(three, key, descriptor) {
+    if (!three || descriptor.format !== 'GLB' || !this._protectedAssetKeyProvider)
+      throw new Error(
+        'Protected models require GLB loading and current account access or local access'
+      );
+    if (
+      descriptor.textures !== undefined &&
+      descriptor.textures !== null &&
+      (typeof descriptor.textures !== 'object' || Object.keys(descriptor.textures).length)
+    )
+      throw new Error('Protected models must embed textures without external overrides');
+    const version = this._protectedAccessVersion;
+    const loader = await this._ensureGLTFLoaderCtor();
+    if (!loader) throw new Error('The protected GLB loader is unavailable');
+    const bytes = await loadProtectedAsset({
+      path: descriptor.path,
+      keyId: descriptor.protectedKeyId,
+      assetId: key,
+      keyProvider: this._protectedAssetKeyProvider,
+    });
+    if (version !== this._protectedAccessVersion)
+      throw new Error('Protected model account access changed while loading');
+    const gltf = await new loader().parseAsync(bytes, '');
+    if (version !== this._protectedAccessVersion)
+      throw new Error('Protected model account access changed while loading');
+    const root = gltf.scene || gltf.scenes?.[0];
+    if (!root) throw new Error('The protected GLB has no scene');
+    this._postProcess(three, root, key, descriptor.path, descriptor.format, {
+      ...descriptor,
+      inferTextures: false,
+      inferFoliage: false,
+    });
+    if (descriptor.prune) this._pruneFBXArtifacts(root, descriptor);
+    this._centerAndGround(three, root);
+    this._modelReadiness.set(root, Promise.resolve());
+    return root;
+  }
+
+  async _loadGLTF(three, key, descriptor) {
+    if (!three || !descriptor?.path) return null;
+    const GLTFLoaderCtor = await this._ensureGLTFLoaderCtor();
+    if (!GLTFLoaderCtor) return null;
+    const variants = descriptor.variants?.length
+      ? descriptor.variants
+      : this._buildPathVariants(descriptor.path, descriptor.format);
+    for (const url of variants) {
+      try {
+        const manager = new three.LoadingManager();
+        const failed = [];
+        const readiness = new Promise((resolve) => {
+          manager.onError = (resource) => failed.push(resource);
+          manager.onLoad = () =>
+            resolve(
+              failed.length
+                ? new Error(`A required texture or resource for model "${key}" failed to load`)
+                : undefined
+            );
+        });
+        const loader = new GLTFLoaderCtor(manager);
+        const gltf = await new Promise((resolve, reject) => {
+          loader.load(url, resolve, undefined, reject);
+        });
+        const root = gltf.scene || gltf.scenes?.[0];
+        if (!root) return null;
+        this._postProcess(three, root, key, url, descriptor.format, descriptor);
+        if (descriptor.prune) this._pruneFBXArtifacts(root, descriptor);
+        this._centerAndGround(three, root);
+        this._modelReadiness.set(root, readiness);
+        return root;
+      } catch (error) {
+        logModelDebug('GLTF variant failed to load', { key, url, error: toErrorPayload(error) });
+      }
+    }
+    return null;
   }
 
   // ── OBJ Loading ────────────────────────────────────────────────
@@ -562,9 +859,13 @@ class ModelAssetCache {
         if (index >= variants.length) return resolve(null);
         const url = variants[index];
         attempted.add(url);
+        const manager = new three.LoadingManager();
+        const readiness = new Promise((settled) => {
+          manager.onLoad = settled;
+        });
         let loader;
         try {
-          loader = new FBXLoaderCtor();
+          loader = new FBXLoaderCtor(manager);
         } catch {
           return resolve(null);
         }
@@ -595,6 +896,7 @@ class ModelAssetCache {
                 if (descriptor.centerAndGround) {
                   this._centerAndGround(three, result, descriptor.centerAndGround);
                 }
+                this._modelReadiness.set(result, readiness);
               } catch (error) {
                 logger.error(
                   'FBX model preparation failed',

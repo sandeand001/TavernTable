@@ -18,6 +18,15 @@ export function isCavernConnection(connection) {
   return connection.cavern !== undefined;
 }
 
+export function manualCavernExits(connections, mapId) {
+  return connections
+    .filter(
+      (connection) =>
+        connection.cavern?.source === 'manual' && connection.cavern.parentMapId === mapId
+    )
+    .map((connection) => connection.cavern.side);
+}
+
 export function addCavernArea(
   input,
   context,
@@ -73,6 +82,7 @@ export function addCavernArea(
     kind,
     feetPerLevel: (parent.terrain.worldElevationUnit * 5) / parent.grid.tileWorldSize,
     exits: [oppositeCavernSide(side)],
+    ...(parent.terrain.cavern.version >= 6 ? { recipeVersion: parent.terrain.cavern.version } : {}),
   });
   const width = parent.grid.cols * 5,
     depth = parent.grid.rows * 5,
@@ -117,19 +127,15 @@ export function addCavernArea(
   if (!interior.geometry.volumes.length) delete area.terrain.geometry;
   if (scene.maps.some((map) => map.id === area.id))
     throw new Error('The cavern area ID is already in use');
-  const bounds = areaBounds(area);
   for (const map of scene.maps) {
     if (mapLocationId(map) !== mapLocationId(parent)) continue;
-    const other = areaBounds(map);
-    if (
-      bounds.min.x < other.max.x - 1e-6 &&
-      bounds.max.x > other.min.x + 1e-6 &&
-      bounds.min.z < other.max.z - 1e-6 &&
-      bounds.max.z > other.min.z + 1e-6
-    )
+    if (cavernAreasOverlap(area, map))
       throw new Error('The new cavern area would overlap another map; choose a different side');
   }
-  parent.terrain.heights = sculptCavernPassage(parent.terrain.heights, side);
+  parent.terrain.heights = sculptCavernPassage(parent.terrain.heights, side, {
+    seed: parent.terrain.cavern.seed,
+    recipeVersion: parent.terrain.cavern.version,
+  });
   parent.terrain.cavern.exits = [...new Set([...parent.terrain.cavern.exits, side])];
   scene.maps.push(area);
   scene.connections = [...(scene.connections || []), cavernConnection(parent, area, side, source)];
@@ -141,7 +147,13 @@ export function addCavernArea(
 export function reconcileCavernScene(
   input,
   context,
-  { ownerMapId = 'map-main', regenerate = false } = {}
+  {
+    ownerMapId = 'map-main',
+    regenerate = false,
+    preserveAreas = false,
+    preserveAreaSeeds = false,
+    createAreas = true,
+  } = {}
 ) {
   if (!regenerate) return input;
   const scene = input.version === 3 ? copy(input) : CampaignWorld.fromScene(input, context).save();
@@ -157,12 +169,17 @@ export function reconcileCavernScene(
           map.id !== owner.id &&
           map.cavern.source === 'generated' &&
           (!recipe ||
-            map.cavern.seed !== recipe.seed ||
-            map.terrain.cavern?.version !== recipe.version ||
+            (!preserveAreaSeeds && map.cavern.seed !== recipe.seed) ||
+            (map.terrain.cavern?.version !== recipe.version &&
+              !([6, 7].includes(map.terrain.cavern?.version) && [6, 7].includes(recipe.version))) ||
             (map.cavern.parentMapId === owner.id && !recipe.exits.includes(map.cavern.side)))
       )
       .map((map) => map.id)
   );
+  if (preserveAreas && removed.size)
+    throw new Error(
+      'Generation would remove linked cavern areas; preserving them during this change is not supported yet. Choose another map'
+    );
   for (const map of scene.maps)
     if (removed.has(map.id) && hasAuthoredArea(map))
       throw new Error(
@@ -221,6 +238,7 @@ export function reconcileCavernScene(
     );
     camera.target.y = owner.terrain.heights[z][x] * owner.terrain.worldElevationUnit;
   }
+  if (!createAreas) return validateScene(scene, context);
   let next = scene;
   for (const side of recipe.exits) {
     const id = `${owner.id}:cavern:${recipe.seed}:${side}`;
@@ -305,4 +323,15 @@ function areaBounds(map) {
     min: { x: 0, y: 0, z: 0 },
     max: { x: map.grid.cols * 5, y: 40, z: map.grid.rows * 5 },
   });
+}
+
+export function cavernAreasOverlap(first, second) {
+  const bounds = areaBounds(first);
+  const other = areaBounds(second);
+  return (
+    bounds.min.x < other.max.x - 1e-6 &&
+    bounds.max.x > other.min.x + 1e-6 &&
+    bounds.min.z < other.max.z - 1e-6 &&
+    bounds.max.z > other.min.z + 1e-6
+  );
 }

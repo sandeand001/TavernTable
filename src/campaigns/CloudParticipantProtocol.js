@@ -6,10 +6,12 @@ import {
   isCloudDigest,
   isCloudUUID,
   isCloudPlacementGrant,
+  validCloudMovementDelta,
 } from './CloudProtocol.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import { validatePlayerState } from './PlayerPublicProtocol.js';
 import { CHARACTER_IMAGE_FIELDS } from '../config/characters/CharacterImages.js';
+import { samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) =>
@@ -238,6 +240,53 @@ function applyKeyed(values, patch, field) {
   return [...result.values()];
 }
 
+export function continuesVisibleGroundMove(previous, next, entry) {
+  const before = previous.publicScene;
+  const after = next.publicScene;
+  const motion = entry?.motion;
+  if (
+    !previous.observerTokenId ||
+    previous.observerTokenId !== next.observerTokenId ||
+    before.presentation.mapId !== after.presentation.mapId ||
+    entry?.kind !== 'move' ||
+    motion?.kind !== 'walk' ||
+    !Array.isArray(motion.route) ||
+    !motion.route.length
+  )
+    return false;
+  const oldActor = before.actors.find(({ id }) => id === entry.tokenId);
+  const newActor = after.actors.find(({ id }) => id === entry.tokenId);
+  const maps = new Set(previous.maps.map(({ id }) => id));
+  return (
+    samePlacement(oldActor, motion.from) &&
+    samePlacement(newActor, motion.route.at(-1)) &&
+    [motion.from, ...motion.route].every(
+      (point) =>
+        point?.mapId === motion.from.mapId && point.pose?.kind === 'ground' && maps.has(point.mapId)
+    )
+  );
+}
+
+function validatePresentations(previous, next, entries, cachedAssets) {
+  if (
+    !Array.isArray(entries) ||
+    entries.length > 256 ||
+    new Set(entries.map((entry) => entry?.commandId)).size !== entries.length ||
+    entries.some(
+      (entry) =>
+        !object(entry) ||
+        entry.sceneRevision !== next.state.sceneRevision ||
+        entry.charactersRevision !== next.state.revision ||
+        entry.sceneRevision <= previous.state.sceneRevision
+    )
+  )
+    invalid();
+  validatePlayerState(
+    { ...next.state, publicScene: { ...next.state.publicScene, updates: entries } },
+    { cachedAssets }
+  );
+}
+
 export function applyCloudParticipantDelta(previous, delta, { cachedAssets = null } = {}) {
   validateCloudParticipantSnapshot(previous, { cachedAssets });
   if (
@@ -253,6 +302,7 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
       'kind',
       delta.kind === 'replace' ? 'checkpoint' : 'changes',
       ...(Object.hasOwn(delta, 'presentations') ? ['presentations'] : []),
+      ...(Object.hasOwn(delta, 'movementBatch') ? ['movementBatch'] : []),
     ]) ||
     delta.version !== 1 ||
     !isCloudAccessScope(delta.access) ||
@@ -264,15 +314,22 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
     invalid();
   if (!sameAccess(previous.access, delta.access)) deltaFailure('campaign-access-changed');
   if (previous.sessionId !== delta.sessionId) deltaFailure('live-session-changed');
-  if (previous.generation !== delta.baseGeneration || delta.generation !== delta.baseGeneration + 1)
+  if (
+    previous.generation !== delta.baseGeneration ||
+    !validCloudMovementDelta(
+      previous,
+      delta,
+      delta.kind === 'replace' ? delta.checkpoint?.state : delta.changes
+    )
+  )
     deltaFailure('participant-delta-gap');
   const assets = previous.state.publicScene.assets || cachedAssets;
   if (delta.kind === 'replace') {
-    if (Object.hasOwn(delta, 'presentations')) invalid();
     const next = delta.checkpoint;
+    const retainedAssets =
+      next?.state?.publicScene?.assetKey === previous.state.publicScene.assetKey ? assets : null;
     validateCloudParticipantSnapshot(next, {
-      cachedAssets:
-        next?.state?.publicScene?.assetKey === previous.state.publicScene.assetKey ? assets : null,
+      cachedAssets: retainedAssets,
     });
     if (
       !sameAccess(next.access, delta.access) ||
@@ -281,6 +338,15 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
       next.viewKey !== delta.viewKey
     )
       invalid();
+    if (Object.hasOwn(delta, 'presentations')) {
+      const entries = delta.presentations;
+      validatePresentations(previous, next, entries, retainedAssets);
+      if (
+        !entries.length ||
+        entries.some((entry) => !continuesVisibleGroundMove(previous.state, next.state, entry))
+      )
+        invalid();
+    }
     return structuredClone(next);
   }
   if (delta.viewKey !== previous.viewKey) deltaFailure('participant-view-changed');
@@ -318,28 +384,7 @@ export function applyCloudParticipantDelta(previous, delta, { cachedAssets = nul
   for (const field of ['observers', 'doors', 'gameplay'])
     if (changes[field] !== null) next.state[field] = structuredClone(changes[field]);
   validateCloudParticipantSnapshot(next, { cachedAssets: assets });
-  if (Object.hasOwn(delta, 'presentations')) {
-    const entries = delta.presentations;
-    if (
-      !Array.isArray(entries) ||
-      entries.length > 256 ||
-      new Set(entries.map((entry) => entry?.commandId)).size !== entries.length ||
-      entries.some(
-        (entry) =>
-          !object(entry) ||
-          entry.sceneRevision !== next.state.sceneRevision ||
-          entry.charactersRevision !== next.state.revision ||
-          entry.sceneRevision <= previous.state.sceneRevision
-      )
-    )
-      invalid();
-    validatePlayerState(
-      {
-        ...next.state,
-        publicScene: { ...next.state.publicScene, updates: entries },
-      },
-      { cachedAssets: assets }
-    );
-  }
+  if (Object.hasOwn(delta, 'presentations'))
+    validatePresentations(previous, next, delta.presentations, assets);
   return next;
 }

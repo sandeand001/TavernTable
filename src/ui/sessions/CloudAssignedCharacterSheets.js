@@ -7,6 +7,7 @@ const accessDenials = new Set([
   'campaign-not-found',
   'campaign-access-changed',
   'pilot-access-required',
+  'account-disabled',
   'account-changed',
   'invalid-identity',
   'email-verification-required',

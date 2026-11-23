@@ -31,6 +31,21 @@ test('game queries, tool selection and dimensions use the one authoritative terr
   }
 });
 
+test('Clear Grid reports a placeable-only reset as a real change', () => {
+  const gm = new GameManager({ cols: 5, rows: 5 });
+  const purgeAll = jest.fn();
+  gm.placeableMeshPool = {
+    getStats: () => ({ instances: 1 }),
+    purgeAll,
+  };
+  try {
+    expect(gm.resetTerrain()).toBe(true);
+    expect(purgeAll).toHaveBeenCalledTimes(1);
+  } finally {
+    gm.terrainCoordinator.dispose();
+  }
+});
+
 test('real editing input previews a complete wall, commits once, and supports undo and redo', () => {
   const { gm, input, event } = editor();
   try {

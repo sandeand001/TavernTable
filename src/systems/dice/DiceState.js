@@ -162,6 +162,162 @@ export function createGroundSampler(manager, metrics, fallbackHeight = DEFAULT_R
 
 // ── Geometry: face data, orientation ────────────────────────────────────────
 const d20ColliderCache = new WeakMap();
+const diceColliderCache = new WeakMap();
+
+export function collectDieLogicalFaces(mesh, three) {
+  if (!mesh?.isMesh || !three?.Vector3) throw new Error('A player die mesh is required');
+  const geometry = mesh.geometry;
+  const position = geometry?.attributes?.position;
+  if (!position) throw new Error('Player die geometry is missing positions');
+  const uvIndices = geometry.index ? geometry.index.array : null;
+  const count = uvIndices?.length || position.count;
+  const clusters = [];
+  const a = new three.Vector3();
+  const b = new three.Vector3();
+  const c = new three.Vector3();
+  const ab = new three.Vector3();
+  const ac = new three.Vector3();
+  const normal = new three.Vector3();
+  const centroid = new three.Vector3();
+  for (let index = 0; index < count; index += 3) {
+    a.fromBufferAttribute(position, uvIndices ? uvIndices[index] : index);
+    b.fromBufferAttribute(position, uvIndices ? uvIndices[index + 1] : index + 1);
+    c.fromBufferAttribute(position, uvIndices ? uvIndices[index + 2] : index + 2);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    normal.crossVectors(ab, ac);
+    const area = normal.length() * 0.5;
+    if (!(area > 1e-12)) continue;
+    normal.normalize();
+    centroid
+      .copy(a)
+      .add(b)
+      .add(c)
+      .multiplyScalar(1 / 3);
+    let cluster = clusters.find((entry) => entry.normal.dot(normal) > 0.99999);
+    if (!cluster) {
+      cluster = {
+        normal: normal.clone(),
+        weightedCentroid: centroid.clone().multiplyScalar(area),
+        centroid: new three.Vector3(),
+        area: 0,
+      };
+      clusters.push(cluster);
+    } else {
+      cluster.weightedCentroid.addScaledVector(centroid, area);
+    }
+    cluster.area += area;
+  }
+  return clusters.map((cluster, faceIndex) => ({
+    faceIndex,
+    normal: cluster.normal,
+    centroid: cluster.centroid.copy(cluster.weightedCentroid).divideScalar(cluster.area),
+    area: cluster.area,
+  }));
+}
+
+export function getPlayerDiceColliderData(mesh, definition, three) {
+  if (!definition?.sides || !Array.isArray(definition.faceValues))
+    throw new Error('A complete player dice definition is required');
+  let definitions = diceColliderCache.get(mesh);
+  if (!definitions) {
+    definitions = new Map();
+    diceColliderCache.set(mesh, definitions);
+  }
+  if (definitions.has(definition.sides)) return definitions.get(definition.sides);
+  const logicalFaces = collectDieLogicalFaces(mesh, three);
+  if (logicalFaces.length !== definition.faceValues.length) {
+    throw new Error(
+      `d${definition.sides} has ${logicalFaces.length} faces; expected ${definition.faceValues.length}`
+    );
+  }
+  const positions = mesh.geometry.attributes.position;
+  const numberedFaces = logicalFaces.map((face) => {
+    const plane = face.normal.dot(face.centroid);
+    return {
+      ...face,
+      value: definition.faceValues[face.faceIndex],
+      plane,
+    };
+  });
+  const vertex = new three.Vector3();
+  for (let index = 0; index < positions.count; index += 1) {
+    vertex.fromBufferAttribute(positions, index);
+    for (const face of numberedFaces) face.plane = Math.max(face.plane, face.normal.dot(vertex));
+  }
+  const vertices = [];
+  for (let i = 0; i < numberedFaces.length - 2; i += 1) {
+    for (let j = i + 1; j < numberedFaces.length - 1; j += 1) {
+      for (let k = j + 1; k < numberedFaces.length; k += 1) {
+        const a = numberedFaces[i];
+        const b = numberedFaces[j];
+        const c = numberedFaces[k];
+        const bc = b.normal.clone().cross(c.normal);
+        const determinant = a.normal.dot(bc);
+        if (Math.abs(determinant) < 1e-8) continue;
+        const intersection = bc
+          .multiplyScalar(a.plane)
+          .addScaledVector(c.normal.clone().cross(a.normal), b.plane)
+          .addScaledVector(a.normal.clone().cross(b.normal), c.plane)
+          .divideScalar(determinant);
+        if (numberedFaces.some((face) => face.normal.dot(intersection) > face.plane + 1e-6))
+          continue;
+        if (vertices.some((entry) => entry.distanceToSquared(intersection) < 1e-10)) continue;
+        vertices.push(intersection);
+      }
+    }
+  }
+  const faces = numberedFaces.map((face) => {
+    const indices = vertices
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => Math.abs(face.normal.dot(entry) - face.plane) < 1e-6)
+      .map(({ index }) => index);
+    if (indices.length < 3) throw new Error(`Invalid collider for d${definition.sides}`);
+    const center = new three.Vector3();
+    for (const index of indices) center.add(vertices[index]);
+    center.divideScalar(indices.length);
+    const u = new three.Vector3(Math.abs(face.normal.y) < 0.9 ? 0 : 1, 1, 0)
+      .cross(face.normal)
+      .normalize();
+    const v = face.normal.clone().cross(u);
+    const angle = (index) => {
+      const offset = vertices[index].clone().sub(center);
+      return Math.atan2(offset.dot(v), offset.dot(u));
+    };
+    return indices.sort((left, right) => angle(left) - angle(right));
+  });
+  const result = {
+    numberedFaces,
+    vertices,
+    faces,
+    radius: Math.max(...vertices.map((entry) => entry.length())),
+    resultFaceDirection: definition.resultFaceDirection,
+  };
+  definitions.set(definition.sides, result);
+  return result;
+}
+
+export function resolvePlayerDiceFace(mesh, definition, three) {
+  const data = getPlayerDiceColliderData(mesh, definition, three);
+  mesh.updateMatrixWorld(true);
+  const normalMatrix = new three.Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const direction =
+    definition.resultFaceDirection === 'down'
+      ? new three.Vector3(0, -1, 0)
+      : new three.Vector3(0, 1, 0);
+  let best = null;
+  for (const face of data.numberedFaces) {
+    const normal = face.normal.clone().applyMatrix3(normalMatrix).normalize();
+    const score = normal.dot(direction);
+    if (!(score > 0)) continue;
+    if (!best || score > best.score) best = { ...face, normal, score };
+  }
+  if (!best) return null;
+  return {
+    ...best,
+    value: definition.faceValues[best.faceIndex],
+  };
+}
 
 export function collectWorldFaceData(mesh, three) {
   if (!mesh || !three?.Vector3) return [];

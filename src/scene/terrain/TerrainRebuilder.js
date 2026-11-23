@@ -7,7 +7,13 @@ import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 import { GRID_CONFIG } from '../../config/GameConstants.js';
 import { getBiomeColorWithHydrology } from '../../config/biome/BiomePalettes.js';
 import { TerrainVolumeMeshBuilder } from './TerrainVolumeMeshBuilder.js';
-import { getTerrainLayerColor, getBuildingFloorAppearance } from './TerrainMaterialFactory.js';
+import { BoundaryWallCutaway, dungeonBoundaryWalls } from './BoundaryWallCutaway.js';
+import { syncWaterSurface } from './WaterSurface.js';
+import {
+  getTerrainLayerColor,
+  getBuildingFloorAppearance,
+  getTerrainMaterialStyle,
+} from './TerrainMaterialFactory.js';
 import { createInteriorCutaway, clipFloorSurfaceOverlap } from './InteriorCutaway.js';
 import {
   cavernRockColor,
@@ -20,7 +26,14 @@ import {
 } from './ConstructionMaterials.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { buildConstructionDetails } from './ConstructionDetails.js';
-import { CONSTRUCTION_MATERIALS } from '../../config/biome/ConstructionPalettes.js';
+import { updateLogicalPassageMarkers } from './LogicalPassageMarkers.js';
+import {
+  buildConstructionAssets,
+  clipConstructionReplacementFace,
+  isDungeonWall,
+  isVillageExterior,
+  releaseConstructionAssets,
+} from './ConstructionAssets.js';
 
 export class TerrainRebuilder {
   // ── Constructor ───────────────────────────────────────────────────
@@ -32,6 +45,8 @@ export class TerrainRebuilder {
     this._timer = null;
     this._lastArgs = null;
     this._lastFlushTime = Number.NEGATIVE_INFINITY;
+    this._constructionAssetRequest = null;
+    this._constructionSpecs = null;
   }
 
   // ── Debounce / Request ─────────────────────────────────────────────
@@ -97,6 +112,7 @@ export class TerrainRebuilder {
     const threeNs = three || this.gameManager.threeSceneManager.three;
     const forceStandard = typeof window !== 'undefined' && window.__TT_TERRAIN_STANDARD__;
     const gm = this.gameManager;
+    gm.threeSceneManager._boundaryWallCutaway?.restore();
     const cols = gm.cols;
     const rows = gm.rows;
     const getHeight = (x, y) => gm.getTerrainHeight(x, y);
@@ -149,9 +165,75 @@ export class TerrainRebuilder {
         return TERRAIN_CONFIG.HEIGHT_COLOR_SCALE['0'] || neutralColor;
       }
     };
-    const wallColor = 0x050505;
+    const wallColor = (x, z, height) =>
+      cavernStyle &&
+      !gm.terrainEngine?.isActive &&
+      CAVERN_BIOME_KEYS.includes(gm.terrainEngine?.biomeKey)
+        ? getCavernSurfaceColor(x * 5, z * 5, height, {
+            materialColor: cavernRockColor(gm.terrainEngine.biomeKey),
+          })
+        : 0x050505;
+    const activeMap =
+      gm.campaignMapId && gm.campaignWorld ? gm.campaignWorld.getMap(gm.campaignMapId) : null;
+    const geometry = gm.terrainEngine?.geometry;
+    const buildingInterior =
+      !!activeMap?.building ||
+      !!activeMap?.floorContext ||
+      Number.isFinite(geometry?.terrainThicknessFeet);
+    const dungeonBoundary =
+      gm.terrainEngine?.biomeKey === 'dungeon' &&
+      geometry?.hasVolumes &&
+      !buildingInterior &&
+      gm.threeSceneManager.camera &&
+      gm.spatial
+        ? dungeonBoundaryWalls({
+            geometry,
+            cols,
+            rows,
+            tileWorldSize: gm.spatial.tileWorldSize,
+          })
+        : null;
+    const boundaryCutaway =
+      (dungeonBoundary ||
+        (cavernStyle &&
+          CAVERN_BIOME_KEYS.includes(gm.terrainEngine?.biomeKey) &&
+          !buildingInterior)) &&
+      gm.threeSceneManager.camera &&
+      gm.spatial
+        ? new BoundaryWallCutaway({
+            cols,
+            rows,
+            getHeight,
+            tileWorldSize: gm.spatial.tileWorldSize,
+            elevationUnit: gm.spatial.elevationUnit,
+            three: threeNs,
+            boundary: dungeonBoundary,
+          })
+        : null;
+    const getBoundaryWallCell = boundaryCutaway
+      ? (x, z, span) => boundaryCutaway.boundaryCell(x, z, span)
+      : null;
     const wantsWalls = !!(threeNs && threeNs.BufferGeometry);
     const cutaway = gm.terrainEngine?.geometry.hasVolumes ? createInteriorCutaway(gm) : null;
+    const scene = gm.threeSceneManager.scene;
+    const specs = this._readConstructionSpecs(geometry);
+    const assets = this._prepareConstructionAssets({
+      scene,
+      specs,
+      three: threeNs,
+      worldUnitsPerFoot: specs.length ? gm.spatial.tileWorldSize / 5 : null,
+      visibleLayers: gm.terrainEngine?.visibleLayers ?? null,
+      modelAssetCache: gm.modelAssetCache,
+    });
+    const visualReplacements = assets?.userData.replacements ?? [];
+    const clipFace = visualReplacements.length
+      ? (source, points) =>
+          clipConstructionReplacementFace({
+            source,
+            points,
+            replacements: visualReplacements,
+          })
+      : null;
     let geo = gm.terrainEngine?.geometry.hasVolumes
       ? new TerrainVolumeMeshBuilder().build({
           geometry: cutaway
@@ -165,12 +247,11 @@ export class TerrainRebuilder {
           three: threeNs,
           worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
           visibleLayers: gm.terrainEngine.visibleLayers,
+          clipFace,
+          getBoundaryWallCell,
+          getDungeonLintelBounds: dungeonBoundary?.lintelBoundsFor ?? null,
           getStyle: (_x, _z, _y, span) =>
-            CONSTRUCTION_MATERIALS[
-              floorAppearance && span.materialColor === undefined
-                ? floorAppearance.floorMaterial
-                : (span.materialStyle ?? 'none')
-            ],
+            getTerrainMaterialStyle(span, floorAppearance, gm.terrainEngine.biomeKey),
           getColor: (x, z, height, span) => {
             if (
               cavernStyle &&
@@ -210,14 +291,18 @@ export class TerrainRebuilder {
           getHeight,
           three: threeNs,
           getBiomeColor: gmBiomeGetter,
-          getWallColor: wantsWalls ? () => wallColor : undefined,
+          getWallColor: wantsWalls ? wallColor : undefined,
+          getBoundaryWallCell,
         });
-    if (floorAppearance && !geo.getAttribute('constructionMaterial'))
+    if (
+      (floorAppearance || gm.terrainEngine?.biomeKey === 'dungeon') &&
+      !geo.getAttribute('constructionMaterial')
+    )
       geo.setAttribute(
         'constructionMaterial',
         new threeNs.Float32BufferAttribute(
           new Float32Array(geo.getAttribute('position').count).fill(
-            CONSTRUCTION_MATERIALS[floorAppearance.floorMaterial]
+            getTerrainMaterialStyle({ id: 'terrain' }, floorAppearance, gm.terrainEngine.biomeKey)
           ),
           1
         )
@@ -248,7 +333,6 @@ export class TerrainRebuilder {
     } catch (_) {
       /* ignore debug sampling */
     }
-    const scene = gm.threeSceneManager.scene;
     let mesh = scene.getObjectByName('TerrainMesh');
     if (!mesh) {
       let material;
@@ -360,20 +444,17 @@ export class TerrainRebuilder {
     if (hasConstructionMaterials(geo))
       configureConstructionMaterial(mesh.material, gm.spatial.tileWorldSize / 5);
     mesh.castShadow = !!gm.terrainEngine?.geometry.hasVolumes;
-    const geometry = gm.terrainEngine?.geometry;
-    const readSpecs = () => geometry?.getStructures().filter((spec) => spec.appearance) ?? [];
-    let specs = null;
     const detailsInput =
       typeof geometry?.constructionDetailsSignature === 'string'
         ? geometry.constructionDetailsSignature
-        : (specs = readSpecs());
+        : specs;
     const detailsSignature = JSON.stringify([
       detailsInput,
       gm.spatial?.tileWorldSize,
       gm.terrainEngine?.visibleLayers,
+      visualReplacements.map((entry) => entry.structureId),
     ]);
     if (detailsSignature !== mesh.userData?.constructionDetailsSignature) {
-      specs ??= readSpecs();
       mesh.userData ??= {};
       const old = mesh.getObjectByName?.('ConstructionDetails');
       if (old) {
@@ -386,6 +467,7 @@ export class TerrainRebuilder {
           three: threeNs,
           worldUnitsPerFoot: gm.spatial.tileWorldSize / 5,
           visibleLayers: gm.terrainEngine.visibleLayers,
+          cladStructureIds: new Set(visualReplacements.map((entry) => entry.structureId)),
         });
         if (detailsGeometry) {
           const details = new threeNs.Mesh(detailsGeometry, mesh.material);
@@ -401,6 +483,28 @@ export class TerrainRebuilder {
     }
     const details = mesh.getObjectByName?.('ConstructionDetails');
     if (details) details.material = mesh.material;
+    const previousAssets = mesh.getObjectByName?.('ConstructionAssets');
+    if (previousAssets !== assets) {
+      releaseConstructionAssets(previousAssets);
+      if (assets) mesh.add(assets);
+    }
+    const layers = gm.terrainEngine?.visibleLayers;
+    syncWaterSurface(mesh, {
+      biomeKey:
+        !buildingInterior && (!layers || layers.includes('ground'))
+          ? gm.terrainEngine?.biomeKey
+          : null,
+      cols,
+      rows,
+      getHeight,
+      tileWorldSize: gm.spatial?.tileWorldSize,
+      three: threeNs,
+    });
+    boundaryCutaway?.attach(mesh);
+    boundaryCutaway?.attachWallModels(assets, dungeonBoundary?.structureIds);
+    gm.threeSceneManager._boundaryWallCutaway = boundaryCutaway;
+    boundaryCutaway?.update(gm.threeSceneManager.camera);
+    updateLogicalPassageMarkers(mesh, gm, threeNs);
     try {
       const currentOpacity = Number.isFinite(gm?.threeSceneManager?._terrainMeshOpacity)
         ? gm.threeSceneManager._terrainMeshOpacity
@@ -435,5 +539,63 @@ export class TerrainRebuilder {
       /* ignore terrain basis registration */
     }
     return mesh;
+  }
+
+  _readConstructionSpecs(geometry) {
+    if (!geometry) return [];
+    const signature = geometry.constructionDetailsSignature;
+    if (typeof signature === 'string' && this._constructionSpecs?.signature === signature)
+      return this._constructionSpecs.specs;
+    const specs = geometry.getStructures().filter((spec) => spec.appearance);
+    if (typeof signature === 'string') this._constructionSpecs = { signature, specs };
+    return specs;
+  }
+
+  _prepareConstructionAssets({
+    scene,
+    specs,
+    three,
+    worldUnitsPerFoot,
+    visibleLayers,
+    modelAssetCache,
+  }) {
+    const candidates = specs.filter((spec) => isVillageExterior(spec) || isDungeonWall(spec));
+    if (!modelAssetCache?.getModel || !candidates.length) {
+      this._constructionAssetRequest = null;
+      return null;
+    }
+    const signature = JSON.stringify([candidates, worldUnitsPerFoot, visibleLayers]);
+    const previous = this._constructionAssetRequest;
+    if (previous?.signature === signature && previous.scene === scene) return previous.assets;
+
+    const request = { signature, scene, assets: null };
+    this._constructionAssetRequest = request;
+    buildConstructionAssets({
+      specs: candidates,
+      three,
+      worldUnitsPerFoot,
+      visibleLayers,
+      modelAssetCache,
+    })
+      .then((assets) => {
+        if (
+          this._constructionAssetRequest !== request ||
+          this.gameManager.threeSceneManager.scene !== scene
+        ) {
+          releaseConstructionAssets(assets);
+          return;
+        }
+        if (!assets.children.length) return;
+        // Hide the replaced faces only on the rebuild that can also attach the finished kit.
+        request.assets = assets;
+        this.request({ three });
+      })
+      .catch((error) => {
+        GameErrors.gameState(error, {
+          component: 'TerrainRebuilder',
+          operation: 'construction-assets',
+        });
+      });
+    return null;
   }
 }

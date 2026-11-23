@@ -209,3 +209,112 @@ test('a crawling creature falling again never gets a free upright landing or sta
   expect(f.data.current).toBe('prone');
   expect(f.services.combat.status(f.token).movement.spent).toBe(20);
 }, 30000);
+
+test.each([
+  ['southeast', { x: 3, y: 3 }, { x: 4, y: 4 }, (x, y) => x + y <= 7],
+  ['northwest', { x: 6, y: 6 }, { x: 5, y: 5 }, (x, y) => x + y >= 11],
+  ['northeast', { x: 3, y: 6 }, { x: 4, y: 5 }, (x, y) => x - y <= -2],
+  ['southwest', { x: 6, y: 3 }, { x: 5, y: 4 }, (x, y) => x - y >= 2],
+])(
+  'an irregular diagonal %s ledge applies one fall at the supported landing',
+  async (_, start, goal, high) => {
+    const f = await setup();
+    f.gm.getTerrainHeight = (x, y) => (high(x, y) ? 9 : 0);
+    f.token.gridX = start.x;
+    f.token.gridY = start.y;
+    f.adapter._syncTokenAndMeshWorld(
+      { token: f.token, mesh: f.mesh },
+      { x: start.x + 0.5, y: 2.7, z: start.y + 0.5 }
+    );
+    f.services.combat.startTurn(f.token);
+
+    expect(f.adapter.requestMoveToGrid(f.token, goal.x, goal.y).cost).toBe(10);
+    await finish(f);
+
+    expect(f.token.world).toEqual({ x: goal.x + 0.5, y: 0, z: goal.y + 0.5 });
+    expect(f.library.get(f.token.characterSheetId)).toMatchObject({
+      hp: { current: 96 },
+      conditions: ['prone'],
+      lastFall: { dice: 1, damage: 4 },
+    });
+    expect(f.library.get(f.token.characterSheetId).lastFall.distanceFeet).toBeCloseTo(13.5, 8);
+    expect(f.services.combat.status(f.token).movement.spent).toBe(10);
+  },
+  30000
+);
+
+test.each([
+  ['northeast', { x: 3, y: 6 }, { x: 4, y: 5 }, { x: 4, y: 6 }, (x, y) => x - y <= -3],
+  ['southwest', { x: 6, y: 3 }, { x: 5, y: 4 }, { x: 5, y: 3 }, (x, y) => x - y >= 3],
+])(
+  'an earlier %s drop stops the route at the actual damaging landing',
+  async (_, start, goal, landing, high) => {
+    const f = await setup();
+    f.gm.getTerrainHeight = (x, y) => (high(x, y) ? 9 : 0);
+    f.token.gridX = start.x;
+    f.token.gridY = start.y;
+    f.adapter._syncTokenAndMeshWorld(
+      { token: f.token, mesh: f.mesh },
+      { x: start.x + 0.5, y: 2.7, z: start.y + 0.5 }
+    );
+    f.services.combat.startTurn(f.token);
+
+    expect(f.adapter.requestMoveToGrid(f.token, goal.x, goal.y).cost).toBe(10);
+    await finish(f);
+
+    expect(f.token.world).toEqual({ x: landing.x + 0.5, y: 0, z: landing.y + 0.5 });
+    expect(f.library.get(f.token.characterSheetId)).toMatchObject({
+      hp: { current: 96 },
+      conditions: ['prone'],
+      lastFall: { dice: 1, damage: 4 },
+    });
+    expect(f.services.combat.status(f.token).movement.spent).toBe(5);
+  },
+  30000
+);
+
+test('a redirect during an irregular diagonal fall waits for contact and uses the latest target', async () => {
+  const f = await setup('mannequin', 4);
+  f.gm.getTerrainHeight = (x, y) => (x + y <= 7 ? 4 : 0);
+  f.services.combat.startTurn(f.token);
+  expect(f.adapter.requestMoveToGrid(f.token, 7, 7)).toBeTruthy();
+  await until(f, () => f.adapter._movementStates.get(f.token)?.phase === 'fall');
+  const landing = { ...f.adapter._movementStates.get(f.token).activeStep.targetWorld };
+
+  expect(f.adapter.requestMoveToGrid(f.token, 7, 3)).toMatchObject({ queued: true });
+  expect(f.adapter.requestMoveToGrid(f.token, 5, 6)).toMatchObject({ queued: true });
+  let airborneSamples = 0;
+  await finish(f, () => {
+    if (f.adapter._movementStates.get(f.token)?.phase === 'fall' && f.token.world.y > 0) {
+      expect(f.adapter._movementStates.get(f.token).activeStep.targetWorld).toEqual(landing);
+      airborneSamples++;
+    }
+  });
+
+  expect(airborneSamples).toBeGreaterThan(0);
+  expect(f.token.world).toEqual({ x: 5.5, y: 0, z: 6.5 });
+  expect(f.library.get(f.token.characterSheetId)).toMatchObject({
+    hp: { current: 100 },
+    conditions: [],
+  });
+  expect(f.services.combat.status(f.token).movement.spent).toBe(20);
+}, 30000);
+
+test('a redirect after a damaging diagonal fall continues prone with the remaining movement', async () => {
+  const f = await setup();
+  f.gm.getTerrainHeight = (x, y) => (x + y <= 7 ? 9 : 0);
+  f.services.combat.startTurn(f.token);
+  expect(f.adapter.requestMoveToGrid(f.token, 7, 7)).toBeTruthy();
+  await until(f, () => f.adapter._movementStates.get(f.token)?.phase === 'fall');
+
+  expect(f.adapter.requestMoveToGrid(f.token, 4, 5)).toMatchObject({ queued: true });
+  await finish(f);
+
+  expect(f.token.world).toEqual({ x: 4.5, y: 0, z: 5.5 });
+  expect(f.library.get(f.token.characterSheetId)).toMatchObject({
+    hp: { current: 96 },
+    conditions: ['prone'],
+    lastFall: { dice: 1, damage: 4 },
+  });
+  expect(f.services.combat.status(f.token).movement.spent).toBe(20);
+}, 30000);

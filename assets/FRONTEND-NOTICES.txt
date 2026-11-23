@@ -28,8 +28,10 @@ The original kit notice is retained in assets/terrain/3d Assets/License_Pro.txt.
 
 The separate Asset Quest forest kit records CC0 1.0:
 https://www.assetquest.dev/
-Its notice is retained with that source kit. Unused source-kit authoring files
-and legacy sprite collections are not automatically included in this package.
+Fly_Agaric_Big, Purple_Mushrooms_Cluster_3 and their color atlas are included
+for Fungal Grove. Their original notice is retained alongside the runtime copies
+in assets/terrain/representatives/fungal/. Unused source-kit authoring files and
+legacy sprite collections are not automatically included in this package.
 
 Legacy Remos sprites, when separately used, require CC-BY-3.0 attribution:
 Bleed - remusprites.carbonmade.com/
@@ -62,3 +64,44 @@ to an image-generation service by the packaging tool.
 Catalog notices, source pins and original attribution remain in the resource
 manifest and the accompanying resource notices. None of these notices grants
 rights beyond the relevant original source's terms.
+
+Player dice
+The selectable non-gold RPG Dice Set is by ghosted (dianaavlis2002), CC BY 4.0:
+https://sketchfab.com/3d-models/rpg-dice-set-2498c370c56842f89fa3d7096c72ed56
+https://creativecommons.org/licenses/by/4.0/
+The runtime GLB was normalized and its 2048px texture maps were reduced to 512px.
+The original archive and full source record are retained outside the runtime asset
+allowlist under assets/Items/source-packs/player-dice-set-ghosted.
+
+Downloaded source packs
+Locally retained source packs are recorded under the terrain and animated-sprite
+source-pack manifests. Their archives and extracted contents are excluded from
+the frontend package; selected representative copies listed below are active
+runtime assets. Several creators permit commercial incorporation but prohibit
+redistribution of the raw asset files. The source packs remain local-only and
+git-ignored. See SOURCE-PACK-MANIFEST.json and each pack's SOURCE-NOTICE.txt.
+
+Representative runtime imports
+Selected representative files from source packs are used in the application:
+- Low Poly Mining, Cave & Blacksmith Pack by Pure Poly, Fab Standard License:
+  https://www.fab.com/listings/626d3388-33d2-4012-a944-cb512baf83b4
+  https://www.fab.com/eula
+  Selected models are modified, encrypted derivatives; the source pack is not
+  distributed as a standalone asset library. Respect the creator's NoAI terms.
+- Medieval Village MegaKit wall, window, roof and balcony modules by Quaternius,
+  CC0 1.0:
+  https://quaternius.itch.io/medieval-village-megakit
+- LowPoly Modular Dungeon Wall_Modular, Torch and Chest by Quaternius, CC0 1.0:
+  https://quaternius.itch.io/lowpoly-modular-dungeon-pack
+- Wooden_14 and stalags_1_high from Free Mine Assets by rubberduck, CC0 1.0:
+  https://opengameart.org/content/free-mine-assets-pack
+- cave_pillar1 from Low Poly Cave Assets by agdg reject, CC0 1.0:
+  https://opengameart.org/content/low-poly-cave-assets
+The cave objects were exported as GLB with replacement materials. The stone
+objects use flat shading and an embedded, tone-adjusted CC0 stone texture from
+Free Mine Assets, credited by its creator to Yughues. The entrance frame is
+decorative, not a terrain opening.
+The copied representative files are embedded application content. Their
+source notices remain beside them under assets/terrain/representatives/. This
+approval does not activate the rest of any source pack or grant rights beyond
+the original terms.

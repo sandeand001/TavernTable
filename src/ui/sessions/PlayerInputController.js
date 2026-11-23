@@ -1,4 +1,5 @@
 import { TOKEN_COMMANDS, getTokenCommand } from '../../config/TokenCommandConfig.js';
+import { readPlayerDiceColor } from '../../config/PlayerDiceCatalog.js';
 import { GameValidators } from '../../utils/Validation.js';
 import PlayerTargetingController from './PlayerTargetingController.js';
 
@@ -8,8 +9,9 @@ const protocolKind = (action) =>
     : 'emote';
 
 export default class PlayerInputController {
-  constructor({ gameManager, commands }) {
+  constructor({ gameManager, commands, application = null }) {
     this.gameManager = gameManager;
+    this.application = application;
     this.commands = commands;
     this.targeting = new PlayerTargetingController({
       gameManager,
@@ -40,6 +42,7 @@ export default class PlayerInputController {
         ...(target.elevationFeet !== undefined ? { elevationFeet: target.elevationFeet } : {}),
       },
       ...(resolveClosest ? { closest: true } : {}),
+      diceColor: readPlayerDiceColor(),
     });
   }
 
@@ -56,6 +59,7 @@ export default class PlayerInputController {
       expression: `${count}d${sides}`,
       label: `${token.name}: ${count}d${sides}`,
       mode,
+      diceColor: readPlayerDiceColor(),
     });
   }
 
@@ -114,7 +118,7 @@ export default class PlayerInputController {
         this.ownedToken(token).economy.reactions > 0;
       const useSlowFall =
         canSlowFall && window.confirm('Use your available Slow Fall reaction for this fall?');
-      return this.commands.send(kind, token.id, { useSlowFall });
+      return this.commands.send(kind, token.id, { useSlowFall, diceColor: readPlayerDiceColor() });
     }
     let animationKey;
     if (kind === 'emote' && action.choices) {
@@ -153,7 +157,10 @@ export default class PlayerInputController {
   roll(token, request) {
     if (!this.gameManager.placedTokens.includes(token))
       throw new Error('Select a placed assigned character before rolling');
-    return this.commands.send('roll', token.id, request);
+    return this.commands.send('roll', token.id, {
+      ...request,
+      diceColor: readPlayerDiceColor(),
+    });
   }
 
   ownedToken(token) {
@@ -181,7 +188,9 @@ export default class PlayerInputController {
       throw Object.assign(new Error(availability.reason || availability.code), {
         code: availability.code,
       });
-    if (!action.targeting) return this.commands.send('action.use', token.id, { actionId, choice });
+    const diceColor = readPlayerDiceColor();
+    if (!action.targeting)
+      return this.commands.send('action.use', token.id, { actionId, choice, diceColor });
     try {
       const selected = await this.targeting.choose(token, action, choice);
       if (selected.cancelled) return selected;
@@ -189,6 +198,7 @@ export default class PlayerInputController {
         actionId,
         choice: selected.choice,
         targeting: selected.targeting,
+        diceColor,
       });
     } finally {
       this.targeting.finish();
@@ -217,10 +227,20 @@ export default class PlayerInputController {
     return { ...movement };
   }
 
-  focus(token) {
+  async focus(token) {
     const gm = this.gameManager;
-    if (!gm.placedTokens.includes(token) || !gm.publicPlayerPresentation.hasActor(token.id))
-      throw new Error('This creature is no longer visible to the active character');
+    if (
+      !gm.placedTokens.includes(token) ||
+      !gm.publicPlayerPresentation.hasActor(token.id) ||
+      token?.owned !== true
+    )
+      throw new Error('Choose a visible assigned character before changing the player viewpoint');
+    const application = this.application || gm.playerApplication;
+    const available = application?.state?.observers?.some(({ id }) => id === token.id);
+    if (available && application.observerId !== token.id) {
+      await application.chooseObserver(token.id);
+      return;
+    }
     const world = gm.token3DAdapter.getTokenViewPosition(token);
     if (typeof gm.threeSceneManager.setCameraTarget !== 'function')
       throw new Error('The game camera is not available');

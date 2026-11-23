@@ -1,7 +1,6 @@
 import {
-  buildingWindows,
+  buildingWallApertures,
   buildingLevels,
-  buildingLevelElevation,
   buildingLocalToFeet,
   BUILDING_SIDES,
 } from '../../terrain/BuildingModel.js';
@@ -13,6 +12,7 @@ export function buildConstructionDetails({
   three,
   worldUnitsPerFoot,
   visibleLayers = null,
+  cladStructureIds = new Set(),
 }) {
   const positions = [],
     colours = [],
@@ -165,20 +165,8 @@ export function buildConstructionDetails({
         }
       continue;
     }
-    const apertures = [
-      { side: 'south', u: 0.5, widthFeet: 5, bottom: 0, top: 8 },
-      ...buildingWindows(spec).map((w) => ({
-        ...w,
-        bottom: buildingLevelElevation(spec, w.floor) + w.sillFeet,
-        top: buildingLevelElevation(spec, w.floor) + w.sillFeet + w.heightFeet,
-      })),
-      ...spec.building.balconies.map((b) => ({
-        ...b,
-        widthFeet: 5,
-        bottom: buildingLevelElevation(spec, b.floor),
-        top: buildingLevelElevation(spec, b.floor) + 8,
-      })),
-    ];
+    const clad = cladStructureIds.has(spec.id);
+    const apertures = buildingWallApertures(spec);
     const segments = (side, bottom, top) => {
       const span = ['north', 'south'].includes(side) ? spec.lengthFeet : spec.widthFeet;
       let pieces = [[-span / 2, span / 2]];
@@ -196,9 +184,10 @@ export function buildConstructionDetails({
       return pieces;
     };
     for (const side of BUILDING_SIDES) {
-      for (const height of bandHeights)
-        for (const [low, high] of segments(side, height, height + 0.26))
-          strip(spec, side, low, high, height, height + 0.26, appearance.trimColor, trimMaterial);
+      if (!clad)
+        for (const height of bandHeights)
+          for (const [low, high] of segments(side, height, height + 0.26))
+            strip(spec, side, low, high, height, height + 0.26, appearance.trimColor, trimMaterial);
       for (const opening of apertures.filter((a) => a.side === side)) {
         const span = ['north', 'south'].includes(side) ? spec.lengthFeet : spec.widthFeet;
         const centre = (opening.u - 0.5) * span,
@@ -247,7 +236,7 @@ export function buildConstructionDetails({
           );
       }
     }
-    if (appearance.detail === 'timber') {
+    if (!clad && appearance.detail === 'timber') {
       for (const x of [-spec.lengthFeet / 2, spec.lengthFeet / 2])
         for (const z of [-spec.widthFeet / 2, spec.widthFeet / 2])
           box(

@@ -91,6 +91,16 @@ test.each(['town', 'city', 'castle'])(
     engine.generateBiomeElevation(biomeKey, { seed: 42 });
     for (const spec of engine.geometry.getStructures().filter((spec) => spec.building)) {
       expect(spec.building.windowLayout).toBeDefined();
+      if (biomeKey === 'castle')
+        expect({
+          kind: spec.kind,
+          name: spec.name,
+          version: spec.building.windowLayout.version,
+        }).toEqual({
+          kind: spec.kind,
+          name: spec.name,
+          version: ['turret', 'cellar'].includes(spec.kind) ? 2 : 3,
+        });
       const current = buildingWindows(spec).filter((window) => /^f\d+-/.test(window.id));
       const legacy = buildingWindows({
         ...spec,

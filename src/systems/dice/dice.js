@@ -23,8 +23,9 @@
 
 // ── Imports ────────────────────────────────────────────────────
 import { DICE_CONFIG } from '../../config/GameConstants.js';
+import { PLAYER_DICE_SIDES } from '../../config/PlayerDiceCatalog.js';
 
-import { playD20RollOnGrid } from './dice3d.js';
+import { playD20RollOnGrid, playPlayerDieRollOnGrid } from './dice3d.js';
 
 import { GameValidators } from '../../utils/Validation.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../../utils/logger/Logger.js';
@@ -39,7 +40,7 @@ export function setDiceDomPorts(ports = {}) {
 function _getDiceButtons() {
   if (_diceDomPorts.getDiceButtons) return _diceDomPorts.getDiceButtons();
   if (typeof document === 'undefined') return [];
-  return Array.from(document.querySelectorAll('[data-dice]'));
+  return Array.from(document.querySelectorAll('[data-dice], [data-dm-gold-d20]'));
 }
 function _getDiceCountEl() {
   if (_diceDomPorts.getDiceCountEl) return _diceDomPorts.getDiceCountEl();
@@ -77,11 +78,13 @@ function _disableRollControls() {
   });
 }
 
-function _maybePlay3DDice({ sides, diceCount } = {}) {
-  if (sides !== 20 || diceCount !== 1) {
-    return Promise.resolve(null);
+function _maybePlay3DDice({ sides, diceCount, goldD20 = false } = {}) {
+  if (goldD20) {
+    return sides === 20 && diceCount === 1
+      ? playD20RollOnGrid({ dismissOnClick: true })
+      : Promise.resolve(null);
   }
-  return playD20RollOnGrid({ dismissOnClick: true });
+  return playPlayerDieRollOnGrid({ sides, diceCount, dismissOnClick: true });
 }
 
 // ── Roll Logic & Animation ─────────────────────────────────────
@@ -90,7 +93,7 @@ function _maybePlay3DDice({ sides, diceCount } = {}) {
  * @param {number} sides - Number of sides on the die (4, 6, 8, 10, 12, 20, 100)
  * @returns {boolean} True if roll was initiated successfully, false otherwise
  */
-export function rollDice(sides) {
+export function rollDice(sides, options = {}) {
   try {
     // Prevent multiple concurrent rolls
     if (isRolling) {
@@ -149,7 +152,9 @@ export function rollDice(sides) {
       return false;
     }
 
-    const diceCount = parseInt(diceCountEl.value) || 1;
+    const diceCount = Number.isInteger(options.forceCount)
+      ? options.forceCount
+      : parseInt(diceCountEl.value) || 1;
     const countValidation = GameValidators.validateDiceCount(diceCount);
     if (!countValidation.isValid) {
       new ErrorHandler().handle(
@@ -170,8 +175,13 @@ export function rollDice(sides) {
 
     isRolling = true;
 
-    const isSingleD20 = sides === 20 && diceCount === 1;
-    const d20PhysicalRollPromise = isSingleD20 ? _maybePlay3DDice({ sides, diceCount }) : null;
+    const physicalRollPromise = PLAYER_DICE_SIDES.includes(sides)
+      ? _maybePlay3DDice({
+          sides,
+          diceCount,
+          goldD20: options.goldD20 === true,
+        })
+      : null;
 
     // Soft-disable dice buttons to avoid rapid re-clicks during animation
     _disableRollControls();
@@ -217,25 +227,31 @@ export function rollDice(sides) {
         let digitalReason = '';
 
         try {
-          if (isSingleD20 && d20PhysicalRollPromise) {
-            const physicalRoll = await d20PhysicalRollPromise;
+          if (physicalRollPromise) {
+            const physicalRoll = await physicalRollPromise;
             if (physicalRoll?.reason === 'cancelled') {
               resultEl.textContent = 'Roll cancelled.';
               _releaseRollControls();
               return;
             }
             if (physicalRoll?.reason === 'cocked') {
-              resultEl.textContent = 'D20 is cocked. Roll again.';
+              resultEl.textContent = `d${sides} is cocked. Roll again.`;
               _releaseRollControls();
               return;
             }
+            const physicalValues =
+              physicalRoll?.success && Array.isArray(physicalRoll.values)
+                ? physicalRoll.values
+                : physicalRoll?.success
+                  ? [physicalRoll.value]
+                  : [];
             if (
-              physicalRoll?.success &&
-              Number.isInteger(physicalRoll.value) &&
-              physicalRoll.value >= 1 &&
-              physicalRoll.value <= 20
+              physicalValues.length === diceCount &&
+              physicalValues.every(
+                (value) => Number.isInteger(value) && value >= 1 && value <= sides
+              )
             ) {
-              results.push(physicalRoll.value);
+              results.push(...physicalValues);
               physical = true;
             } else if (
               physicalRoll?.reason === 'no-manager' ||
@@ -243,14 +259,15 @@ export function rollDice(sides) {
             ) {
               logger.log(
                 LOG_LEVEL.INFO,
-                '3D d20 unavailable; using the 2D roll',
+                '3D die unavailable; using the 2D roll',
                 LOG_CATEGORY.USER,
                 { reason: physicalRoll.reason }
               );
-              results.push(Math.floor(Math.random() * sides) + 1);
+              for (let index = 0; index < diceCount; index += 1)
+                results.push(Math.floor(Math.random() * sides) + 1);
               digitalReason = physicalRoll.reason;
             } else {
-              throw physicalRoll?.error || new Error('Unable to read the settled d20 face');
+              throw physicalRoll?.error || new Error(`Unable to read the settled d${sides} face`);
             }
           } else {
             for (let i = 0; i < diceCount; i++) {
@@ -372,7 +389,12 @@ export function rollDice(sides) {
 
 export async function rollDiceExpression(
   { expression, label = 'Character roll', mode = 'normal' },
-  { random = Math.random, physicalRoll = _maybePlay3DDice, physicalAllD20 = false } = {}
+  {
+    random = Math.random,
+    physicalRoll = _maybePlay3DDice,
+    physicalAllD20 = false,
+    physicalAllDice = false,
+  } = {}
 ) {
   if (
     typeof expression !== 'string' ||
@@ -430,22 +452,25 @@ export async function rollDiceExpression(
   let digitalReason = '';
   try {
     for (const term of diceTerms) {
-      if (physicalAllD20 && term.sides === 20) {
+      if (
+        (physicalAllDice && PLAYER_DICE_SIDES.includes(term.sides)) ||
+        (physicalAllD20 && term.sides === 20)
+      ) {
         const count = d20Check && mode !== 'normal' ? 2 : term.count;
         for (let index = 0; index < count; index++) {
-          const rolled = await physicalRoll({ sides: 20, diceCount: 1 });
+          const rolled = await physicalRoll({ sides: term.sides, diceCount: 1 });
           if (
             !rolled?.success ||
             !Number.isInteger(rolled.value) ||
             rolled.value < 1 ||
-            rolled.value > 20
+            rolled.value > term.sides
           )
             throw (
               rolled?.error ||
               new Error(
                 rolled?.reason === 'cocked'
-                  ? 'The d20 is cocked; roll again'
-                  : 'Unable to read the settled physical d20'
+                  ? `The d${term.sides} is cocked; roll again`
+                  : `Unable to read the settled physical d${term.sides}`
               )
             );
           term.values.push(rolled.value);
@@ -453,8 +478,15 @@ export async function rollDiceExpression(
         }
         continue;
       }
-      if (d20Check && mode === 'normal') {
-        const rolled = await physicalRoll({ sides: 20, diceCount: 1 });
+      const singlePhysicalRoll =
+        mode === 'normal' &&
+        PLAYER_DICE_SIDES.includes(term.sides) &&
+        mode === 'normal' &&
+        diceTerms.length === 1 &&
+        diceTerms[0] === term &&
+        term.count === 1;
+      if (singlePhysicalRoll) {
+        const rolled = await physicalRoll({ sides: term.sides, diceCount: 1 });
         if (rolled?.reason === 'cancelled') {
           const text = `${label}: roll cancelled.`;
           if (resultElement) resultElement.textContent = text;
@@ -464,7 +496,7 @@ export async function rollDiceExpression(
           rolled?.success &&
           Number.isInteger(rolled.value) &&
           rolled.value >= 1 &&
-          rolled.value <= 20
+          rolled.value <= term.sides
         ) {
           term.values.push(rolled.value);
           physical = true;
@@ -475,8 +507,8 @@ export async function rollDiceExpression(
             rolled?.error ||
             new Error(
               rolled?.reason === 'cocked'
-                ? 'The d20 is cocked; roll again'
-                : 'Unable to read the settled d20'
+                ? `The d${term.sides} is cocked; roll again`
+                : `Unable to read the settled d${term.sides}`
             )
           );
         }

@@ -21,6 +21,7 @@ export default class PublicPlayerLocation {
     this.location = assets.location;
     this.maps = new Map(assets.maps.map((map) => [map.id, map]));
     this.connections = assets.connections;
+    this.logicalPassages = assets.logicalPassages || [];
     this.doorPanels = assets.doorPanels || [];
     this.geometries = new Map();
     this.obstacles = new Map();
@@ -113,6 +114,11 @@ export default class PublicPlayerLocation {
     return this.connections.filter(
       (connection) => mapId === null || connection.ends.some((end) => end.mapId === mapId)
     );
+  }
+
+  getLogicalPassages(mapId = null) {
+    if (mapId !== null) this.getMap(mapId);
+    return this.logicalPassages.filter((passage) => mapId === null || passage.mapId === mapId);
   }
 
   planConnection(id, mapId, localWorld, options = {}) {

@@ -72,6 +72,7 @@ describe('TerrainRebuilder biome color fallback', () => {
         isMeshStandardMaterial: false,
         isMeshLambertMaterial: false,
       },
+      getObjectByName: jest.fn().mockReturnValue(null),
       position: { set: jest.fn() },
       receiveShadow: false,
     };
@@ -106,5 +107,32 @@ describe('TerrainRebuilder biome color fallback', () => {
 
     expect(capturedColors).toHaveLength(1);
     expect(capturedColors[0]).toBe(neutralColor);
+  });
+
+  it('uses readable rock colors for natural cavern walls', () => {
+    let wallColor;
+    const builder = {
+      build: jest.fn(({ getWallColor }) => {
+        wallColor = getWallColor(0, 0, -8);
+        return makeGeometryStub();
+      }),
+    };
+    const gm = {
+      cols: 1,
+      rows: 1,
+      getTerrainHeight: () => -8,
+      terrainEngine: {
+        biomeKey: 'fungalGrove',
+        cavern: { version: 6 },
+        isActive: false,
+        geometry: { hasVolumes: false, getStructures: () => [] },
+      },
+      threeSceneManager: { scene: makeSceneStub(), three: makeThreeStub() },
+    };
+    const rebuilder = new TerrainRebuilder({ gameManager: gm, builder, debounceMs: 0 });
+    rebuilder.rebuild({ three: gm.threeSceneManager.three });
+    expect((wallColor >> 16) & 255).toBeGreaterThan(40);
+    expect((wallColor >> 8) & 255).toBeGreaterThan(40);
+    expect(wallColor & 255).toBeGreaterThan(40);
   });
 });

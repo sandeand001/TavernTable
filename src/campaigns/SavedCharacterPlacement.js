@@ -6,6 +6,7 @@ import { getCharacterDefinition, normalizeCreatureType } from '../config/Charact
 import { getAutomaticCreatureName } from '../entities/creatures/CreatureNames.js';
 import { linkTokenCharacter } from '../entities/creatures/TokenMovement.js';
 import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
+import { blocksCreatureMovement } from '../terrain/PlaceableCollision.js';
 
 function notify(gm) {
   gm.characterServices.combat.syncMovementStatus();
@@ -64,7 +65,7 @@ function placementPose(gm, scene, world, mapId, gridX, gridY, surface) {
   if (obstacles.some((solid) => boundsIntersectSolid(physicalBody, solid, 1e-6)))
     throw new Error('Another floor or structure blocks this placement');
   const placeables = gm.terrainManager?.placeables?.get(`${gridX},${gridY}`) || [];
-  if (placeables.some((entry) => ['plant', 'structure'].includes(entry.placeableType)))
+  if (placeables.some(blocksCreatureMovement))
     throw new Error('A blocking placeable occupies this placement cell');
   for (const actor of scene.creatures) {
     const sourceMapId = scene.version === 3 ? actor.mapId : 'map-main';

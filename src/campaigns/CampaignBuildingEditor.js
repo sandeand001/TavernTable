@@ -2,10 +2,33 @@ import CampaignWorld from './CampaignWorld.js';
 import { captureReadyCampaignScene } from './SceneWorld.js';
 import { captureBuildingContext, buildingJoinConnections } from './BuildingAssembly.js';
 import { isBuildingJoinConnection, isGeneratedBuildingJoin } from '../terrain/BuildingSnaps.js';
+import { sameJsonValue } from '../utils/JsonValue.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const definitions = (geometry) =>
   JSON.stringify(geometry.getStructures().filter((spec) => spec.building));
+
+export function assertOtherMapsPreserved(before, after, ownerMapId) {
+  const maps = new Map(after.maps.map((map) => [map.id, map]));
+  for (const map of before.maps) {
+    if (map.id !== ownerMapId && !sameJsonValue(map, maps.get(map.id)))
+      throw new Error(
+        `Generation would change or remove another map ("${map.name}"); preserving other maps during replacement is not supported yet. Choose another map`
+      );
+  }
+  const connections = new Map(
+    (after.connections || []).map((connection) => [connection.id, connection])
+  );
+  for (const connection of before.connections || [])
+    if (!sameJsonValue(connection, connections.get(connection.id)))
+      throw new Error(
+        `Generation would change or remove the "${connection.name}" connection; preserving existing links during replacement is not supported yet. Choose another map`
+      );
+  const passages = new Map((after.logicalPassages || []).map((passage) => [passage.id, passage]));
+  for (const passage of before.logicalPassages || [])
+    if (!sameJsonValue(passage, passages.get(passage.id)))
+      throw new Error('Generation would change or remove an existing cavern passage');
+}
 
 export function applyBuildingScene(gm, scene, world) {
   gm.campaignWorld = world;
@@ -31,6 +54,8 @@ export class CampaignBuildingEditor {
   prepare(geometry, restoreContext = null) {
     const gm = this.gm,
       library = gm.characterServices?.library;
+    const originalWorld =
+      restoreContext?.preserveOtherMaps === true ? gm.campaignWorld?.save() : null;
     const joining = restoreContext?.buildingJoins !== undefined;
     if (joining && !Array.isArray(restoreContext.buildingJoins))
       throw new Error('A building snap requires valid shared-floor openings');
@@ -54,6 +79,8 @@ export class CampaignBuildingEditor {
         : CampaignWorld.fromScene(capturedBefore, { ruleset: library.ruleset, library }).save();
     const owner = gm.campaignMapId || 'map-main';
     let buildingContext = joining ? null : restoreContext;
+    if (restoreContext?.preserveOtherMaps === true && !joining)
+      buildingContext = captureBuildingContext(beforeScene, owner);
     if (joining && restoreContext.replacingGeneratedJoins === true) {
       buildingContext = captureBuildingContext(beforeScene, owner);
       const maps = new Map(beforeScene.maps.map((map) => [map.id, map])),
@@ -66,6 +93,7 @@ export class CampaignBuildingEditor {
     if (restoreContext?.cavernGeneration === true) {
       buildingContext ??= captureBuildingContext(beforeScene, owner);
       buildingContext.cavernGeneration = true;
+      buildingContext.preserveCavernAreas = restoreContext.preserveCavernAreas === true;
     }
     if (restoreContext?.protectAuthoredCellars === true) {
       if (!buildingContext)
@@ -76,6 +104,14 @@ export class CampaignBuildingEditor {
       ...options,
       geometryOverride: geometry.save(),
       buildingContext,
+      ...(restoreContext?.clearingMap
+        ? {
+            heightsOverride: Array.from({ length: gm.rows }, () => Array(gm.cols).fill(0)),
+            placeablesOverride: [],
+            cavernOverride: null,
+            generationRecipeOverride: null,
+          }
+        : {}),
     });
     const additions = joining
       ? buildingJoinConnections(afterScene, owner, restoreContext.buildingJoins)
@@ -98,6 +134,7 @@ export class CampaignBuildingEditor {
         ...retained.filter((connection) => connection.building),
       ];
     }
+    if (originalWorld) assertOtherMapsPreserved(originalWorld, afterScene, owner);
     const addedIds = new Set([
       ...additions.map((connection) => connection.id),
       ...(joining ? [] : restoreContext?.connections || []).map((connection) => connection.id),

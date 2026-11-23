@@ -101,7 +101,11 @@ export default class PlayerGameApplication {
         );
       },
     });
-    this.input = new PlayerInputController({ gameManager, commands: this.commands });
+    this.input = new PlayerInputController({
+      gameManager,
+      commands: this.commands,
+      application: this,
+    });
     connectCharacterServices(gameManager, {
       ...this.sheets.services,
       sheetContext: 'world',
@@ -109,6 +113,7 @@ export default class PlayerGameApplication {
     this.controls = new PlayerControls({
       identity,
       library: this.sheets.library,
+      gameManager: this.gameManager,
       onSheet: (id) => void this.showSheet(id).catch((error) => this.fail(error)),
       onObserver: (id) => void this.chooseObserver(id).catch((error) => this.fail(error)),
       onArea: (id) => void this.chooseArea(id).catch((error) => this.fail(error)),
@@ -120,6 +125,7 @@ export default class PlayerGameApplication {
       onPlace: (id, appearance, grantId) => this.commands.place(id, { appearance, grantId }),
       onRetrieve: (id) => this.commands.send('remove', id, {}),
       onDoor: (id, open) => this.changeDoor(id, open),
+      onPassage: (id, point) => this.traversalPopup?.open(id, point),
     });
     if (connection.kind === 'cloud-player' && connection.cache) {
       this.cacheControls = new CloudCacheControls({
@@ -197,16 +203,17 @@ export default class PlayerGameApplication {
           this.notifiedCharactersRevision ?? -1,
           event.state.revision
         );
+        if (event.reconcile) {
+          for (const token of this.gameManager.placedTokens)
+            this.gameManager.token3DAdapter.cancelApprovedMovement(token);
+        }
         if (
           event.reconcile ||
           (this.presentationRevision !== undefined &&
             event.state.sceneRevision > this.presentationRevision &&
             !event.state.publicScene.updates.length)
-        ) {
-          for (const token of this.gameManager.placedTokens)
-            this.gameManager.token3DAdapter.cancelApprovedMovement(token);
+        )
           this.dice.cancel();
-        }
         this.cloudUpdatePending = true;
         this.commands.setStateError(new Error('Synchronizing the current live world...'));
         void this._drainCloudUpdates().catch((error) => this.fail(error));
@@ -267,6 +274,15 @@ export default class PlayerGameApplication {
         this.fail(new Error('Invalid session update. Reconnect before making further changes.'));
         return;
       }
+      if (
+        event.type === 'campaign' &&
+        event.campaignId === this.state.campaign.id &&
+        event.actorId === this.state.profile.id &&
+        event.kind === 'playerCommand' &&
+        this.commands.pending &&
+        this.commands.lastRequest?.awaitingFullReceipt
+      )
+        return;
       if (
         event.type === 'connected' ||
         event.type === 'disconnected' ||
@@ -411,23 +427,22 @@ export default class PlayerGameApplication {
           );
         }
       })();
-      result.presentation = presenting;
-      this.presentationTasks.add(presenting);
-      presenting
-        .catch((error) => {
-          if (!this.destroyed && !this.accessEnded) {
-            this.controls.status.textContent = error.message;
-            GameErrors.rendering(error, {
-              component: 'PlayerGameApplication',
-              operation: 'presentation',
-            });
-          }
-        })
-        .finally(() => {
-          this.presentationTasks.delete(presenting);
-          if (this.presentationRevision === state.sceneRevision)
-            this.presentationRevision = undefined;
-        });
+      const finalized = presenting.finally(() => {
+        this.presentationTasks.delete(finalized);
+        if (this.presentationRevision === state.sceneRevision)
+          this.presentationRevision = undefined;
+      });
+      result.presentation = finalized;
+      this.presentationTasks.add(finalized);
+      finalized.catch((error) => {
+        if (!this.destroyed && !this.accessEnded) {
+          this.controls.status.textContent = error.message;
+          GameErrors.rendering(error, {
+            component: 'PlayerGameApplication',
+            operation: 'presentation',
+          });
+        }
+      });
     }
     return result;
   }
@@ -439,7 +454,7 @@ export default class PlayerGameApplication {
         this.cloudUpdatePending = false;
         const version = this.selectionVersion;
         const state = this.connection.readLiveState(this.runtime.revision);
-        const result = await this.showState(state, version);
+        const result = await this.showState(state, version, { scopedRoutes: true });
         if (result.applied && version === this.selectionVersion)
           this.connection.acknowledgeState(state.sceneRevision);
       }
@@ -488,7 +503,33 @@ export default class PlayerGameApplication {
         value: result.presentation,
         configurable: true,
       });
-    if (movement) return result;
+    if (receipt.receipt.rerollRequired && !receipt.receipt.roll) {
+      this.controls.status.textContent = 'The falling-damage die was cocked. Try the fall again.';
+      return result;
+    }
+    if (movement) {
+      if (receipt.receipt.roll && result.presentation) {
+        const followup = result.presentation.then(() =>
+          result.movementPresentation?.completed
+            ? this._presentReceiptRoll(receipt, command)
+            : result.movementPresentation
+        );
+        Object.defineProperty(receipt, 'presentation', { value: followup, configurable: true });
+        this.presentationTasks.add(followup);
+        followup
+          .catch((error) => {
+            if (!this.destroyed && !this.accessEnded) {
+              this.controls.status.textContent = error.message;
+              GameErrors.rendering(error, {
+                component: 'PlayerGameApplication',
+                operation: 'fall-roll-presentation',
+              });
+            }
+          })
+          .finally(() => this.presentationTasks.delete(followup));
+      }
+      return result;
+    }
     if (
       animate &&
       receipt.receipt.kind === 'emote' &&
@@ -518,31 +559,41 @@ export default class PlayerGameApplication {
       animate &&
       receipt.receipt.roll &&
       receipt.state.sceneRevision >= receipt.applied.sceneRevision
-    ) {
-      this.presentationRevision = receipt.applied.sceneRevision;
-      let presentation;
-      try {
-        presentation = await this.dice.play(receipt.receipt.roll, {
-          commandId: command.commandId,
-        });
-      } finally {
-        if (this.presentationRevision === receipt.applied.sceneRevision)
-          this.presentationRevision = undefined;
-      }
-      if (
-        presentation.completed &&
-        !this.destroyed &&
-        !this.accessEnded &&
-        this.observerId === command.observerTokenId &&
-        this.state.sceneRevision >= receipt.applied.sceneRevision
-      ) {
-        const roll = receipt.receipt.roll;
-        if (this.controls.diceResult) this.controls.diceResult.textContent = roll.text;
-        window.sidebarController?.addDiceLogEntry(roll.text, 'roll', roll.summary);
-      }
-      return presentation;
-    }
+    )
+      return this._presentReceiptRoll(receipt, command);
     return result;
+  }
+
+  async _presentReceiptRoll(receipt, command) {
+    if (
+      this.destroyed ||
+      this.accessEnded ||
+      this.observerId !== command.observerTokenId ||
+      this.state.sceneRevision > receipt.state.sceneRevision
+    )
+      return { completed: false, reason: 'presentation-replaced' };
+    this.presentationRevision = receipt.applied.sceneRevision;
+    let presentation;
+    try {
+      presentation = await this.dice.play(receipt.receipt.roll, {
+        commandId: command.commandId,
+      });
+    } finally {
+      if (this.presentationRevision === receipt.applied.sceneRevision)
+        this.presentationRevision = undefined;
+    }
+    if (
+      presentation.completed &&
+      !this.destroyed &&
+      !this.accessEnded &&
+      this.observerId === command.observerTokenId &&
+      this.state.sceneRevision >= receipt.applied.sceneRevision
+    ) {
+      const roll = receipt.receipt.roll;
+      if (this.controls.diceResult) this.controls.diceResult.textContent = roll.text;
+      window.sidebarController?.addDiceLogEntry(roll.text, 'roll', roll.summary);
+    }
+    return presentation;
   }
 
   async receiveAccepted(acknowledgement, { animate, command }) {
@@ -627,6 +678,7 @@ export default class PlayerGameApplication {
         tokenId: entry.tokenId,
         commandId: entry.commandId,
         ...entry.motion,
+        ...(event.confirmed === true ? { checkpointRevision: event.sceneRevision } : {}),
       });
       this.presentationTasks.add(presenting);
       presenting
@@ -858,6 +910,13 @@ export default class PlayerGameApplication {
       throw new Error('The arrival preview is restricted to the DM-granted destination area');
     if (!this.state.maps.some((map) => map.id === id))
       throw new Error('This area is not available to the active character');
+    const observer = this.state.observers.find(({ id: tokenId }) => tokenId === this.observerId);
+    const actor = this.state.publicScene?.actors.find(
+      ({ id: tokenId }) => tokenId === this.observerId
+    );
+    const observerMapId = actor?.mapId ?? observer?.mapId;
+    if (!observerMapId || id !== observerMapId)
+      throw new Error('Player views stay with the active assigned character');
     const version = ++this.selectionVersion;
     this.pendingArtwork = null;
     if (this.connection.kind === 'cloud-player') this.connection.invalidateAssets?.();
@@ -962,7 +1021,10 @@ export default class PlayerGameApplication {
       closing = this.connection.close();
       this.sheets.destroy();
       this.controls.endAccess({ clearPrivate: this.connection.kind === 'cloud-player' });
-      if (this.connection.kind === 'cloud-player') this.state = null;
+      this.gameManager.modelAssetCache?.setProtectedAssetKeyProvider?.(null);
+      if (this.connection.kind === 'cloud-player') {
+        this.state = null;
+      }
       this.observerId = null;
       this.mapId = null;
     }

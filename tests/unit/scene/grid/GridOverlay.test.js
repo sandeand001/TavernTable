@@ -69,6 +69,22 @@ function gridManager({ cols, rows, heights, cavern = null }) {
   });
 }
 
+test('public cavern render style keeps the grid off boundary rock', () => {
+  const manager = gridManager({
+    cols: 3,
+    rows: 3,
+    heights: [8, 8, 8, 8, -8, 8, 8, 8, 8],
+    cavern: { version: 6 },
+  });
+  manager.gameManager.terrainEngine.cavern = null;
+  manager.gameManager.campaignMapId = 'cavern';
+  manager.gameManager.campaignWorld = {
+    getMap: () => ({ terrain: { renderStyle: 'cavern' } }),
+  };
+  manager._rebuildGridOverlay();
+  expect(manager.scene.getObjectByName('GridBaseFill').count).toBe(1);
+});
+
 test('a flat grid emits each shared edge once', () => {
   const cols = 3,
     rows = 2,

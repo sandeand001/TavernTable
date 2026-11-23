@@ -428,7 +428,7 @@ export default class CharacterSheetWindow {
     const connected = !!gm.campaignWorld;
     try {
       if (gm.playerInput) {
-        gm.playerInput.focus(token);
+        await gm.playerInput.focus(token);
         return true;
       }
       if (connected) {

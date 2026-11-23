@@ -13,6 +13,8 @@ COPY --chown=node:node src/ ./src/
 COPY --chown=node:node tools/ ./tools/
 COPY --chown=node:node assets/data/ ./assets/data/
 COPY --chown=node:node assets/Items/d20-gold.glb ./assets/Items/d20-gold.glb
+COPY --chown=node:node assets/Items/player-dice-set/player-dice-set.glb ./assets/Items/player-dice-set/player-dice-set.glb
+COPY --chown=node:node assets/Items/player-dice-set/NOTICE.txt ./assets/Items/player-dice-set/NOTICE.txt
 USER node
 EXPOSE 8080
 CMD ["node", "tools/cloud/production-host.js"]

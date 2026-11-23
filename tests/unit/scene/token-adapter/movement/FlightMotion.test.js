@@ -470,6 +470,19 @@ test('a solid obstacle at the same altitude keeps its flight corner blocked', as
   expect(range.tiles.has('6,8')).toBe(false);
 });
 
+test('decorative cave scenery does not block the local flying range', async () => {
+  const context = fixture();
+  const { adapter, token, library, gm } = context;
+  gm.rows = 12;
+  library.edit(token.characterSheetId, { fallTraits: { flySpeed: 35 } });
+  gm.terrainManager = {
+    placeables: new Map([['6,7', [{ placeableType: 'plant', modelKey: 'source-cave-column' }]]]),
+  };
+  await adapter.applyFlightCommand(token, 'takeoff');
+  await finish(context);
+  expect(adapter.getTokenMovementRange(token).tiles.has('6,7')).toBe(true);
+});
+
 test('a creature in a solid obstacle does not turn that obstacle into a passable flight corner', async () => {
   const context = fixture();
   const { adapter, token, library, gm } = context;

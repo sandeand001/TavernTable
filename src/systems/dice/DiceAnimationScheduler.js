@@ -8,7 +8,9 @@ import {
   createGroundSampler,
   collectWorldFaceData,
   getD20ColliderData,
+  getPlayerDiceColliderData,
   resolveUpFacingFace,
+  resolvePlayerDiceFace,
 } from './DiceState.js';
 
 export function computeSnapSolution(mesh, three, groundY) {
@@ -54,21 +56,24 @@ function notify(callback, payload, stage) {
 
 export async function scheduleRollAnimation(manager, mesh, metrics, options = {}) {
   if (options.forceFaceIndex != null) {
-    throw new Error('Physical d20 rolls cannot force a result; use face calibration instead');
+    throw new Error('Physical dice rolls cannot force a result; use face calibration instead');
   }
   const three = diceState.threeNamespace;
-  const { createD20Simulation } = await import('./D20Dynamics.js');
+  const { createDieSimulation } = await import('./D20Dynamics.js');
+  const playerDefinition = options.playerDiceDefinition || null;
   const sampleGround = createGroundSampler(manager, metrics, options.restHeight ?? 0);
   const groundHeights = Array.from({ length: metrics.rows }, (_, y) =>
     Array.from({ length: metrics.cols }, (_, x) =>
       sampleGround((x + 0.5) * metrics.tileSize, (y + 0.5) * metrics.tileSize)
     )
   );
-  const geometry = getD20ColliderData(mesh, three);
+  const geometry = playerDefinition
+    ? getPlayerDiceColliderData(mesh, playerDefinition, three)
+    : getD20ColliderData(mesh, three);
   const fitScale =
     (Math.min(metrics.cols, metrics.rows) * metrics.tileSize * 0.4) / geometry.radius;
   mesh.scale.setScalar(Math.min(mesh.scale.x, fitScale));
-  const simulation = createD20Simulation({
+  const simulation = createDieSimulation({
     geometry,
     scale: mesh.scale.x,
     metrics,
@@ -114,9 +119,12 @@ export async function scheduleRollAnimation(manager, mesh, metrics, options = {}
           notify(options.onCocked, { mesh }, 'cocked');
           return;
         }
-        const faceInfo = resolveUpFacingFace(mesh, three);
-        if (!Number.isInteger(faceInfo?.value) || faceInfo.value < 1 || faceInfo.value > 20) {
-          throw new Error('Unable to read the settled d20 face');
+        const faceInfo = playerDefinition
+          ? resolvePlayerDiceFace(mesh, playerDefinition, three)
+          : resolveUpFacingFace(mesh, three);
+        const maximum = playerDefinition?.sides || 20;
+        if (!Number.isInteger(faceInfo?.value) || faceInfo.value < 1 || faceInfo.value > maximum) {
+          throw new Error(`Unable to read the settled d${maximum} face`);
         }
         finished = true;
         stopScheduling();
@@ -130,7 +138,11 @@ export async function scheduleRollAnimation(manager, mesh, metrics, options = {}
     } catch (error) {
       finished = true;
       stopScheduling();
-      logger.error('D20 physics roll failed', { error: toErrorPayload(error) }, DICE_LOG_CATEGORY);
+      logger.error(
+        'Physical dice roll failed',
+        { error: toErrorPayload(error) },
+        DICE_LOG_CATEGORY
+      );
       notify(options.onError, error, 'error');
     }
   };

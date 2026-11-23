@@ -1,5 +1,126 @@
 /* css/styles.css - Main stylesheet for TavernTable */
 
+.biome-generation-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(8 9 13 / 78%);
+}
+
+.biome-generation-review {
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 22px;
+  overflow: auto;
+  color: #eee;
+  background: #24262f;
+  border: 1px solid #555a68;
+  border-radius: 12px;
+  box-shadow: 0 18px 70px #000a;
+}
+
+.biome-generation-review header h2 {
+  margin: 0 0 6px;
+  color: #e5ca8b;
+}
+
+.biome-generation-review header > p:last-child {
+  margin: 0 0 18px;
+  color: #c4c7d0;
+}
+
+.biome-generation-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.biome-generation-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.biome-generation-field[hidden] {
+  display: none;
+}
+
+.biome-generation-field > span {
+  font-weight: 700;
+}
+
+.biome-generation-field > label {
+  display: grid;
+  gap: 6px;
+}
+
+.biome-generation-field select,
+.biome-generation-field input[type='number'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  color: #eee;
+  background: #17191f;
+  border: 1px solid #555a68;
+  border-radius: 5px;
+}
+
+.biome-generation-field fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px;
+  border: 1px solid #555a68;
+  border-radius: 5px;
+}
+
+.biome-generation-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.biome-generation-field small,
+.biome-generation-summary {
+  color: #afb4c0;
+}
+
+.biome-generation-summary {
+  display: block;
+  min-height: 2.6em;
+  margin: 18px 0;
+  padding: 10px;
+  background: #191b22;
+  border-radius: 6px;
+}
+
+.biome-generation-review footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.biome-replacement-warning .biome-generation-checkbox {
+  margin-bottom: 18px;
+}
+
+.biome-replacement-warning [role='alert'] {
+  color: #ffb4a8;
+}
+
+.biome-replacement-warning [data-cancel] {
+  padding: 12px 18px;
+  color: #f5f7ff;
+  background: #3a4050;
+  border: 1px solid #6b7486;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
 .campaign-picker {
   position: fixed;
   inset: 0;
@@ -356,6 +477,198 @@
   background: transparent;
 }
 
+.location-overview {
+  position: fixed;
+  inset: 0;
+  z-index: 31000;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  padding: 18px;
+  color: #eee;
+  background: rgb(0 0 0 / 75%);
+  font:
+    14px system-ui,
+    sans-serif;
+}
+
+.location-overview[hidden] {
+  display: none;
+}
+
+.location-overview-dialog {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(1200px, 100%);
+  height: min(850px, 100%);
+  padding: 16px;
+  background: #191b22;
+  border: 1px solid #596374;
+  border-radius: 8px;
+}
+
+.location-overview-dialog header,
+.location-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.location-overview-dialog header {
+  justify-content: space-between;
+}
+
+.location-overview-dialog h2 {
+  margin: 0 0 10px;
+  font-size: 19px;
+}
+
+.location-overview-dialog small {
+  color: #dfc58e;
+  font-size: 12px;
+}
+
+.location-overview button,
+.location-overview select {
+  padding: 6px 9px;
+  color: #eee;
+  background: #343c4a;
+  border: 1px solid #596374;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.location-overview button {
+  cursor: pointer;
+}
+
+.location-overview :focus-visible {
+  outline: 2px solid #d7ba7d;
+  outline-offset: 2px;
+}
+
+.location-overview-dialog p {
+  margin: 10px 0;
+}
+
+.location-overview-content {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.location-overview-viewport {
+  min-width: 0;
+  overflow: auto;
+  background: #25272d;
+  border: 1px solid #596374;
+}
+
+.location-overview-content aside {
+  min-height: 0;
+  overflow: auto;
+}
+
+.location-overview-content ul {
+  padding-left: 18px;
+}
+
+.location-overview-content li {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+
+.location-overview-content li button {
+  text-align: left;
+}
+
+.overview-map-floor {
+  fill: #c6b99b;
+}
+
+.overview-map-rock,
+.overview-map-wall {
+  fill: #49474a;
+}
+
+.overview-map-void {
+  fill: #20232a;
+}
+
+.overview-map-grid {
+  fill: none;
+  stroke: #463e37;
+  stroke-opacity: 0.18;
+  stroke-width: 0.5;
+}
+
+.overview-map-outline {
+  fill: none;
+  stroke: #dccb9f;
+  stroke-width: 1.5;
+}
+
+[data-overview-map] {
+  cursor: pointer;
+}
+
+.overview-door {
+  fill: #e5b960;
+  stroke: #32271b;
+  stroke-width: 1;
+}
+
+.overview-creature {
+  fill: #a7b6c8;
+  stroke: #1d2027;
+  stroke-width: 1.5;
+}
+
+.overview-creature-friendly {
+  fill: #4fc791;
+}
+
+.overview-creature-hostile {
+  fill: #e6686b;
+}
+
+.overview-link {
+  fill: none;
+  stroke: #d3b878;
+  stroke-dasharray: 6 4;
+  stroke-width: 2;
+}
+
+.overview-connection-marker circle {
+  fill: #e5c986;
+  stroke: #29231a;
+}
+
+.overview-connection-marker path {
+  fill: none;
+  stroke: #29231a;
+  stroke-width: 1.5;
+}
+
+.overview-map-label,
+.overview-level-label {
+  fill: #f2e7cb;
+  font:
+    12px system-ui,
+    sans-serif;
+}
+
+.overview-level-label {
+  fill: #e5c986;
+  font-weight: bold;
+}
+
 @media (width <= 720px) {
   .campaign-columns {
     grid-template-columns: minmax(0, 1fr);
@@ -374,6 +687,11 @@
   .campaign-map-panel {
     top: auto;
     bottom: calc(100% + 9px);
+  }
+
+  .location-overview-content {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(90px, 25%);
   }
 }
 
@@ -429,6 +747,38 @@ body {
   display: inline-block;
 
   /* Change from default block to inline-block */
+}
+
+.dice-color-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 4px;
+  font-size: 0.85rem;
+}
+
+.dice-color-control select {
+  min-width: 116px;
+  padding: 4px 6px;
+  color: #fff;
+  background: #282a31;
+  border: 1px solid #666;
+  border-radius: 4px;
+}
+
+#dice-panel .dice-dm-gold {
+  color: #2c1b00;
+  background: linear-gradient(135deg, #f6dd76, #c58b25);
+  border: 1px solid #ffe7a0;
+  font-weight: 700;
+}
+
+#dice-panel .dice-dm-gold:hover {
+  background: linear-gradient(135deg, #ffe89a, #d79a31);
+}
+
+body[data-session-role='player'] #dice-panel [data-dm-gold-d20] {
+  display: none;
 }
 
 /* Responsive adjustments for dice panel */
@@ -1953,9 +2303,9 @@ body.right-sidebar-collapsed #game-container {
    Biome Menu Styling (matches terrain tool aesthetics)
    ==================================== */
 .biome-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
   max-height: clamp(320px, 65vh, 560px);
   overflow-y: auto;
   padding-right: 4px;
@@ -2028,6 +2378,7 @@ body.right-sidebar-collapsed #game-container {
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 
@@ -2068,8 +2419,8 @@ body.right-sidebar-collapsed #game-container {
 }
 
 @media (width <=768px) {
-  .biome-group-list {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  .biome-menu {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   }
 }
 

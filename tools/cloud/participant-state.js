@@ -4,7 +4,7 @@ const {
   default: CampaignCharacters,
   campaignRecordCharacterId,
 } = require('../../src/campaigns/CampaignCharacters.js');
-const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
+const { decodeScene, reuseSceneGeometry } = require('../../src/campaigns/CampaignScene.js');
 const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const { playerGameplayState } = require('../../src/campaigns/ServerGameplay.js');
 const { validatePlayerState } = require('../../src/campaigns/PlayerPublicProtocol.js');
@@ -31,6 +31,7 @@ function reuseParticipantGeometry(state, previous) {
     predecessors.set(state, {
       campaignId: source.campaignId,
       ruleset: source.ruleset,
+      library: source.library,
       world: source.world,
       graphics: source.graphics,
     });
@@ -46,24 +47,21 @@ function projectionSource(state, catalog, campaign) {
   )
     return cached;
   const library = new CampaignCharacters({ ...state, catalog });
+  const previous = predecessors.get(state) ?? cached;
+  const reusable =
+    previous?.campaignId === state.campaign.id && previous.ruleset === campaign.ruleset;
+  if (reusable) reuseSceneGeometry(previous.library, library);
   const scene = state.scene
     ? decodeScene(state.scene, { library, ruleset: campaign.ruleset })
     : null;
-  const previous = predecessors.get(state) ?? cached;
   const context = { ruleset: campaign.ruleset, library };
   const world = scene
-    ? previous?.world &&
-      previous.campaignId === state.campaign.id &&
-      previous.ruleset === campaign.ruleset
+    ? reusable && previous.world
       ? previous.world.forkQuery(scene, context)
       : CampaignWorld.fromScene(scene, context)
     : null;
   const graphics =
-    world &&
-    previous?.world &&
-    previous.campaignId === state.campaign.id &&
-    previous.ruleset === campaign.ruleset &&
-    previous.world.hasSameMapData(world)
+    world && reusable && previous.world && previous.world.hasSameMapData(world)
       ? previous.graphics
       : new Map();
   const source = {
@@ -244,7 +242,7 @@ async function projectParticipantState({
   return { state: result, imageSlots: slots, assets: render.assets };
 }
 
-function participantDelta(previous, current, { cachedAssets = null } = {}) {
+function participantDelta(previous, current, { cachedAssets = null, movementBatch = false } = {}) {
   const assets = previous?.state?.publicScene?.assets || cachedAssets;
   validateCloudParticipantSnapshot(previous, { cachedAssets });
   validateCloudParticipantSnapshot(current, {
@@ -262,7 +260,7 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
     });
     if (stableStringify(comparable(previous)) === stableStringify(comparable(current))) return null;
   }
-  if (current.generation !== previous.generation + 1)
+  if (!movementBatch && current.generation !== previous.generation + 1)
     throw new CloudError(409, 'participant-delta-gap', 'A fresh authorized checkpoint is required');
   const common = {
     version: 1,
@@ -271,6 +269,7 @@ function participantDelta(previous, current, { cachedAssets = null } = {}) {
     baseGeneration: previous.generation,
     generation: current.generation,
     viewKey: current.viewKey,
+    ...(movementBatch ? { movementBatch: true } : {}),
   };
   const same = (left, right) => stableStringify(left) === stableStringify(right);
   const sameView =

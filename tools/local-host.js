@@ -16,6 +16,8 @@ const { readLimitedBody } = require('./http-body.js');
 const { resolvePublicFile } = require('./public-files.js');
 const { playerRoomVisitEntries } = require('./player-room-visits.js');
 const { recoverRoomVisitsAfterCommit } = require('./room-visit-recovery.js');
+const { loadProtectedAssetKeys } = require('./cloud/protected-assets.js');
+const { isProtectedAssetId } = require('../src/core/ProtectedAsset.js');
 
 const operations = new Map([
   ['create', 1],
@@ -105,6 +107,7 @@ async function startLocalHost({
   backupIntervalMs = 300000,
   backupRetain = 20,
   publicOrigin = process.env.TAVERNTABLE_PUBLIC_ORIGIN || null,
+  protectedAssetKeysFile = process.env.TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE,
 } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error('Choose a valid local host port');
@@ -122,6 +125,7 @@ async function startLocalHost({
     publicOrigin = external.origin;
   }
   root = await fs.realpath(root);
+  const protectedAssetKeys = await loadProtectedAssetKeys(root, protectedAssetKeysFile);
   dataDirectory = path.resolve(dataDirectory);
   const relativeData = path.relative(root, dataDirectory);
   if (
@@ -243,6 +247,12 @@ async function startLocalHost({
       if (!local && request.headers['x-forwarded-proto'] !== 'https')
         throw failure(426, 'Internet sessions require HTTPS through the configured trusted proxy');
       const origin = local ? `http://${host}` : publicOrigin;
+      const localKeyAccess =
+        local &&
+        ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress) &&
+        !['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'].some(
+          (header) => request.headers[header]
+        );
       const url = new URL(request.url, origin);
       if (url.pathname.startsWith('/api/')) {
         if (
@@ -252,8 +262,12 @@ async function startLocalHost({
           throw failure(403, 'Cross-origin campaign access is not allowed');
         const cookieName = `tt-session-${currentPort}`;
         const session = authority.authenticate(request.headers.cookie, cookieName);
+        const sessionProfile = (current) => ({
+          ...authority.profile(current),
+          ...(localKeyAccess && protectedAssetKeys ? { localProtectedAssets: true } : {}),
+        });
         if (url.pathname === '/api/session' && request.method === 'GET') {
-          jsonResponse(response, 200, authority.profile(session));
+          jsonResponse(response, 200, sessionProfile(session));
           return;
         }
         if (
@@ -275,12 +289,51 @@ async function startLocalHost({
           const issued = url.pathname.endsWith('/host')
             ? authority.signInHost(credentials?.key)
             : authority.join(credentials?.invite);
-          jsonResponse(response, 200, authority.profile(issued.session), {
+          jsonResponse(response, 200, sessionProfile(issued.session), {
             'Set-Cookie': authority.cookie(issued.token, remote, cookieName),
           });
           return;
         }
         const identity = authority.profile(session);
+        if (url.pathname === '/api/protected-asset-key') {
+          if (request.method !== 'POST') throw failure(405, 'Use POST for protected model access');
+          if (!localKeyAccess)
+            throw failure(403, 'Local protected models require direct loopback access');
+          if (!protectedAssetKeys) {
+            jsonResponse(response, 503, { error: 'Local protected-asset keys are not configured' });
+            return;
+          }
+          if (request.headers['x-taverntable-host'] !== identity.csrf)
+            throw failure(403, 'Invalid session request');
+          if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json')
+            throw failure(415, 'Protected model requests require application/json');
+          const input = await requestBody(request, 1024);
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).sort().join(',') !== 'campaignId,keyId' ||
+            typeof input.campaignId !== 'string' ||
+            !input.campaignId ||
+            input.campaignId.length > 100 ||
+            !isProtectedAssetId(input.keyId)
+          )
+            throw failure(400, 'Protected model request is invalid');
+          if (identity.role === 'player' && identity.campaignId !== input.campaignId)
+            throw failure(403, 'This protected model is not available for that campaign');
+          await store.get(input.campaignId);
+          const current = authority.profile(
+            authority.authenticate(request.headers.cookie, cookieName)
+          );
+          if (current.id !== identity.id || current.csrf !== identity.csrf)
+            throw failure(401, 'This session is no longer authorized');
+          if (current.role === 'player' && current.campaignId !== input.campaignId)
+            throw failure(403, 'This protected model is not available for that campaign');
+          const key = protectedAssetKeys.get(input.keyId);
+          if (key === null) throw failure(404, 'The requested protected model key is unavailable');
+          jsonResponse(response, 200, { version: 1, keyId: input.keyId, key });
+          return;
+        }
         if (url.pathname === '/api/events' && request.method === 'GET') {
           response.writeHead(200, {
             'Content-Type': 'text/event-stream',

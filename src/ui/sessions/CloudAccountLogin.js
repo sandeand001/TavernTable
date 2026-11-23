@@ -119,7 +119,7 @@ export default class CloudAccountLogin {
       <section data-campaign-invitation hidden>
         <h2>Campaign invitation</h2>
         <p>Sign in and verify your email before accepting this single-use invitation.
-        Acceptance enables your account for TavernTable and joins the invited player seat.
+        Acceptance joins the invited player seat and enables your account where required.
         Unused links expire after seven days; accepted membership does not.</p>
         <button type="button" data-accept-invitation>Accept campaign invitation</button>
         <button type="button" data-retry-invitation hidden>Retry invitation acceptance</button>
@@ -138,7 +138,7 @@ export default class CloudAccountLogin {
       </section>
       <section data-signed-in hidden>
         <p data-account-summary></p>
-        <p>Verified email and private-pilot approval are required before opening campaigns.</p>
+        <p>Verify your email before opening campaigns. Account access is checked separately.</p>
         <button type="button" data-refresh-account>Refresh account access</button>
         <button type="button" data-send-verification>Resend verification email</button>
         <button type="button" data-account-methods hidden>Sign-in methods</button>

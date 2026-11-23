@@ -654,13 +654,16 @@ export function mountCampaignControls(gameManager, services) {
     retry.hidden = state.state !== 'error' || !services.autosave.ready;
     bar.setAttribute('aria-busy', String(state.state === 'loading' || state.state === 'saving'));
   });
-  new CampaignTraversalPopup({ gameManager }).attach();
+  const traversal = new CampaignTraversalPopup({ gameManager }).attach();
   bar.append(heading, name, rules, back, status, retry);
   const store = services.workspace.store;
   const role = store.identity?.role;
   const cloud = store.storageInfo?.kind === 'cloud';
   if (role === undefined || role === 'dm') {
-    const maps = new CampaignMapControls({ gameManager });
+    const maps = new CampaignMapControls({
+      gameManager,
+      onPassage: (id, point) => traversal.open(id, point),
+    });
     const mapTools = document.createElement('section');
     mapTools.className = 'campaign-tools';
     mapTools.setAttribute('aria-label', 'DM map controls');

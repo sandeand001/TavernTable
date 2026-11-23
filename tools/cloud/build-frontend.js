@@ -7,21 +7,39 @@ const { parse } = require('acorn');
 const { JSDOM } = require('jsdom');
 const { validateApplicationRuntime } = require('../../src/campaigns/CloudRuntime.js');
 const { FIREBASE_BROWSER_VERSION } = require('../../src/campaigns/CloudAccount.js');
+const { isProtectedAssetFile } = require('../public-files.js');
 
 const COMPATIBILITY = Object.freeze({ runtime: 1, participant: 1, privateCache: 1 });
 const GROUPS = [
+  ['assets/protected', ['.ttasset']],
   ['assets/animated-sprites', ['.fbx']],
   ['assets/terrain/3d Assets/OBJ', ['.obj']],
   ['assets/terrain/3d Assets/Textures', ['.png', '.jpg', '.jpeg']],
   ['assets/terrain/3d Assets/Tropical/textures', ['.png', '.jpg', '.jpeg']],
+  ['assets/terrain/representatives/village', ['.gltf', '.bin', '.png', '.txt']],
+  ['assets/terrain/representatives/dungeon', ['.fbx', '.txt']],
+  ['assets/terrain/representatives/cave-cc0', ['.glb', '.txt', '.json']],
+  ['assets/terrain/representatives/chest-cc0', ['.fbx', '.txt']],
+  ['assets/terrain/representatives/fungal', ['.fbx', '.png', '.txt', '.json']],
   ['assets/images/construction', ['.svg']],
 ];
 const RUNTIME_ASSET_SOURCES = [
   'src/core/ModelAssetCache.js',
   'src/core/ModelPostProcessing.js',
+  'src/config/assets/PurePolyAssets.js',
   'src/config/CharacterCatalog.js',
   'src/config/HumanoidActionCatalog.js',
   'src/config/token-adapter/CoverMetrics.js',
+  'src/config/PlayerDiceCatalog.js',
+];
+const PLAYER_DICE_ASSETS = [
+  'assets/Items/player-dice-set/player-dice-set.glb',
+  'assets/Items/player-dice-set/NOTICE.txt',
+  ...Array.from({ length: 7 }, (_, index) => index + 1).flatMap((variant) =>
+    ['basecolor', 'normal', 'roughness'].map(
+      (name) => `assets/Items/player-dice-set/textures/${variant}/${name}.png`
+    )
+  ),
 ];
 const FIXED_ASSETS = [
   'assets/Items/d20-gold.glb',
@@ -30,6 +48,7 @@ const FIXED_ASSETS = [
   'assets/data/SRD2014-NOTICE.txt',
   'assets/data/SRD2014-UPSTREAM-LICENSE.txt',
   'assets/FRONTEND-NOTICES.txt',
+  ...PLAYER_DICE_ASSETS,
   'assets/data/resources/manifest.json',
   'assets/data/resources/NOTICES.txt',
 ];
@@ -61,6 +80,8 @@ function sourceAllowed(relative) {
     relative.split('/').some((part) => !part || part.startsWith('.'))
   )
     return false;
+  if (relative.startsWith('assets/protected/'))
+    return /^assets\/protected\/[a-z0-9][a-z0-9-]{0,79}\.ttasset$/.test(relative);
   if (relative === 'index.html') return true;
   if (
     /^src\/.+\.(?:js|css)$/.test(relative) &&
@@ -88,6 +109,11 @@ async function sourceFile(root, relative) {
   const resolved = await fs.realpath(filename);
   if (resolved !== filename)
     throw invalid('Public inputs cannot traverse filesystem links: ' + relative);
+  if (
+    relative.startsWith('assets/protected/') &&
+    !(await isProtectedAssetFile(filename, stat.size))
+  )
+    throw invalid('A protected model input is not an encrypted envelope: ' + relative);
   return filename;
 }
 
@@ -130,6 +156,15 @@ async function runtimeAssetSelection(root) {
       if (value) references.add(value);
   }
   const referenceValues = [...references];
+  for (const source of referenceValues.filter((value) => value.startsWith('assets/protected/'))) {
+    try {
+      await sourceFile(root, source);
+    } catch (error) {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+        throw invalid('A referenced protected model is missing: ' + source);
+      throw error;
+    }
+  }
   const tropicalSource = await sourceFile(
     root,
     'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx'
@@ -139,9 +174,17 @@ async function runtimeAssetSelection(root) {
   let candidateFiles = 0;
   let candidateBytes = 0;
   for (const [directory, extensions] of GROUPS) {
-    for (const entry of await fs.readdir(diskPath(root, directory), {
-      withFileTypes: true,
-    })) {
+    let entries;
+    try {
+      entries = await fs.readdir(diskPath(root, directory), { withFileTypes: true });
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+    const representative =
+      directory.startsWith('assets/terrain/representatives/') &&
+      referenceValues.some((value) => value.startsWith(directory + '/'));
+    for (const entry of entries) {
       if (!entry.isFile() || !extensions.includes(path.extname(entry.name).toLowerCase())) continue;
       const source = directory + '/' + entry.name;
       const filename = diskPath(root, source);
@@ -149,6 +192,7 @@ async function runtimeAssetSelection(root) {
       candidateBytes += (await fs.stat(filename)).size;
       const stem = path.parse(entry.name).name;
       const referenced =
+        representative ||
         directory.endsWith('/construction') ||
         references.has(source) ||
         references.has(entry.name) ||
@@ -404,6 +448,11 @@ async function verifyCloudFrontend(output) {
     const actual = await fileDigest(filename);
     if (actual.bytes !== file.bytes || actual.sha256 !== file.sha256)
       throw invalid('A public package file failed integrity verification: ' + file.source);
+    if (
+      file.source.startsWith('assets/protected/') &&
+      !(await isProtectedAssetFile(filename, actual.bytes))
+    )
+      throw invalid('A protected package model is not an encrypted envelope: ' + file.source);
     physicalNames.add(file.path);
   }
   for (const release of manifest.releases) {

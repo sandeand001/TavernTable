@@ -115,6 +115,11 @@ const denialCodes = new Set([
   'invalid-identity',
   'email-verification-required',
   'pilot-access-required',
+  'account-disabled',
+  'invalid-protected-asset-request',
+  'protected-assets-unavailable',
+  'protected-key-not-found',
+  'protected-key-invalid',
   'identity-unavailable',
   'eligibility-unavailable',
   'invalid-account-eligibility',
@@ -400,6 +405,11 @@ const denialMessages = new Map([
     'pilot-access-required',
     'This account has not been enabled for the private pilot. Contact the host.',
   ],
+  ['account-disabled', 'This account is disabled for cloud campaigns. Contact the host.'],
+  ['invalid-protected-asset-request', 'Choose a protected model and current campaign access.'],
+  ['protected-assets-unavailable', 'Protected models are not configured on this cloud host.'],
+  ['protected-key-not-found', 'The protected model key is unavailable.'],
+  ['protected-key-invalid', 'The protected model key is invalid.'],
   ['campaign-not-found', 'This private campaign is not available to the signed-in account.'],
   ['stale-revision', 'Campaign data changed elsewhere. Reopen it before making another change.'],
   [
@@ -734,13 +744,17 @@ export default class CloudAccountConnection {
               resource === `campaigns/${accessScope.campaignId}/participant-state`) ||
               resource === `campaigns/${accessScope.campaignId}/events`)) ||
           (method === 'POST' &&
+            responseType === 'json' &&
+            resource === `campaigns/${accessScope.campaignId}/protected-asset-key`) ||
+          (method === 'POST' &&
             accessScope.role === 'owner' &&
             ['owner-events', 'owner-state'].some(
               (suffix) => resource === `campaigns/${accessScope.campaignId}/${suffix}`
             )) ||
           (method === 'POST' &&
-            accessScope.role === 'member' &&
-            resource === `campaigns/${accessScope.campaignId}/world-commands`) ||
+            resource === `campaigns/${accessScope.campaignId}/world-commands` &&
+            (accessScope.role === 'member' ||
+              (accessScope.role === 'owner' && body?.command?.kind === 'move'))) ||
           presenceControl ||
           (method === 'POST' &&
             responseType === 'asset' &&

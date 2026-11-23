@@ -1,9 +1,11 @@
+// @ts-check
 import { validateMapBoard, freezeSceneData } from './CampaignScene.js';
 import { validateConnections } from './CampaignConnections.js';
 import { validateSavedPlacement, samePlacement } from '../scene/token-adapter/SavedPlacements.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
 import { CONSTRUCTION_MATERIALS } from '../config/biome/ConstructionPalettes.js';
 import { getTokenCommand } from '../config/TokenCommandConfig.js';
+import { CAVERN_SIDES } from '../terrain/generation/CavernInteriors.js';
 
 export const PLAYER_PUBLIC_VERSION = 1;
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -33,7 +35,7 @@ export function sealPlayerAssets(assets) {
 export function validatePlayerAssets(assets) {
   if (sealedAssets.has(assets)) return assets;
   if (
-    !only(assets, ['location', 'maps', 'connections', 'doorPanels']) ||
+    !only(assets, ['location', 'maps', 'connections', 'doorPanels', 'logicalPassages']) ||
     !only(assets.location, ['id', 'name']) ||
     !id(assets.location.id) ||
     typeof assets.location.name !== 'string' ||
@@ -41,6 +43,8 @@ export function validatePlayerAssets(assets) {
     !assets.maps.length ||
     assets.maps.length > 256 ||
     !Array.isArray(assets.connections) ||
+    (assets.logicalPassages !== undefined &&
+      (!Array.isArray(assets.logicalPassages) || assets.logicalPassages.length > 2000)) ||
     (assets.doorPanels !== undefined &&
       (!Array.isArray(assets.doorPanels) || assets.doorPanels.length > 2000))
   )
@@ -172,6 +176,22 @@ export function validatePlayerAssets(assets) {
     )
       invalid('The public connection contains unsupported authoring data');
   validateConnections(assets.connections, assets.maps);
+  const passageIds = new Set(assets.connections.map((connection) => connection.id));
+  const passageSides = new Set();
+  for (const passage of assets.logicalPassages || []) {
+    const side = `${passage?.mapId}:${passage?.side}`;
+    if (
+      !only(passage, ['id', 'mapId', 'side']) ||
+      !id(passage.id) ||
+      passageIds.has(passage.id) ||
+      !maps.has(passage.mapId) ||
+      !CAVERN_SIDES.includes(passage.side) ||
+      passageSides.has(side)
+    )
+      invalid('The public cavern entrance is invalid');
+    passageIds.add(passage.id);
+    passageSides.add(side);
+  }
   return assets;
 }
 

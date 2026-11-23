@@ -6,8 +6,9 @@ import {
   cloneDice,
   applyCriticalRollTint,
 } from '../../../../src/systems/dice/DiceModelManager.js';
+import { ensurePlayerDie } from '../../../../src/systems/dice/PlayerDiceModelManager.js';
 import { scheduleRollAnimation } from '../../../../src/systems/dice/DiceAnimationScheduler.js';
-import { playD20RollOnGrid } from '../../../../src/systems/dice/dice3d.js';
+import { playD20RollOnGrid, playPlayerDieRollOnGrid } from '../../../../src/systems/dice/dice3d.js';
 
 jest.mock('../../../../src/systems/dice/DiceModelManager.js', () => ({
   ensureThreeNamespace: jest.fn(),
@@ -18,6 +19,9 @@ jest.mock('../../../../src/systems/dice/DiceModelManager.js', () => ({
 }));
 jest.mock('../../../../src/systems/dice/DiceAnimationScheduler.js', () => ({
   scheduleRollAnimation: jest.fn(),
+}));
+jest.mock('../../../../src/systems/dice/PlayerDiceModelManager.js', () => ({
+  ensurePlayerDie: jest.fn(),
 }));
 
 describe('Physical d20 completion and cleanup', () => {
@@ -37,6 +41,7 @@ describe('Physical d20 completion and cleanup', () => {
     window.gameManager = { threeSceneManager: manager };
     ensureThreeNamespace.mockResolvedValue(three);
     ensureBlueprint.mockResolvedValue(new three.Group());
+    ensurePlayerDie.mockImplementation(() => Promise.resolve(new three.Group()));
     cloneDice.mockImplementation(() => {
       const mesh = new three.Group();
       material = new three.MeshBasicMaterial();
@@ -118,6 +123,41 @@ describe('Physical d20 completion and cleanup', () => {
     expect(manager.scene.children).toHaveLength(0);
     expect(material.dispose).toHaveBeenCalledTimes(1);
     expect(diceState.activeDieState).toBeNull();
+  });
+
+  test('renders and settles every die in a multiple-player-dice roll', async () => {
+    const schedules = [];
+    scheduleRollAnimation.mockImplementation(async (_, mesh, __, options) => {
+      schedules.push({ mesh, options });
+      return {
+        dispose: jest.fn(() => {
+          mesh.parent?.remove(mesh);
+        }),
+      };
+    });
+
+    const result = playPlayerDieRollOnGrid({
+      sides: 6,
+      diceCount: 3,
+      color: 'emerald',
+      dismissOnClick: false,
+    });
+    for (let i = 0; i < 12; i += 1) await Promise.resolve();
+
+    expect(ensurePlayerDie).toHaveBeenCalledTimes(3);
+    expect(scheduleRollAnimation).toHaveBeenCalledTimes(3);
+    expect(diceState.activeDieState.mesh.children).toHaveLength(3);
+    schedules[0].options.onSettle({ faceInfo: { value: 2 } });
+    schedules[1].options.onSettle({ faceInfo: { value: 5 } });
+    schedules[2].options.onSettle({ faceInfo: { value: 1 } });
+
+    await expect(result).resolves.toEqual({
+      success: true,
+      values: [2, 5, 1],
+      value: null,
+      faceInfo: null,
+    });
+    expect(manager.scene.children).toContain(diceState.activeDieState.mesh);
   });
 
   test('click dismissal uses the active camera after switching lenses', async () => {

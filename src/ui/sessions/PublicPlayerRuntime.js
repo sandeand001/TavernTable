@@ -18,7 +18,7 @@ export default class PublicPlayerRuntime {
     this.pending = Promise.resolve();
   }
 
-  async update(state, { movement = null, placementGrantId = null } = {}) {
+  async update(state, { movement = null, placementGrantId = null, scopedRoutes = false } = {}) {
     if (state.publicScene?.version !== 1)
       throw new Error(
         'The host does not provide the interactive player snapshot. Update the host before playing.'
@@ -41,7 +41,7 @@ export default class PublicPlayerRuntime {
     const apply = async () => {
       if (generation !== this.generation) return { applied: false, reason: 'superseded-snapshot' };
       try {
-        return await this._hydrate(state, { movement, placementGrantId }, generation);
+        return await this._hydrate(state, { movement, placementGrantId, scopedRoutes }, generation);
       } catch (error) {
         this.assetKey = null;
         this.mapId = null;
@@ -74,7 +74,7 @@ export default class PublicPlayerRuntime {
     return { applied: true };
   }
 
-  async _hydrate(state, { movement, placementGrantId }, generation) {
+  async _hydrate(state, { movement, placementGrantId, scopedRoutes }, generation) {
     const current = () => generation === this.generation;
     const superseded = { applied: false, reason: 'superseded-snapshot' };
     const snapshot = state.publicScene;
@@ -120,6 +120,7 @@ export default class PublicPlayerRuntime {
       throw new Error('The public location assets are not cached. Request the complete snapshot.');
     }
     const mapId = snapshot.presentation.mapId;
+    const continuingView = this.mapId === mapId && !changedObserver;
     this.location.viewMapId = mapId;
     const map = this.location.getMap(mapId);
     const changingMap = this.mapId !== mapId || gm.campaignWorld !== this.location;
@@ -148,10 +149,13 @@ export default class PublicPlayerRuntime {
       if (!visible.has(token.id)) gm.tokenManager.removeToken(token);
     const adapter = gm.token3DAdapter;
     const lagged = new Set();
-    if (!assetsChanged && !changingMap && !changedObserver)
+    if (continuingView && (!assetsChanged || scopedRoutes))
       for (const actor of snapshot.actors) {
         const token = gm.placedTokens.find(({ id }) => id === actor.id);
-        if (token?.type === actor.type && adapter.isLaggedMovementCheckpoint(token, actor))
+        if (
+          token?.type === actor.type &&
+          adapter.isLaggedMovementCheckpoint(token, actor, state.sceneRevision)
+        )
           lagged.add(actor.id);
       }
     const sharedMovements = snapshot.updates
@@ -160,7 +164,8 @@ export default class PublicPlayerRuntime {
         return (
           update.motion &&
           this.revision >= 0 &&
-          !assetsChanged &&
+          continuingView &&
+          (!assetsChanged || scopedRoutes) &&
           update.sceneRevision > this.revision &&
           movement?.tokenId !== update.tokenId &&
           !lagged.has(update.tokenId) &&
@@ -202,15 +207,16 @@ export default class PublicPlayerRuntime {
         gm.token3DAdapter.onTokenRemoved(token);
         token.creature = gm.tokenManager.createCreatureByType(actor.type);
       }
-      if (gm.token3DAdapter.isMovementInProgress(token))
-        gm.token3DAdapter.reconcileApprovedMovement?.(token, actor);
+      const moving = gm.token3DAdapter.isMovementInProgress(token);
+      const reachedByRoute = moving && gm.token3DAdapter.reconcileApprovedMovement?.(token, actor);
       if (
         token.type === actor.type &&
         (lagged.has(actor.id) ||
-          ((!movements.has(actor.id) ||
-            gm.token3DAdapter.canContinueApprovedMovement?.(token, movements.get(actor.id)) ===
-              true) &&
-            gm.token3DAdapter.isMovementInProgress(token)))
+          (moving &&
+            (movements.has(actor.id)
+              ? gm.token3DAdapter.canContinueApprovedMovement?.(token, movements.get(actor.id)) ===
+                true
+              : reachedByRoute)))
       ) {
         Object.assign(token, {
           name: actor.name,
@@ -225,6 +231,7 @@ export default class PublicPlayerRuntime {
         else unlinkTokenCharacter(token, actor.movement);
         continue;
       }
+      if (moving) gm.token3DAdapter.cancelApprovedMovement(token);
       Object.assign(token, {
         name: actor.name,
         nameMode: actor.owned ? 'character' : 'custom',
@@ -264,9 +271,9 @@ export default class PublicPlayerRuntime {
     const selected = gm.placedTokens.find(({ id }) => id === selectedId);
     gm.campaignView.focusTokenId = snapshot.presentation.focusTokenId;
     if (changingMap || changedObserver || !selected)
-      await gm.token3DAdapter.setSelectedToken(focused || null);
+      await gm.token3DAdapter.setSelectedToken(focused || null, { restorePlayerSnapshot: true });
     else if (gm.token3DAdapter.getSelectedToken() !== selected)
-      await gm.token3DAdapter.setSelectedToken(selected);
+      await gm.token3DAdapter.setSelectedToken(selected, { restorePlayerSnapshot: true });
     if (!current()) return superseded;
     this.observerId = snapshot.presentation.focusTokenId;
     await gm.token3DAdapter.syncMapProjections();

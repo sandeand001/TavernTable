@@ -190,10 +190,16 @@ export function getBiomeButtons(root = getBiomeRootEl()) {
   return root.querySelectorAll('.biome-btn');
 }
 
-/** Returns a specific biome button by biome key under the biome root (or provided root). */
+/** Returns the family button containing a legacy biome key under the root. */
 export function getBiomeButtonByKey(biomeKey, root = getBiomeRootEl()) {
-  if (!root) return null;
-  return root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+  if (!root || !biomeKey) return null;
+  const exact = root.querySelector(`.biome-btn[data-biome="${biomeKey}"]`);
+  if (exact) return exact;
+  return (
+    [...getBiomeButtons(root)].find((button) =>
+      button.dataset.biomeVariants?.split('|').includes(biomeKey)
+    ) || null
+  );
 }
 
 // ── Placeable UI ───────────────────────────────────────

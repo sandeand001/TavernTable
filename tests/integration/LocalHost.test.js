@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { webcrypto } from 'node:crypto';
+import { randomBytes, webcrypto } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import http from 'node:http';
 import CampaignWorkspace from '../../src/campaigns/CampaignWorkspace.js';
@@ -22,6 +22,7 @@ function proxyRequest(url, headers, body = null) {
       {
         method: body === null ? 'GET' : 'POST',
         headers,
+        agent: false,
       },
       (response) => {
         const chunks = [];
@@ -41,11 +42,15 @@ function proxyRequest(url, headers, body = null) {
   });
 }
 
-async function start(extraArgs = []) {
+async function start(extraArgs = [], extraEnv = {}) {
   const child = spawn(
     process.execPath,
     [path.join(root, 'tools', 'local-host.js'), '--port', '0', '--data-dir', folder, ...extraArgs],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }
+    {
+      cwd: root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE: undefined, ...extraEnv },
+    }
   );
   processes.add(child);
   let errors = '';
@@ -117,6 +122,106 @@ afterEach(async () => {
   await Promise.all([...processes].map(terminate));
   await fs.rm(folder, { recursive: true, force: true });
 });
+
+test('local protected keys require direct authenticated campaign access and stop after revocation', async () => {
+  const key = randomBytes(32).toString('base64');
+  const filename = path.join(folder, 'private-model-keys.json');
+  await fs.writeFile(filename, JSON.stringify({ version: 1, keys: { 'fixture-pack-v1': key } }));
+  const host = await start([], { TAVERNTABLE_PROTECTED_ASSET_KEYS_FILE: filename });
+  const session = await (
+    await fetch(host.url + '/api/session', { headers: { Cookie: host.cookie } })
+  ).json();
+  expect(session.localProtectedAssets).toBe(true);
+  const first = (await host.request('create', [{ name: 'Protected table', ruleset: '2024' }]))
+    .result;
+  const second = (await host.request('create', [{ name: 'Other table', ruleset: '2024' }])).result;
+  const request = (cookie, csrf, campaignId, headers = {}) =>
+    fetch(host.url + '/api/protected-asset-key', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookie,
+        'X-TavernTable-Host': csrf,
+        ...headers,
+      },
+      body: JSON.stringify({ campaignId, keyId: 'fixture-pack-v1' }),
+    });
+  expect((await request('', '', first.id)).status).toBe(401);
+  expect((await request(host.cookie, 'wrong', first.id)).status).toBe(403);
+  expect(
+    (await request(host.cookie, session.csrf, first.id, { Origin: 'https://unrelated.invalid' }))
+      .status
+  ).toBe(403);
+  expect(
+    (await request(host.cookie, session.csrf, first.id, { 'X-Forwarded-For': '203.0.113.1' }))
+      .status
+  ).toBe(403);
+  const ownerKey = await request(host.cookie, session.csrf, first.id);
+  expect(ownerKey.status).toBe(200);
+  expect(ownerKey.headers.get('cache-control')).toBe('no-store');
+  expect(await ownerKey.json()).toEqual({ version: 1, keyId: 'fixture-pack-v1', key });
+
+  const invitation = (await host.request('createInvite', [first.id, { name: 'Local player' }]))
+    .result;
+  const joined = await fetch(host.url + '/api/session/join', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ invite: invitation.invite }),
+  });
+  const player = await joined.json();
+  const cookie = joined.headers.get('set-cookie').split(';')[0];
+  expect(player.localProtectedAssets).toBe(true);
+  expect((await request(cookie, player.csrf, second.id)).status).toBe(403);
+  expect((await request(cookie, player.csrf, first.id)).status).toBe(200);
+
+  const pending = http.request(host.url + '/api/protected-asset-key', {
+    method: 'POST',
+    agent: false,
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+      'X-TavernTable-Host': player.csrf,
+      Expect: '100-continue',
+    },
+  });
+  const pendingStatus = new Promise((resolve, reject) => {
+    pending.once('response', (response) => {
+      response.resume();
+      response.once('end', () => resolve(response.statusCode));
+      response.once('error', reject);
+    });
+    pending.once('error', reject);
+  });
+  const started = new Promise((resolve, reject) => {
+    pending.once('continue', resolve);
+    pending.once('error', reject);
+  });
+  pending.flushHeaders();
+  await started;
+  expect((await host.request('revokeInvite', [first.id, invitation.id])).status).toBe(200);
+  pending.end(JSON.stringify({ campaignId: first.id, keyId: 'fixture-pack-v1' }));
+  expect(await pendingStatus).toBe(401);
+  expect((await request(cookie, player.csrf, first.id)).status).toBe(401);
+}, 30000);
+
+test('unconfigured local hosts do not advertise or provide protected keys', async () => {
+  const host = await start();
+  const session = await (
+    await fetch(host.url + '/api/session', { headers: { Cookie: host.cookie } })
+  ).json();
+  expect(session).not.toHaveProperty('localProtectedAssets');
+  const response = await fetch(host.url + '/api/protected-asset-key', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: host.cookie,
+      'X-TavernTable-Host': session.csrf,
+    },
+    body: JSON.stringify({ campaignId: 'missing', keyId: 'fixture-pack-v1' }),
+  });
+  expect(response.status).toBe(503);
+  expect((await response.json()).error).toMatch(/not configured/i);
+}, 30000);
 
 test('authenticated live notifications publish committed changes and reject anonymous subscribers', async () => {
   const host = await start();
@@ -268,6 +373,9 @@ test('the local host rejects foreign origins, missing tokens and non-public stat
   expect((await host.request('close')).status).toBe(400);
   expect((await fetch(host.url + '/.git/config')).status).toBe(404);
   expect((await fetch(host.url + '/tools/local-host.js')).status).toBe(404);
+  expect(
+    (await fetch(host.url + '/assets%5C..%5Ctools%5Clocal-host.js', { method: 'HEAD' })).status
+  ).toBe(404);
   expect(
     (await fetch(host.url + '/src/campaigns/CampaignStore.js')).headers.get('content-type')
   ).toContain('javascript');

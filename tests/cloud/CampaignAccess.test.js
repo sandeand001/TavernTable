@@ -39,7 +39,10 @@ const {
   structureVolumes,
 } = require('../../src/terrain/ConstructionBlueprints.js');
 
-async function fixture(t, { now, withAssets = false, cleanup = false } = {}) {
+async function fixture(
+  t,
+  { now, withAssets = false, cleanup = false, eligibilityMode = 'pilot' } = {}
+) {
   const runtime = await createEmulatorRuntime();
   const campaigns = [];
   const uids = [];
@@ -104,7 +107,11 @@ async function fixture(t, { now, withAssets = false, cleanup = false } = {}) {
       'utf8'
     )
   );
-  const access = new CloudAccountAccess({ auth: runtime.auth, firestore: runtime.firestore });
+  const access = new CloudAccountAccess({
+    auth: runtime.auth,
+    firestore: runtime.firestore,
+    eligibilityMode,
+  });
   const resources = new HostResources({ root: path.join(__dirname, '..', '..'), manifest });
   const createStore = () =>
     new CloudCampaignStore({
@@ -5544,6 +5551,72 @@ test(
     assert.equal(seat.joined, false);
     assert.deepEqual(seat.characterIds, [characterId]);
     assert.deepEqual(await normal.readCharacters(campaign.id), before);
+  }
+);
+
+test(
+  'public users own their games and retain joined games and model keys until player access is removed',
+  { timeout: 30000 },
+  async (t) => {
+    const f = await fixture(t, { cleanup: true, eligibilityMode: 'public' });
+    const owner = await f.account({ eligible: false });
+    const player = await f.account({ eligible: false });
+    const outsider = await f.account({ eligible: false });
+    const owned = await f.create(owner.principal, 'Owner campaign');
+    const personal = await f.create(player.principal, 'Player-owned campaign');
+    const prepared = invitation('Player');
+    const issued = await f.store.createInvitation(owner.principal, owned.id, prepared.command);
+    await f.store.redeemInvitation(player.principal, {
+      commandId: randomUUID(),
+      invitationId: issued.id,
+      secret: prepared.secret,
+    });
+    assert.deepEqual(await f.createStore().listAccess(player.principal), {
+      owned: [summary(personal, 'owner')],
+      joined: [summary(owned, 'member', issued.seatId)],
+    });
+    assert.equal(
+      (await f.runtime.firestore.collection('pilotAccounts').doc(pilotAccountKey(player.uid)).get())
+        .exists,
+      false
+    );
+    const key = randomBytes(32).toString('base64');
+    const api = await cloudApi({
+      access: f.access,
+      store: f.store,
+      protectedAssetKeys: { get: (id) => (id === 'fixture-pack-v1' ? key : null) },
+    });
+    t.after(() => api.close());
+    const ownerClient = f.client(owner, api);
+    const playerClient = f.client(player, api);
+    const outsiderClient = f.client(outsider, api);
+    t.after(() => {
+      ownerClient.close();
+      playerClient.close();
+      outsiderClient.close();
+    });
+    assert.equal(await ownerClient.getProtectedAssetKey(owned.id, 'fixture-pack-v1'), key);
+    await assert.rejects(ownerClient.getProtectedAssetKey(owned.id, 'missing-pack'), {
+      code: 'protected-key-not-found',
+    });
+    assert.equal(await playerClient.getProtectedAssetKey(owned.id, 'fixture-pack-v1'), key);
+    assert.equal(await playerClient.getProtectedAssetKey(personal.id, 'fixture-pack-v1'), key);
+    await assert.rejects(outsiderClient.getProtectedAssetKey(owned.id, 'fixture-pack-v1'), {
+      code: 'campaign-not-found',
+    });
+    const grant = await f.store.getParticipantAccess(player.principal, owned.id);
+    await ownerClient.removeMember(owned.id, {
+      seatId: grant.access.seatId,
+      accessGeneration: grant.access.accessGeneration,
+    });
+    assert.deepEqual(await f.createStore().listAccess(player.principal), {
+      owned: [summary(personal, 'owner')],
+      joined: [],
+    });
+    await assert.rejects(playerClient.getProtectedAssetKey(owned.id, 'fixture-pack-v1'), {
+      code: 'campaign-not-found',
+    });
+    assert.equal(await playerClient.getProtectedAssetKey(personal.id, 'fixture-pack-v1'), key);
   }
 );
 

@@ -37,6 +37,7 @@ export function buildPlayerTerrainView({ world, map, observer, visibleMapIds, ob
           : reference,
         three,
         worldUnitsPerFoot: map.grid.tileWorldSize / 5,
+        recordRoofSurfaces: true,
         ...getMapTerrainAppearance(world, map),
       })
     );
@@ -50,6 +51,16 @@ export function buildPlayerTerrainView({ world, map, observer, visibleMapIds, ob
     gm.threeSceneManager.scene.traverseVisible((object) => {
       if (object.isMesh) pieces.push(object.geometry.clone().applyMatrix4(object.matrixWorld));
     });
+    for (const geometry of pieces) {
+      if (geometry.getAttribute('roofSurface')) continue;
+      geometry.setAttribute(
+        'roofSurface',
+        new three.Float32BufferAttribute(
+          new Float32Array(geometry.getAttribute('position').count),
+          1
+        )
+      );
+    }
     merged = mergeGeometries(pieces);
     if (!merged) throw new Error('The player terrain surfaces could not be combined');
     if (map.id === observer.mapId && map.base === 'floor') return merged;
@@ -59,8 +70,12 @@ export function buildPlayerTerrainView({ world, map, observer, visibleMapIds, ob
     const visible = new TerrainSightMask({
       three,
       observerFeet: world.toCampaignPosition(observer.mapId, observer.pose.world),
-      obstacles,
-    }).apply(merged, { toCampaign });
+      obstacles: obstacles.filter((obstacle) => obstacle.layerId !== 'roof'),
+    }).apply(merged, {
+      toCampaign,
+      allowBackfacesFor: 'roofSurface',
+      ignoreObstaclesFor: 'roofSurface',
+    });
     merged.dispose();
     merged = null;
     return visible;

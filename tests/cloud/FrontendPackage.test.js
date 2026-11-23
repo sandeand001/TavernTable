@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createHash } = require('node:crypto');
+const { createHash, randomBytes } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 const { buildCloudFrontend, verifyCloudFrontend } = require('../../tools/cloud/build-frontend.js');
 const { resolvePublicFile } = require('../../tools/public-files.js');
+const { encryptProtectedAsset } = require('../../tools/cloud/protected-assets.js');
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const disk = (root, relative) => path.join(root, ...relative.split('/'));
@@ -47,7 +48,19 @@ async function fixture(t) {
   await write('src/style.css', 'body { color: black; }\n');
   await write(
     'src/core/ModelAssetCache.js',
-    "const base = 'assets/terrain/3d Assets/OBJ'; export const refs = [`${base}/Fixture.obj`, 'Fixture.png'];\n"
+    `const base = 'assets/terrain/3d Assets/OBJ'; export const refs = [
+      \`\${base}/Fixture.obj\`,
+      'Fixture.png',
+      'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.gltf',
+      'assets/terrain/representatives/dungeon/Wall_Modular.fbx',
+      'assets/terrain/representatives/dungeon/Torch.fbx',
+      'assets/terrain/representatives/cave-cc0/mine-frame.glb',
+      'assets/terrain/representatives/cave-cc0/stalagmite-cluster.glb',
+      'assets/terrain/representatives/cave-cc0/stone-column.glb',
+      'assets/terrain/representatives/chest-cc0/dungeon-chest.fbx',
+      'assets/terrain/representatives/fungal/Fly_Agaric_Big.fbx',
+      'assets/terrain/representatives/fungal/Purple_Mushrooms_Cluster_3.fbx'
+    ];\n`
   );
   await write('src/core/ModelPostProcessing.js', "export const materialTexture = 'Fixture.png';\n");
   await write(
@@ -59,6 +72,8 @@ async function fixture(t) {
     "export const model = 'assets/animated-sprites/Fixture.fbx';\n"
   );
   await write('src/config/token-adapter/CoverMetrics.js', 'export const metrics = {};\n');
+  await write('src/config/PlayerDiceCatalog.js', 'export const dice = {};\n');
+  await write('src/config/assets/PurePolyAssets.js', 'export const assets = [];\n');
   for (const relative of [
     'assets/animated-sprites/Fixture.fbx',
     'assets/animated-sprites/Unused.fbx',
@@ -72,8 +87,63 @@ async function fixture(t) {
     'assets/Items/d20-gold.glb',
     'assets/terrain/3d Assets/Tropical/source/MZRa_Pack_M02P.fbx',
     'assets/terrain/3d Assets/License_Pro.txt',
+    'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.bin',
+    'assets/terrain/representatives/village/T_Plaster_BaseColor.png',
+    'assets/terrain/representatives/village/Wall_Plaster_Straight.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Straight.bin',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Wide_Flat.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Wide_Flat.bin',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Thin_Round.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Thin_Round.bin',
+    'assets/terrain/representatives/village/Roof_RoundTiles_6x8.gltf',
+    'assets/terrain/representatives/village/Roof_RoundTiles_6x8.bin',
+    'assets/terrain/representatives/village/Balcony_Simple_Straight.gltf',
+    'assets/terrain/representatives/village/Balcony_Simple_Straight.bin',
+    'assets/terrain/representatives/village/Roof_Front_Brick6.gltf',
+    'assets/terrain/representatives/village/Roof_Front_Brick6.bin',
+    'assets/terrain/representatives/village/T_Brick_BaseColor.png',
+    'assets/terrain/representatives/village/T_Brick_Normal.png',
+    'assets/terrain/representatives/village/T_Brick_Roughness.png',
+    'assets/terrain/representatives/village/T_RoundTiles_BaseColor.png',
+    'assets/terrain/representatives/village/T_RoundTiles_Normal.png',
+    'assets/terrain/representatives/village/T_RoundTiles_Roughness.png',
+    'assets/terrain/representatives/village/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/dungeon/Wall_Modular.fbx',
+    'assets/terrain/representatives/dungeon/Torch.fbx',
+    'assets/terrain/representatives/dungeon/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave/Mine Entrance Wooden Portal.glb',
+    'assets/terrain/representatives/cave/Stalagmite Cluster.glb',
+    'assets/terrain/representatives/cave/Natural Rock Column.glb',
+    'assets/terrain/representatives/cave/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave/LICENSE.txt',
+    'assets/terrain/representatives/cave/AI_NOTICE.txt',
+    'assets/terrain/representatives/cave/USAGE_TERMS.json',
+    'assets/terrain/representatives/cave/ASSET_MANIFEST.json',
+    'assets/terrain/representatives/chest/SM_Chest_Iron_M_01.glb',
+    'assets/terrain/representatives/chest/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave-cc0/mine-frame.glb',
+    'assets/terrain/representatives/cave-cc0/stalagmite-cluster.glb',
+    'assets/terrain/representatives/cave-cc0/stone-column.glb',
+    'assets/terrain/representatives/cave-cc0/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave-cc0/ASSET_MANIFEST.json',
+    'assets/terrain/representatives/chest-cc0/dungeon-chest.fbx',
+    'assets/terrain/representatives/chest-cc0/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/fungal/Fly_Agaric_Big.fbx',
+    'assets/terrain/representatives/fungal/Purple_Mushrooms_Cluster_3.fbx',
+    'assets/terrain/representatives/fungal/Forest_Pack_BaseColor.png',
+    'assets/terrain/representatives/fungal/Forest_Kit_License.txt',
+    'assets/terrain/representatives/fungal/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/fungal/ASSET_MANIFEST.json',
     'assets/data/SRD2014-NOTICE.txt',
     'assets/data/SRD2014-UPSTREAM-LICENSE.txt',
+    'assets/Items/player-dice-set/player-dice-set.glb',
+    'assets/Items/player-dice-set/NOTICE.txt',
+    ...Array.from({ length: 7 }, (_, index) => index + 1).flatMap((variant) =>
+      ['basecolor', 'normal', 'roughness'].map(
+        (name) => `assets/Items/player-dice-set/textures/${variant}/${name}.png`
+      )
+    ),
   ])
     await write(relative, 'Synthetic public fixture bytes\n');
   await write('assets/FRONTEND-NOTICES.txt', 'Synthetic artwork notices\n');
@@ -130,8 +200,8 @@ test('a deterministic static-only package contains only reachable code, approved
   assert.deepEqual(await verifyCloudFrontend(f.out('first')), first);
   assert.ok(first.files.some((file) => file.source === 'src/name.js'));
   assert.ok(first.files.some((file) => file.source.endsWith('MZRa_Pack_M02P.fbx')));
-  assert.equal(first.assetSelection.candidateFiles, 9);
-  assert.equal(first.assetSelection.selectedFiles, 5);
+  assert.equal(first.assetSelection.candidateFiles, 47);
+  assert.equal(first.assetSelection.selectedFiles, 43);
   assert.equal(first.assetSelection.excludedFiles, 4);
   assert.equal(
     first.assetSelection.candidateBytes,
@@ -142,6 +212,34 @@ test('a deterministic static-only package contains only reachable code, approved
     'assets/terrain/3d Assets/OBJ/Fixture.obj',
     'assets/terrain/3d Assets/Textures/Fixture.png',
     'assets/terrain/3d Assets/Tropical/textures/Fixture.png',
+    'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Door_Flat.bin',
+    'assets/terrain/representatives/village/T_Plaster_BaseColor.png',
+    'assets/terrain/representatives/village/Wall_Plaster_Straight.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Wide_Flat.gltf',
+    'assets/terrain/representatives/village/Wall_Plaster_Window_Thin_Round.gltf',
+    'assets/terrain/representatives/village/Roof_RoundTiles_6x8.gltf',
+    'assets/terrain/representatives/village/Balcony_Simple_Straight.gltf',
+    'assets/terrain/representatives/village/Roof_Front_Brick6.gltf',
+    'assets/terrain/representatives/village/T_Brick_BaseColor.png',
+    'assets/terrain/representatives/village/T_RoundTiles_BaseColor.png',
+    'assets/terrain/representatives/village/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/dungeon/Wall_Modular.fbx',
+    'assets/terrain/representatives/dungeon/Torch.fbx',
+    'assets/terrain/representatives/dungeon/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave-cc0/mine-frame.glb',
+    'assets/terrain/representatives/cave-cc0/stalagmite-cluster.glb',
+    'assets/terrain/representatives/cave-cc0/stone-column.glb',
+    'assets/terrain/representatives/cave-cc0/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/cave-cc0/ASSET_MANIFEST.json',
+    'assets/terrain/representatives/chest-cc0/dungeon-chest.fbx',
+    'assets/terrain/representatives/chest-cc0/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/fungal/Fly_Agaric_Big.fbx',
+    'assets/terrain/representatives/fungal/Purple_Mushrooms_Cluster_3.fbx',
+    'assets/terrain/representatives/fungal/Forest_Pack_BaseColor.png',
+    'assets/terrain/representatives/fungal/Forest_Kit_License.txt',
+    'assets/terrain/representatives/fungal/SOURCE-NOTICE.txt',
+    'assets/terrain/representatives/fungal/ASSET_MANIFEST.json',
   ])
     assert.ok(
       first.files.some((file) => file.source === source),
@@ -152,6 +250,10 @@ test('a deterministic static-only package contains only reachable code, approved
     'assets/terrain/3d Assets/OBJ/Unused.obj',
     'assets/terrain/3d Assets/Textures/Unused.png',
     'assets/terrain/3d Assets/Tropical/textures/Unused.png',
+    'assets/terrain/representatives/cave/Mine Entrance Wooden Portal.glb',
+    'assets/terrain/representatives/cave/Stalagmite Cluster.glb',
+    'assets/terrain/representatives/cave/Natural Rock Column.glb',
+    'assets/terrain/representatives/chest/SM_Chest_Iron_M_01.glb',
   ])
     assert.equal(
       first.files.some((file) => file.source === source),
@@ -206,6 +308,92 @@ test('a deterministic static-only package contains only reachable code, approved
         [404, 'ENOENT', 'ENOTDIR'].includes(error.status ?? error.code)
       );
   }
+});
+
+test('only referenced encrypted envelopes are published and private source folders are not served', async (t) => {
+  const f = await fixture(t);
+  const json = Buffer.from('{"asset":{"version":"2.0"},"scenes":[{"nodes":[]}]} ');
+  const glb = Buffer.alloc(20 + json.length);
+  glb.write('glTF', 0);
+  glb.writeUInt32LE(2, 4);
+  glb.writeUInt32LE(glb.length, 8);
+  glb.writeUInt32LE(json.length, 12);
+  glb.writeUInt32LE(0x4e4f534a, 16);
+  json.copy(glb, 20);
+  const encrypted = encryptProtectedAsset(glb, {
+    key: randomBytes(32),
+    keyId: 'fixture-pack-v1',
+    assetId: 'fixture-model',
+  });
+  await f.write('assets/protected/fixture-model.ttasset', encrypted);
+  const manifestModel = encryptProtectedAsset(glb, {
+    key: randomBytes(32),
+    keyId: 'fixture-pack-v1',
+    assetId: 'manifest-model',
+  });
+  await f.write('assets/protected/manifest-model.ttasset', manifestModel);
+  await f.write(
+    'src/config/assets/PurePolyAssets.js',
+    "export const selected = 'assets/protected/manifest-model.ttasset';\n"
+  );
+  await f.write('assets/protected/unused.ttasset', encrypted);
+  await f.write('assets/protected/plaintext.glb', 'PRIVATE_MODEL_SENTINEL');
+  await f.write('assets/protected/keys.json', 'PRIVATE_KEY_SENTINEL');
+  await f.write('assets/protected/fake.ttasset', 'glTF plaintext is not an envelope');
+  for (const relative of [
+    'assets/terrain/source-packs/example/contents/model.glb',
+    'assets/animated-sprites/source-packs/source.zip',
+    'assets/Items/source-packs/source.zip',
+  ])
+    await f.write(relative, 'PRIVATE_MODEL_SENTINEL');
+  const registry = disk(f.root, 'src/core/ModelAssetCache.js');
+  await fs.appendFile(
+    registry,
+    "\nexport const protectedModel = 'assets/protected/fixture-model.ttasset';\n"
+  );
+
+  const build = await f.build('protected');
+  assert.ok(build.files.some((file) => file.source === 'assets/protected/fixture-model.ttasset'));
+  assert.ok(build.files.some((file) => file.source === 'assets/protected/manifest-model.ttasset'));
+  for (const source of [
+    'assets/protected/unused.ttasset',
+    'assets/protected/plaintext.glb',
+    'assets/protected/keys.json',
+    'assets/protected/fake.ttasset',
+  ])
+    assert.equal(
+      build.files.some((file) => file.source === source),
+      false,
+      source
+    );
+  for (const pathname of [
+    '/assets/protected/plaintext.glb',
+    '/assets/protected/keys.json',
+    '/assets/protected/fake.ttasset',
+    '/assets/terrain/source-packs/example/contents/model.glb',
+    '/assets\\terrain\\source-packs\\example\\contents\\model.glb',
+    '/assets\\..\\.env',
+    '/assets/animated-sprites/source-packs/source.zip',
+    '/assets/Items/source-packs/source.zip',
+    '/assets/terrain/representatives/cave/Stalagmite Cluster.glb',
+    '/assets/terrain/representatives/chest/SM_Chest_Iron_M_01.glb',
+  ])
+    await assert.rejects(resolvePublicFile(f.root, pathname), { status: 404 });
+  assert.equal(
+    (await resolvePublicFile(f.root, '/assets/protected/fixture-model.ttasset')).size,
+    encrypted.length
+  );
+  await fs.appendFile(registry, "\nexport const badModel = 'assets/protected/fake.ttasset';\n");
+  await assert.rejects(f.build('bad-protected'), /protected/i);
+});
+
+test('a referenced protected model must exist before a frontend release can be built', async (t) => {
+  const f = await fixture(t);
+  await fs.appendFile(
+    disk(f.root, 'src/core/ModelAssetCache.js'),
+    "\nexport const protectedModel = 'assets/protected/missing-model.ttasset';\n"
+  );
+  await assert.rejects(f.build('missing-protected'), /referenced protected model.*missing/i);
 });
 
 test('one verified previous release survives an update and unsupported or corrupted packages cannot be retained', async (t) => {

@@ -1,4 +1,13 @@
-import { BoxGeometry, Mesh, MeshPhongMaterial, Scene, Texture } from 'three';
+import {
+  BoxGeometry,
+  Matrix4,
+  Mesh,
+  MeshPhongMaterial,
+  Raycaster,
+  Scene,
+  Texture,
+  Vector3,
+} from 'three';
 
 import { PlaceableMeshPool } from '../../../../src/scene/terrain/PlaceableMeshPool.js';
 
@@ -47,6 +56,77 @@ function materialFor(pool, handle) {
 }
 
 describe('Biome-specific model appearances', () => {
+  test('glowing mushrooms use owned emissive materials and scale with the map grid', async () => {
+    const { pool, gameManager, bark, leaves, texture } = makePool();
+    gameManager.spatial.tileWorldSize = 0.8;
+    const handle = await pool.addPlaceable({
+      ...placement('fungalGrove'),
+      modelKey: 'mushroom-glow',
+      placeableId: 'mushroom-glow',
+    });
+    const materials = materialFor(pool, handle);
+    expect(materials.every((material) => material.emissiveIntensity > 0)).toBe(true);
+    expect(materials.every((material) => material.emissiveMap === texture)).toBe(true);
+    expect(bark.emissive.getHex()).toBe(0);
+    expect(leaves.emissive.getHex()).toBe(0);
+    expect(pool._metadata.get(handle.key).get(handle.index).scale).toEqual({
+      x: 0.8,
+      y: 0.8,
+      z: 0.8,
+    });
+  });
+
+  test('untextured cavern formations stay readable without changing cached source materials', async () => {
+    const { pool, bark, leaves } = makePool();
+    bark.map = null;
+    leaves.map = null;
+    bark.color.setHex(0x4c463f);
+    leaves.color.setHex(0x393836);
+    const handle = await pool.addPlaceable({
+      ...placement('cavern'),
+      modelKey: 'source-cave-stalagmite',
+      placeableId: 'source-cave-stalagmite',
+    });
+    const materials = materialFor(pool, handle);
+    expect(materials[0].color.r).toBeGreaterThan(bark.color.r);
+    expect(materials[1].color.g).toBeGreaterThan(leaves.color.g);
+    expect(bark.color.getHex()).toBe(0x4c463f);
+    expect(leaves.color.getHex()).toBe(0x393836);
+  });
+
+  test('textured cavern formations keep their stone detail without overbrightening the map', async () => {
+    const { pool, bark, leaves, texture } = makePool();
+    const handle = await pool.addPlaceable({
+      ...placement('cavern'),
+      modelKey: 'source-cave-stalagmite',
+      placeableId: 'source-cave-stalagmite',
+    });
+    const materials = materialFor(pool, handle);
+    expect(materials[0].map).toBe(texture);
+    expect(materials[0].color.equals(bark.color)).toBe(true);
+    expect(materials[1].color.equals(leaves.color)).toBe(true);
+  });
+
+  test('a model rests on a below-zero underground floor using its actual support anchor', async () => {
+    const { pool, gameManager, model } = makePool();
+    model.position.y = 0.75;
+    model.updateMatrixWorld(true);
+    gameManager.getTerrainHeight = () => -2;
+    const handle = await pool.addPlaceable(placement('crystalSpires'));
+    const group = pool._groups.get(handle.key);
+    const matrix = new Matrix4();
+    group.instancedMesh.getMatrixAt(handle.index, matrix);
+    group.instancedMesh.geometry.computeBoundingBox();
+    const bounds = group.instancedMesh.geometry.boundingBox.clone().applyMatrix4(matrix);
+
+    expect(bounds.min.y).toBeCloseTo(-1, 6);
+    gameManager.getTerrainHeight = () => -4;
+    await pool.resyncHeights();
+    group.instancedMesh.getMatrixAt(handle.index, matrix);
+    bounds.copy(group.instancedMesh.geometry.boundingBox).applyMatrix4(matrix);
+    expect(bounds.min.y).toBeCloseTo(-2, 6);
+  });
+
   test('Arcane models have isolated translucent materials without changing cached assets', async () => {
     const { pool, bark, leaves, texture } = makePool();
     const handle = await pool.addPlaceable(placement('arcaneLeyNexus'));
@@ -121,6 +201,73 @@ describe('Biome-specific model appearances', () => {
     expect(group.instancedMesh.material).toBe(originalMaterial);
     expect(group.instancedMesh.material[1].opacity).toBeLessThan(1);
     expect(group.instancedMesh.castShadow).toBe(false);
+  });
+
+  test.each(['purgeAll', 'fullReset', 'dispose'])(
+    'crystal depth follows growth, height changes and %s cleanup',
+    async (operation) => {
+      const { pool, bark, leaves, model, scene } = makePool(1);
+      model.geometry.clearGroups();
+      model.geometry.addGroup(0, model.geometry.index.count, 0);
+      const first = await pool.addPlaceable({
+        ...placement('crystalSpires'),
+        modelKey: 'source-cave-stalagmite',
+        placeableId: 'source-cave-stalagmite',
+      });
+      const group = pool._groups.get(first.key);
+      const original = group.instancedMesh;
+      const depth = group.depthPrepass;
+      const materialDispose = jest.spyOn(depth.material, 'dispose');
+      const meshDispose = jest.spyOn(depth, 'dispose');
+      const sourceDisposals = [jest.spyOn(bark, 'dispose'), jest.spyOn(leaves, 'dispose')];
+      depth.computeBoundingSphere();
+
+      await pool.addPlaceable({
+        ...placement('crystalSpires'),
+        modelKey: 'source-cave-stalagmite',
+        placeableId: 'source-cave-stalagmite',
+      });
+      expect(group.instancedMesh).not.toBe(original);
+      expect(depth.parent).toBe(group.instancedMesh);
+      expect(depth.instanceMatrix).toBe(group.instancedMesh.instanceMatrix);
+      expect(depth.count).toBe(2);
+      expect(depth.boundingSphere).toBeNull();
+      scene.updateMatrixWorld(true);
+      const ray = new Raycaster(new Vector3(1.5, 0.5, -5), new Vector3(0, 0, 1));
+      const hits = ray.intersectObject(group.instancedMesh, true);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits.every(({ object }) => object === group.instancedMesh)).toBe(true);
+      depth.computeBoundingSphere();
+      await pool.resyncHeights();
+      expect(depth.boundingSphere).toBeNull();
+
+      pool.clearAll();
+      expect(depth.count).toBe(0);
+      await pool[operation]();
+      expect(materialDispose).toHaveBeenCalledTimes(1);
+      expect(meshDispose).toHaveBeenCalledTimes(1);
+      expect(depth.parent).toBeNull();
+      for (const dispose of sourceDisposals) expect(dispose).not.toHaveBeenCalled();
+    }
+  );
+
+  test('depth prepass is limited to Crystal Spires cave formations', async () => {
+    const { pool } = makePool();
+    const cavern = await pool.addPlaceable({
+      ...placement('cavern'),
+      modelKey: 'source-cave-stalagmite',
+      placeableId: 'source-cave-stalagmite',
+    });
+    const tree = await pool.addPlaceable(placement('crystalSpires'));
+    const column = await pool.addPlaceable({
+      ...placement('crystalSpires'),
+      modelKey: 'source-cave-column',
+      placeableId: 'source-cave-column',
+    });
+    expect(pool._groups.get(cavern.key).depthPrepass).toBeNull();
+    expect(pool._groups.get(tree.key).depthPrepass).toBeNull();
+    expect(pool._groups.get(column.key).depthPrepass).not.toBeNull();
+    pool.purgeAll();
   });
 
   test('purging disposes owned material arrays without disposing cached source materials', async () => {

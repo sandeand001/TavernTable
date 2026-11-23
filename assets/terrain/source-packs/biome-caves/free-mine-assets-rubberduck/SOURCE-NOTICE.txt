@@ -1,0 +1,8 @@
+Free Mine Assets
+Creator: rubberduck
+Source: https://opengameart.org/content/free-mine-assets-pack
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+The catalog counts only the two selected runtime derivatives.
+Source archive SHA-256: 526057cfbfa67933f7fe9173c730212b479a3fb3feb5a71f33ace377f0e4fcb5
+The original source and textures are not included with the runtime.

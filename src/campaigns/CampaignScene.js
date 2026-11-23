@@ -97,6 +97,8 @@ function validateBoard(grid, terrain, version, base = 'ground', previousGeometry
     !finite(terrain.treeDensity, 0, 100) ||
     (terrain.structureGenerationEnabled !== undefined &&
       typeof terrain.structureGenerationEnabled !== 'boolean') ||
+    (terrain.generationRecipe !== undefined &&
+      (!record(terrain.generationRecipe) || !jsonSettings(terrain.generationRecipe))) ||
     !record(terrain.richShading) ||
     !jsonSettings(terrain.richShading) ||
     !Array.isArray(terrain.placeables) ||
@@ -156,7 +158,10 @@ function validateBoard(grid, terrain, version, base = 'ground', previousGeometry
             placement[key].length > 500 ||
             /(?:^https?:|^data:|^blob:|\.\.)/i.test(placement[key]))
       ) ||
-      (placement.heightOffset !== undefined && !finite(placement.heightOffset))
+      (placement.heightOffset !== undefined && !finite(placement.heightOffset)) ||
+      (placement.gridOffsetX === undefined) !== (placement.gridOffsetY === undefined) ||
+      (placement.gridOffsetX !== undefined &&
+        (!finite(placement.gridOffsetX, -0.5, 0.5) || !finite(placement.gridOffsetY, -0.5, 0.5)))
     )
       failure('placeable references');
   }
@@ -185,6 +190,11 @@ export function freezeSceneData(value, seen = new WeakSet()) {
   seen.add(value);
   for (const child of Object.values(value)) freezeSceneData(child, seen);
   return Object.freeze(value);
+}
+
+export function reuseSceneGeometry(previousLibrary, nextLibrary) {
+  const cached = sceneGeometryByLibrary.get(previousLibrary);
+  if (cached) sceneGeometryByLibrary.set(nextLibrary, cached);
 }
 
 export function validateScene(scene, { ruleset, library }) {
@@ -292,7 +302,9 @@ export function validateScene(scene, { ruleset, library }) {
     }
     if (!record(scene.view) || !boards.has(scene.view.mapId)) failure('participant map view');
     validateConnections(scene.connections, scene.maps);
+    validateLogicalPassages(scene.logicalPassages, scene.maps, scene.connections);
   } else {
+    if (scene.logicalPassages !== undefined) failure('logical cavern passages');
     validateCampaignLocations(scene);
     legacyBoard = validateBoard(scene.grid, scene.terrain, scene.version);
   }
@@ -528,3 +540,4 @@ export function decodeScene(text, context) {
   return validateScene(JSON.parse(text), context);
 }
 import { validateCampaignLocations } from './CampaignLocations.js';
+import { validateLogicalPassages } from './CampaignLogicalPassages.js';

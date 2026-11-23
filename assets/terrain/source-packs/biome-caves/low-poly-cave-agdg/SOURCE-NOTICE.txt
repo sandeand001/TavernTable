@@ -1,0 +1,8 @@
+Low Poly Cave Assets
+Creator: agdg reject
+Source: https://opengameart.org/content/low-poly-cave-assets
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+The catalog counts only the selected runtime derivative.
+Source cave_pillar1.obj SHA-256: 4358fd08bdd35c1fccc461ec1203f3636f508f3b34c4a3312db342c11c4351cd
+The original OBJ and texture are not included with the runtime.

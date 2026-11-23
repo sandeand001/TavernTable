@@ -474,6 +474,12 @@ export class InteractionManager {
             gridY != null;
 
           if (canNavigate) {
+            const sharedMove = gm.requestCloudOwnerMove?.(selectedToken, {
+              ...safeTarget,
+              gridX,
+              gridY,
+            });
+            if (sharedMove && (await sharedMove)) return;
             const tokenDescriptor = this._describeTokenForLogs(selectedToken);
             logger.log('Token navigation requested', LOG_LEVEL.INFO, LOG_CATEGORY.INTERACTION, {
               source: 'grid-click',

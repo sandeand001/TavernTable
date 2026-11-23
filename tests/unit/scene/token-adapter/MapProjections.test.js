@@ -171,6 +171,32 @@ function outsideFixture(mapChanges = {}) {
   return board;
 }
 
+test('a remote underwater creature retains the visible water surface in its projected context', () => {
+  const { gm, observer } = outsideFixture();
+  const saved = gm.campaignWorld.save();
+  const map = saved.maps.find((entry) => entry.id === 'inside');
+  map.base = 'ground';
+  map.terrain.biome = 'riverLake';
+  map.terrain.heights = map.terrain.heights.map((row) => row.map(() => -2));
+  map.terrain.geometry = { version: 1, volumes: [] };
+  for (const creature of saved.creatures.filter((entry) => entry.mapId === 'inside'))
+    creature.pose.world.y = -0.6;
+  gm.campaignWorld.acceptCheckpoint(saved);
+  const projection = new MapProjectionTerrain(gm);
+  try {
+    projection.update(observer, [
+      { id: 'underwater', mapId: 'inside', world: { x: 3, y: -0.6, z: 3 } },
+    ]);
+    const water = projection.root.getObjectByName('MapProjectionWater:inside');
+    expect(water?.visible).toBe(true);
+    expect(water.geometry.getAttribute('position').count).toBeGreaterThan(0);
+  } finally {
+    projection.dispose();
+    for (const token of [...gm.placedTokens]) gm.token3DAdapter.onTokenRemoved(token);
+    gm.token3DAdapter.disposeMovementRange();
+  }
+});
+
 test('idle floor projection frames reuse meshes without copying map boards', async () => {
   const { gm, adapter } = fixture();
   try {

@@ -12,7 +12,6 @@ import { validateScene } from './CampaignScene.js';
 import CampaignWorld from './CampaignWorld.js';
 import { prepareConnectionTravel } from './CampaignTravel.js';
 import { reconcileBuildingScene } from './BuildingAssembly.js';
-import { reconcileCavernScene } from './CavernAssembly.js';
 import ActionRequestQueue from './ActionRequestQueue.js';
 
 export function queueCampaignOperation(gm, key, operation) {
@@ -83,6 +82,9 @@ export function captureReadyCampaignScene(
     completedActionsOnly = false,
     geometryOverride = undefined,
     cavernOverride = undefined,
+    heightsOverride = undefined,
+    placeablesOverride = undefined,
+    generationRecipeOverride = undefined,
     buildingContext = null,
   } = {}
 ) {
@@ -195,9 +197,18 @@ export function captureReadyCampaignScene(
     if (geometryOverride.volumes.length) terrainState.geometry = geometryOverride;
     else delete terrainState.geometry;
   }
-  const placeables = pool ? readPlaceablePlacements(pool) : [];
-  const sightBounds = pool?.sightBlockingBounds?.() || [];
-  const structureCover = placeables.some((entry) => ['structure', 'building'].includes(entry.type))
+  const placeables =
+    placeablesOverride !== undefined
+      ? placeablesOverride
+      : pool
+        ? readPlaceablePlacements(pool)
+        : [];
+  const resolvedPlaceables = placeablesOverride ?? placeables;
+  const resolvedHeights = heightsOverride ?? terrainState.heights;
+  const sightBounds = placeablesOverride !== undefined ? [] : pool?.sightBlockingBounds?.() || [];
+  const structureCover = resolvedPlaceables.some((entry) =>
+    ['structure', 'building'].includes(entry.type)
+  )
     ? pool.targetingCoverBounds()
     : [];
   const scene = {
@@ -205,20 +216,27 @@ export function captureReadyCampaignScene(
     ruleset: library.ruleset,
     grid: { cols: gm.cols, rows: gm.rows, tileWorldSize: gm.spatial.tileWorldSize },
     terrain: {
-      heights: terrainState.heights,
+      heights: resolvedHeights,
       ...(terrainState.cavern ? { cavern: terrainState.cavern } : {}),
       ...(terrainState.geometry ? { geometry: terrainState.geometry } : {}),
       ...(terrainState.structureGenerationEnabled === false
         ? { structureGenerationEnabled: false }
         : {}),
+      ...(generationRecipeOverride !== undefined
+        ? generationRecipeOverride
+          ? { generationRecipe: generationRecipeOverride }
+          : {}
+        : terrainState.generationRecipe
+          ? { generationRecipe: terrainState.generationRecipe }
+          : {}),
       biome: terrainState.biomeKey,
       seed: terrainState.biomeSeed,
       elevationScale: terrainState.elevationScale,
       worldElevationUnit: gm.spatial.elevationUnit,
       treeDensity: terrainState.treeDensityMultiplier,
       richShading: JSON.parse(JSON.stringify(globalThis.window?.richShadingSettings || {})),
-      placeables,
-      sightBounds,
+      placeables: resolvedPlaceables,
+      sightBounds: placeablesOverride === undefined ? sightBounds : [],
       ...(structureCover.length ? { coverBounds: structureCover } : {}),
     },
     creatures,
@@ -262,27 +280,19 @@ export function captureReadyCampaignScene(
     }
     const context = { ruleset: library.ruleset, library };
     return validateScene(
-      reconcileCavernScene(
-        reconcileBuildingScene(saved, context, {
-          ownerMapId: gm.campaignMapId,
-          restoreContext: buildingContext,
-        }),
-        context,
-        { ownerMapId: gm.campaignMapId, regenerate: buildingContext?.cavernGeneration === true }
-      ),
+      reconcileBuildingScene(saved, context, {
+        ownerMapId: gm.campaignMapId,
+        restoreContext: buildingContext,
+      }),
       context
     );
   }
   const context = { ruleset: library.ruleset, library };
   return validateScene(
-    reconcileCavernScene(
-      reconcileBuildingScene(scene, context, {
-        ownerMapId: 'map-main',
-        restoreContext: buildingContext,
-      }),
-      context,
-      { ownerMapId: 'map-main', regenerate: buildingContext?.cavernGeneration === true }
-    ),
+    reconcileBuildingScene(scene, context, {
+      ownerMapId: 'map-main',
+      restoreContext: buildingContext,
+    }),
     context
   );
 }
@@ -503,6 +513,10 @@ export async function applyMapTerrain(gm, map) {
   const terrain = map.terrain;
   gm.spatial.tileWorldSize = map.grid.tileWorldSize;
   gm.spatial.elevationUnit = terrain.worldElevationUnit;
+  if (gm.terrainRebuilder?.builder) {
+    gm.terrainRebuilder.builder.tileWorldSize = gm.spatial.tileWorldSize;
+    gm.terrainRebuilder.builder.elevationUnit = gm.spatial.elevationUnit;
+  }
   gm.resizeGrid(map.grid.cols, map.grid.rows);
   if (globalThis.window) {
     window.selectedBiome = terrain.biome;
@@ -521,6 +535,7 @@ export async function applyMapTerrain(gm, map) {
     richShadingEnabled: terrain.richShading.enabled === true,
     ...(terrain.cavern ? { cavern: terrain.cavern } : {}),
     ...(terrain.structureGenerationEnabled === false ? { structureGenerationEnabled: false } : {}),
+    ...(terrain.generationRecipe ? { generationRecipe: terrain.generationRecipe } : {}),
     ...(terrain.geometry ? { geometry: terrain.geometry } : {}),
   });
   gm.notifyTerrainHeightsChanged();

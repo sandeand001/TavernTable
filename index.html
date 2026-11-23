@@ -68,12 +68,33 @@
             data-dice-count
           />
         </div>
+        <label class="dice-color-control" for="dice-color">
+          <span>Dice color:</span>
+          <select id="dice-color" aria-label="Player dice color" data-dice-color>
+            <option value="ocean">Ocean</option>
+            <option value="amber">Amber</option>
+            <option value="emerald">Emerald</option>
+            <option value="crimson">Crimson</option>
+            <option value="amethyst">Amethyst</option>
+            <option value="obsidian">Obsidian</option>
+            <option value="cobalt">Cobalt</option>
+          </select>
+        </label>
         <button data-dice data-sides="4" aria-label="Roll 4-sided die">d4</button>
         <button data-dice data-sides="6" aria-label="Roll 6-sided die">d6</button>
         <button data-dice data-sides="8" aria-label="Roll 8-sided die">d8</button>
         <button data-dice data-sides="10" aria-label="Roll 10-sided die">d10</button>
         <button data-dice data-sides="12" aria-label="Roll 12-sided die">d12</button>
         <button data-dice data-sides="20" aria-label="Roll 20-sided die">d20</button>
+        <button
+          type="button"
+          data-dm-gold-d20
+          class="dice-dm-gold"
+          aria-label="Roll the DM gold 20-sided die"
+          title="Special DM roll with the large gold d20"
+        >
+          DM Gold d20
+        </button>
         <div id="dice-result" aria-live="polite" data-dice-result>Result: -</div>
         <div id="dice-help" class="sr-only">Select number of dice and click a die type to roll</div>
       </div>
@@ -443,7 +464,7 @@
                   <span id="sun-time-value" class="range-value">12:00</span>
                 </div>
                 <small class="small-text"
-                  >Scrub through the day-night cycle to reposition sunlight and shadows.</small
+                  >Sunlight affects outdoor maps. Underground maps use local lighting.</small
                 >
               </div>
 
@@ -452,18 +473,19 @@
                 <button
                   id="terrain-reset-btn"
                   class="action-button terrain-reset"
-                  aria-label="Reset all terrain to default height"
+                  aria-label="Clear all grid edits and return the map to its base state"
                 >
-                  🔄 Reset Terrain
+                  🔄 Clear Grid
                 </button>
               </div>
 
               <!-- Biome selection moved to dedicated Biomes tab (panel relocated outside terrain panel) -->
 
-              <!-- Placeables were moved outside the toggled tools so they remain reachable
-                 in the Terrain panel without requiring Terrain Mode to be active. The
-                 runtime UI will still inject items into the same `#terrain-placeables-root`. -->
+              <!-- Terrain Mode exposes the runtime placeables menu. -->
               <!-- Placeables categories root (header removed per new spec; categories stack directly) -->
+              <p class="small-text">
+                Tree placement: teal fits, amber shrinks, red needs level support.
+              </p>
               <div
                 id="terrain-placeables-root"
                 class="placeables-root"
@@ -501,6 +523,23 @@
                 >
                   Generate
                 </button>
+                <button
+                  id="dungeon-next-layout"
+                  type="button"
+                  class="action-button"
+                  title="Replace this Dungeon with another layout and seed, even when the seed is locked"
+                  hidden
+                >
+                  Next Dungeon layout
+                </button>
+                <button
+                  id="biome-apply-palette"
+                  type="button"
+                  class="action-button"
+                  title="Apply the selected biome colors without generating terrain"
+                >
+                  Apply palette only
+                </button>
                 <label
                   title="Include a small, seeded set of biome-appropriate structures and landmarks"
                 >
@@ -515,6 +554,15 @@
                   <input type="checkbox" id="biome-seed-lock" />
                   <span class="toggle-slider"></span>
                   <span class="toggle-label">Lock seed</span>
+                </label>
+                <label
+                  class="toggle-switch"
+                  for="biome-replacement-warning"
+                  title="Show a confirmation before replacing map content"
+                >
+                  <input type="checkbox" id="biome-replacement-warning" checked />
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-label">Warn before replacing</span>
                 </label>
                 <button
                   id="biome-reseed"
@@ -531,18 +579,18 @@
                 role="status"
                 aria-live="polite"
                 style="flex-basis: 100%"
-                >Selecting a biome changes its palette only. Generate replaces generated terrain and
-                structures; creatures must remain on safe, unchanged support.</small
+                >Selecting a family does not change the map. Apply palette only changes its colors;
+                Generate replaces the active map after confirmation, including placed
+                creatures.</small
               >
               <small class="small-text" style="flex-basis: 100%"
-                >Generate creates terrain and places biome assets. Exotic appearances apply to
-                generated assets. Unlock seed to randomize each time. Empty default boards use
-                larger settlement canvases: village 35 x 35, city 45 x 45, fortress 50 x 50,
-                cliffside and mountain castles 60 x 60. Terrain castles need at least 20 x 20.
-                Existing custom or populated boards keep their size.</small
+                >Choose a biome family, then Generate to review its grid size, variant, terrain
+                character and family-specific choices. Next Dungeon layout replaces this map again
+                with the same room count, even if the seed is locked. Warning preferences are saved
+                in this browser.</small
               >
             </div>
-            <div class="section-subtitle" style="margin: 0 0 0.25rem">Biomes</div>
+            <div class="section-subtitle" style="margin: 0 0 0.25rem">Biome Families</div>
             <div id="biome-menu-root" class="biome-menu" aria-label="Biome selection menu">
               <!-- Biome group buttons injected at runtime -->
             </div>

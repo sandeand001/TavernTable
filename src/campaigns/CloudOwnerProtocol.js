@@ -1,4 +1,10 @@
-import { isCloudAccessScope, isCloudAccessGeneration, isCloudUUID } from './CloudProtocol.js';
+// @ts-check
+import {
+  isCloudAccessScope,
+  isCloudAccessGeneration,
+  isCloudUUID,
+  validCloudMovementDelta,
+} from './CloudProtocol.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   validatePlayerMotion,
@@ -267,7 +273,12 @@ function validatePresentations(previous, next, entries) {
   }
 }
 
-export function cloudOwnerDelta(previous, next, presentations = []) {
+export function cloudOwnerDelta(
+  previous,
+  next,
+  presentations = [],
+  { movementBatch = false } = {}
+) {
   validateCloudOwnerSnapshot(previous);
   validateCloudOwnerSnapshot(next);
   const delta = {
@@ -280,6 +291,7 @@ export function cloudOwnerDelta(previous, next, presentations = []) {
     kind: 'update',
     changes: difference(model(previous.state), model(next.state)),
     ...(presentations.length ? { presentations: copy(presentations) } : {}),
+    ...(movementBatch ? { movementBatch: true } : {}),
   };
   applyCloudOwnerDelta(previous, delta);
   return delta;
@@ -298,6 +310,7 @@ export function applyCloudOwnerDelta(previous, delta) {
       'kind',
       'changes',
       ...(Object.hasOwn(delta || {}, 'presentations') ? ['presentations'] : []),
+      ...(Object.hasOwn(delta || {}, 'movementBatch') ? ['movementBatch'] : []),
     ]) ||
     delta.version !== 1 ||
     delta.kind !== 'update' ||
@@ -316,7 +329,10 @@ export function applyCloudOwnerDelta(previous, delta) {
   };
   if (!sameAccess(previous.access, delta.access)) denied('campaign-access-changed');
   if (previous.sessionId !== delta.sessionId) denied('live-session-changed');
-  if (previous.generation !== delta.baseGeneration || delta.generation !== delta.baseGeneration + 1)
+  if (
+    previous.generation !== delta.baseGeneration ||
+    (delta.movementBatch !== true && delta.generation !== delta.baseGeneration + 1)
+  )
     denied('owner-delta-gap');
   const next = {
     version: 1,
@@ -327,6 +343,7 @@ export function applyCloudOwnerDelta(previous, delta) {
     state: materialize(patched(model(previous.state), delta.changes, { nodes: 0 })),
   };
   validateCloudOwnerSnapshot(next);
+  if (!validCloudMovementDelta(previous, delta, next.state)) denied('owner-delta-gap');
   if (Object.hasOwn(delta, 'presentations'))
     validatePresentations(previous, next, delta.presentations);
   return next;

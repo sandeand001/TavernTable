@@ -3,6 +3,7 @@ import { TerrainEngine } from '../../../../src/terrain/TerrainEngine.js';
 import { UndergroundConstructionView } from '../../../../src/scene/terrain/UndergroundConstructionView.js';
 import { ConstructionPreview } from '../../../../src/scene/terrain/ConstructionPreview.js';
 import { createStructure } from '../../../../src/terrain/ConstructionBlueprints.js';
+import { syncWaterSurface } from '../../../../src/scene/terrain/WaterSurface.js';
 
 function fixture() {
   const engine = new TerrainEngine(30, 30);
@@ -110,6 +111,46 @@ test('replaced terrain meshes do not leak cloned materials and leaving the exter
     view.dispose();
     terrain.geometry.dispose();
     material.dispose();
+  }
+});
+
+test('underground construction hides water without a floating wire grid or leaking replacements', () => {
+  const { view, terrain, callbacks } = fixture();
+  let height = -1;
+  const options = {
+    biomeKey: 'riverLake',
+    cols: 1,
+    rows: 1,
+    getHeight: () => height,
+    tileWorldSize: 1,
+    three,
+  };
+  const water = syncWaterSurface(terrain, options);
+  const material = water.material;
+  const originalDisposed = jest.fn();
+  material.addEventListener('dispose', originalDisposed);
+  try {
+    view.update({ enabled: true });
+    expect(water.material.visible).toBe(false);
+    expect(view.materials.get(water).wire).toBeUndefined();
+    const replacement = water.material;
+    const replacementDisposed = jest.fn();
+    replacement.addEventListener('dispose', replacementDisposed);
+    height = -2;
+    const next = syncWaterSurface(terrain, options);
+    for (const frame of [...callbacks]) frame();
+    expect(originalDisposed).toHaveBeenCalledTimes(1);
+    expect(replacementDisposed).toHaveBeenCalledTimes(1);
+    expect(next.material.visible).toBe(false);
+    expect(view.materials.get(next).wire).toBeUndefined();
+    view.update({ enabled: false });
+    expect(next.material.visible).toBe(true);
+    expect(next.material.opacity).toBeCloseTo(0.55);
+  } finally {
+    view.dispose();
+    syncWaterSurface(terrain, { ...options, biomeKey: null });
+    terrain.geometry.dispose();
+    terrain.material.dispose();
   }
 });
 

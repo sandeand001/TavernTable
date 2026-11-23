@@ -5,8 +5,12 @@ import {
   getWallMovementTarget,
   getTokenConditions,
 } from '../../../entities/creatures/TokenMovement.js';
-import { MAX_STANDARD_CLIMB_LEVELS } from '../../../config/token-adapter/MannequinConfig.js';
+import {
+  MAX_STANDARD_CLIMB_LEVELS,
+  TOKEN_3D_MODELS,
+} from '../../../config/token-adapter/MannequinConfig.js';
 import { GameErrors } from '../../../utils/error/ErrorHandler.js';
+import { blocksCreatureMovement } from '../../../terrain/PlaceableCollision.js';
 import { MovementRangeOverlay } from '../MovementRangeOverlay.js';
 import {
   FEET_PER_GRID_SQUARE,
@@ -139,8 +143,7 @@ function getTokenMovementRange(token, allowance = null) {
   }
   const blocked = new Set();
   for (const [key, entries] of gm.terrainManager?.placeables || []) {
-    if (entries.some((entry) => ['plant', 'structure'].includes(entry.placeableType)))
-      blocked.add(key);
+    if (entries.some(blocksCreatureMovement)) blocked.add(key);
   }
   return buildMovementRange({
     cols: gm.cols,
@@ -240,6 +243,52 @@ function requestMoveToSurface(token, surface, { closest = false } = {}) {
   return this._requestPlannedMovement(token, { surface }, { closest });
 }
 
+function _queueLocomotionMove(token, destination, options) {
+  const pending = this._pendingLocomotionMoves.get(token);
+  if (pending && pending.loading === token.__threeMeshPromise) {
+    pending.destination = destination;
+    pending.options = options;
+    return pending.promise;
+  }
+  const gm = this.gameManager;
+  const request = {
+    loading: token.__threeMeshPromise,
+    mapId: gm.campaignMapId,
+    tokenMapId: token.mapId,
+    destination,
+    options,
+    promise: null,
+  };
+  this._pendingLocomotionMoves.set(token, request);
+  request.promise = Promise.resolve(request.loading)
+    .then((mesh) => {
+      if (this._pendingLocomotionMoves.get(token) !== request) return null;
+      if (
+        !gm.placedTokens.includes(token) ||
+        gm.campaignMapId !== request.mapId ||
+        token.mapId !== request.tokenMapId ||
+        token.__threeMeshPromise !== request.loading
+      )
+        throw new Error('The creature or map changed while its movement was waiting to start');
+      const animation = this._tokenAnimationData.get(token);
+      if (!mesh || !animation?.actions?.walk || !animation.profile)
+        throw new Error('The creature locomotion animations could not be loaded');
+      this._pendingLocomotionMoves.delete(token);
+      return this._requestPlannedMovement(token, request.destination, request.options);
+    })
+    .catch((error) => {
+      if (this._pendingLocomotionMoves.get(token) !== request) return null;
+      this._pendingLocomotionMoves.delete(token);
+      GameErrors.input(error, {
+        component: 'TokenMovement',
+        operation: 'queuedLocomotion',
+        tokenId: token.id,
+      });
+      return null;
+    });
+  return request.promise;
+}
+
 function _requestPlannedMovement(token, destination, options = {}) {
   const previousJob = this._movementRoutes.get(token);
   try {
@@ -290,6 +339,13 @@ function _requestPlannedMovement(token, destination, options = {}) {
       throw new Error('Focus the creature on its own grid before requesting movement');
     if (this.gameManager.sceneAutosave?.ready === false)
       throw new Error('Wait for the campaign to finish opening before moving');
+    const type = (token.type || token.creature?.type || '').toLowerCase();
+    if (
+      TOKEN_3D_MODELS[type] &&
+      token.__threeMeshPromise?.then &&
+      !this._tokenAnimationData.has(token)
+    )
+      return this._queueLocomotionMove(token, destination, options);
     const services = this.gameManager.characterServices;
     if (this.isMovementInProgress(token)) {
       const queued = this._queueMovementRedirect(token, destination);
@@ -682,6 +738,7 @@ function _isPlannedLandingPositionAllowed(state, world) {
 }
 
 function disposeMovementRange() {
+  this._pendingLocomotionMoves?.clear();
   this._landingMovementRedirects?.clear();
   this._movementRangeOverlay?.dispose();
   this._movementRangeOverlay = null;
@@ -774,6 +831,7 @@ export function installMovementRangeMethods(prototype) {
   prototype.refreshMovementRange = refreshMovementRange;
   prototype.requestMoveToGrid = requestMoveToGrid;
   prototype.requestMoveToSurface = requestMoveToSurface;
+  prototype._queueLocomotionMove = _queueLocomotionMove;
   prototype._requestPlannedMovement = _requestPlannedMovement;
   prototype._getWallClimbThreshold = _getWallClimbThreshold;
   prototype._getWallRestHeight = _getWallRestHeight;

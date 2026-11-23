@@ -92,8 +92,19 @@ function setHoverToken(tokenEntry) {
   if (tokenEntry) void this._refreshVisualState(tokenEntry);
 }
 
-async function setSelectedToken(tokenEntry) {
+async function setSelectedToken(tokenEntry, { restorePlayerSnapshot = false } = {}) {
   const gm = this.gameManager;
+  const application = gm.playerApplication;
+  if (
+    !restorePlayerSnapshot &&
+    tokenEntry?.owned &&
+    gm.playerInput &&
+    application?.observerId !== tokenEntry.id &&
+    application?.state?.observers?.some(({ id }) => id === tokenEntry.id)
+  ) {
+    await application.chooseObserver(tokenEntry.id);
+    return;
+  }
   if (
     tokenEntry &&
     gm.campaignWorld instanceof CampaignWorld &&

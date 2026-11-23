@@ -15,7 +15,7 @@ const LIVE_GROUND_PLAYOUT_MARGIN_SECONDS = 0.2;
 const MAX_PRESENTATION_FINGERPRINTS = 512;
 
 function rememberProvisionalRoute(adapter, token, motion) {
-  if (motion.completed !== false) return;
+  if (motion.completed !== false && motion.checkpointRevision === undefined) return;
   adapter._provisionalMovementRoutes ??= new WeakMap();
   const previous = adapter._provisionalMovementRoutes.get(token);
   const points = samePlacement(previous?.points.at(-1), motion.from)
@@ -24,14 +24,20 @@ function rememberProvisionalRoute(adapter, token, motion) {
   adapter._provisionalMovementRoutes.set(token, {
     points: [...points, ...motion.route].slice(-MAX_PRESENTATION_FINGERPRINTS),
     expiresAt: performance.now() + LIVE_CONTINUATION_TIMEOUT_SECONDS * 1000,
+    checkpointRevision: motion.checkpointRevision,
   });
 }
 
-function isLaggedMovementCheckpoint(token, canonical) {
+function isLaggedMovementCheckpoint(token, canonical, sceneRevision) {
   const route = this._provisionalMovementRoutes?.get(token);
   if (!route) return false;
   const index = route.points.findLastIndex((point) => samePlacement(point, canonical));
-  if (index < 0 || index === route.points.length - 1 || route.expiresAt <= performance.now()) {
+  if (
+    index < 0 ||
+    index === route.points.length - 1 ||
+    route.expiresAt <= performance.now() ||
+    (route.checkpointRevision !== undefined && sceneRevision >= route.checkpointRevision)
+  ) {
     this._provisionalMovementRoutes.delete(token);
     return false;
   }

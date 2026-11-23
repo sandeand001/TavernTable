@@ -26,3 +26,26 @@ test('shows the current GPU when settings attach after initialization without du
     else window.gameManager = previousManager;
   }
 });
+
+test('player camera instructions describe character-follow rather than map panning', () => {
+  const previousManager = window.gameManager;
+  const panel = document.createElement('div');
+  panel.id = 'settings-panel';
+  document.body.appendChild(panel);
+  window.gameManager = {
+    is3DModeActive: () => false,
+    playerInput: {},
+    getViewMode: () => 'isometric',
+    threeSceneManager: {},
+  };
+  try {
+    attach3DControls();
+    const instructions = panel.querySelector('[data-camera-instructions]').textContent;
+    expect(instructions).toContain('locked to the active character');
+    expect(instructions).not.toContain('left-drag');
+  } finally {
+    panel.remove();
+    if (previousManager === undefined) delete window.gameManager;
+    else window.gameManager = previousManager;
+  }
+});

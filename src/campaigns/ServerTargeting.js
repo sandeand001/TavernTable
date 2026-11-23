@@ -96,10 +96,10 @@ export default class ServerTargeting {
     return selected;
   }
 
-  rollContext() {
-    const map = this.map;
+  rollContext(mapId = this.actor.mapId) {
+    const map = this.runtime.world.getMap(mapId);
     const projected = this.visible().map((entry) => {
-      const point = this.runtime.world.projectCreature(entry.id, this.actor.mapId).world;
+      const point = this.runtime.world.projectCreature(entry.id, mapId).world;
       return {
         gridX: Math.floor(point.x / map.grid.tileWorldSize),
         gridY: Math.floor(point.z / map.grid.tileWorldSize),

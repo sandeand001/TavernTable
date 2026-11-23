@@ -1,5 +1,6 @@
 import { cloneHumanoidRig } from '../HumanoidRig.js';
 import { facingAngleFromDirection } from '../../../entities/creatures/TokenMovement.js';
+import { blocksCreatureMovement } from '../../../terrain/PlaceableCollision.js';
 
 const EPSILON = 1e-8;
 const mix = (a, b, t) => a + (b - a) * t;
@@ -151,7 +152,7 @@ function _startShortTraversal(token, cell, kind) {
       this.gameManager.terrainManager?.placeables?.get(`${cell.gridX},${cell.gridY}`) || [];
     if (
       occupied ||
-      entries.some((entry) => ['plant', 'structure'].includes(entry.placeableType)) ||
+      entries.some(blocksCreatureMovement) ||
       Math.abs(this._getTerrainHeight(cell.gridX, cell.gridY) * spatial.elevationUnit - start.y) >
         1e-8 ||
       this._getTerrainHeight(cell.vault.gridX, cell.vault.gridY) !== cell.vault.height

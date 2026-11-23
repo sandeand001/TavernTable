@@ -224,7 +224,8 @@ export class TerrainBrushOverlay3D {
       if (!Number.isFinite(gx) || !Number.isFinite(gy)) continue;
       const currentHeight = Number.isFinite(cell?.currentHeight) ? cell.currentHeight : null;
       const previewHeight = Number.isFinite(cell?.previewHeight) ? cell.previewHeight : null;
-      validCells.push({ gx, gy, currentHeight, previewHeight });
+      const color = Number.isInteger(cell?.color) ? cell.color : null;
+      validCells.push({ gx, gy, currentHeight, previewHeight, color });
     }
 
     if (!validCells.length) {
@@ -264,17 +265,21 @@ export class TerrainBrushOverlay3D {
     const lineAlphaRaw = typeof style.lineAlpha === 'number' ? style.lineAlpha : 0.9;
     const lineAlpha = Math.max(0, Math.min(1, lineAlphaRaw));
     const lineWidth = typeof style.lineWidth === 'number' ? style.lineWidth : 2;
+    const hasCellColors = validCells.some(({ color }) => color !== null);
+    const createInstanceColors = hasCellColors && !this._instanced.instanceColor;
+    const cellColor =
+      hasCellColors || this._instanced.instanceColor ? new this.three.Color() : null;
 
     const material = this._instanced.material;
     try {
       if (material && material.color) {
-        this._color.set(hex);
+        this._color.set(hasCellColors ? 0xffffff : hex);
         material.color.copy(this._color);
       }
       if (material) {
         material.opacity = fillAlpha;
         material.transparent = material.opacity < 1;
-        material.needsUpdate = material.opacity !== this._currentOpacity;
+        material.needsUpdate = createInstanceColors || material.opacity !== this._currentOpacity;
       }
       this._currentOpacity = fillAlpha;
     } catch (_) {
@@ -334,6 +339,10 @@ export class TerrainBrushOverlay3D {
       dummy.scale.set(tileSize, 1, tileSize);
       dummy.updateMatrix();
       this._instanced.setMatrixAt(instanceIndex, dummy.matrix);
+      if (cellColor) {
+        cellColor.setHex(hasCellColors ? (entry.color ?? hex) : 0xffffff);
+        this._instanced.setColorAt(instanceIndex, cellColor);
+      }
 
       if (wantsOutline) {
         const outline = this._outlinePool[instanceIndex];
@@ -371,6 +380,7 @@ export class TerrainBrushOverlay3D {
 
     this._instanced.count = instanceIndex;
     this._instanced.instanceMatrix.needsUpdate = true;
+    if (cellColor) this._instanced.instanceColor.needsUpdate = true;
 
     if (fillEntries.length > 0) {
       const fillResult = ensureBoxMesh({

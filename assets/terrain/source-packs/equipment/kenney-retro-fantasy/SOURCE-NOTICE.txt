@@ -1,0 +1,10 @@
+Retro Fantasy Kit
+Creator: Kenney
+Source: https://kenney.nl/assets/retro-fantasy-kit
+Acquired: 2026-11-20
+Acquired tier: Free 2.0 download
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Included license: contents/License.txt
+
+Attribution to Kenney or kenney.nl is appreciated but not required.

@@ -39,6 +39,7 @@ class PhysicalDice {
     this.root = root;
     this.random = random;
     this.asset = null;
+    this.playerAsset = null;
   }
 
   async load() {
@@ -69,6 +70,51 @@ class PhysicalDice {
       state,
       dynamics,
       model,
+      geometry,
+      geometryKey: createHash('sha256').update(bytes).digest('hex'),
+    };
+  }
+
+  async loadPlayer() {
+    if (!this.playerAsset) {
+      this.playerAsset = this._loadPlayer().catch((error) => {
+        this.playerAsset = null;
+        throw error;
+      });
+    }
+    return this.playerAsset;
+  }
+
+  async _loadPlayer() {
+    const [three, { GLTFLoader }, state, dynamics, catalog] = await Promise.all([
+      import('three'),
+      import('three/examples/jsm/loaders/GLTFLoader.js'),
+      import(pathToFileURL(path.join(this.root, 'src', 'systems', 'dice', 'DiceState.js')).href),
+      import(pathToFileURL(path.join(this.root, 'src', 'systems', 'dice', 'D20Dynamics.js')).href),
+      import(pathToFileURL(path.join(this.root, 'src', 'config', 'PlayerDiceCatalog.js')).href),
+    ]);
+    const bytes = await fs.readFile(
+      path.join(this.root, 'assets', 'Items', 'player-dice-set', 'player-dice-set.glb')
+    );
+    const loaded = await new GLTFLoader().parseAsync(geometryOnlyGLB(bytes), '');
+    const root = loaded.scene;
+    if (!root) throw new Error('The player dice asset has no model');
+    root.updateMatrixWorld(true);
+    const models = {};
+    const geometry = {};
+    for (const sides of [4, 6, 8, 10, 12, 20]) {
+      const definition = catalog.getPlayerDiceDefinition(sides);
+      const model = root.getObjectByName(definition.meshName);
+      if (!model?.isMesh) throw new Error(`The player dice asset is missing d${sides}`);
+      models[sides] = model;
+      geometry[sides] = state.getPlayerDiceColliderData(model, definition, three);
+    }
+    return {
+      three,
+      state,
+      dynamics,
+      catalog,
+      models,
       geometry,
       geometryKey: createHash('sha256').update(bytes).digest('hex'),
     };
@@ -132,17 +178,86 @@ class PhysicalDice {
     };
   }
 
-  async roll(request, context) {
-    const { rollDiceExpression } = await import(
-      pathToFileURL(path.join(this.root, 'src', 'systems', 'dice', 'dice.js')).href
+  async playerDie({ sides, color, metrics, groundHeights, obstacles = [] }) {
+    const asset = await this.loadPlayer();
+    const definition = asset.catalog.getPlayerDiceDefinition(sides);
+    if (!asset.catalog.getPlayerDiceColor(color))
+      throw new Error('Choose a supported player dice color');
+    const scale = Math.min(
+      0.82 * metrics.tileSize,
+      (Math.min(metrics.cols, metrics.rows) * metrics.tileSize * 0.4) / asset.geometry[sides].radius
     );
+    const simulation = asset.dynamics.createDieSimulation({
+      geometry: asset.geometry[sides],
+      scale,
+      metrics,
+      groundHeights,
+      obstacles,
+      random: this.random,
+    });
+    const frames = [];
+    const capture = () =>
+      frames.push({
+        timeSeconds: simulation.world.time,
+        position: {
+          x: simulation.body.position.x,
+          y: simulation.body.position.y,
+          z: simulation.body.position.z,
+        },
+        quaternion: {
+          x: simulation.body.quaternion.x,
+          y: simulation.body.quaternion.y,
+          z: simulation.body.quaternion.z,
+          w: simulation.body.quaternion.w,
+        },
+      });
+    capture();
+    while (!simulation.finished) {
+      simulation.advance(asset.dynamics.D20_FIXED_STEP);
+      capture();
+    }
+    let face = null;
+    if (!simulation.cocked) {
+      const model = asset.models[sides].clone(true);
+      model.position.copy(simulation.body.position);
+      model.quaternion.copy(simulation.body.quaternion);
+      model.scale.setScalar(scale);
+      model.updateMatrixWorld(true);
+      face = asset.state.resolvePlayerDiceFace(model, definition, asset.three);
+      if (!Number.isInteger(face?.value) || face.value < 1 || face.value > sides)
+        throw new Error(`The physical d${sides} has no readable settled face`);
+    }
+    return {
+      version: 1,
+      type: 'physical-die',
+      sides,
+      color,
+      geometryKey: asset.geometryKey,
+      scale,
+      frames,
+      cocked: simulation.cocked,
+      value: face?.value ?? null,
+      faceIndex: face?.faceIndex ?? null,
+    };
+  }
+
+  async roll(request, context) {
+    const [{ rollDiceExpression }, { PLAYER_DICE_DEFAULT_COLOR }] = await Promise.all([
+      import(pathToFileURL(path.join(this.root, 'src', 'systems', 'dice', 'dice.js')).href),
+      import(pathToFileURL(path.join(this.root, 'src', 'config', 'PlayerDiceCatalog.js')).href),
+    ]);
     const physics = [];
+    const playerColor = request.diceColor;
     try {
       const result = await rollDiceExpression(request, {
         random: this.random,
-        physicalAllD20: true,
-        physicalRoll: async () => {
-          const rolled = await this.d20(context);
+        physicalAllD20: !playerColor,
+        physicalAllDice: !!playerColor,
+        physicalRoll: async ({ sides }) => {
+          const color = playerColor || (sides !== 20 ? PLAYER_DICE_DEFAULT_COLOR : null);
+          const rolled = color
+            ? await this.playerDie({ ...context, sides, color })
+            : await this.d20(context);
           physics.push(rolled);
           return rolled.cocked ? { reason: 'cocked' } : { success: true, value: rolled.value };
         },
@@ -158,7 +273,7 @@ class PhysicalDice {
         rerollRequired: true,
         cancelled: true,
         physics,
-        text: `${request.label}: the physical d20 is cocked; reroll required. No result was selected.`,
+        text: `${request.label}: the physical die is cocked; reroll required. No result was selected.`,
       };
     }
   }

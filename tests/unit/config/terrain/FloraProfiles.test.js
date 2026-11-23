@@ -25,4 +25,19 @@ describe('Biome flora model selection', () => {
     expect(ids.some((id) => /deciduous|oval|willow/.test(id))).toBe(true);
     expect(ids.every((id) => TERRAIN_PLACEABLES[id].modelKey)).toBe(true);
   });
+
+  test.each([
+    ['mysticGrove', 24],
+    ['feywildBloom', 24],
+    ['astralPlateau', 17.6],
+    ['arcaneLeyNexus', 15],
+  ])('%s adds the spectral family weight to its concrete variants', (biomeKey, expectedWeight) => {
+    const profile = BIOME_FLORA_PROFILES.find((entry) => entry.re.test(biomeKey));
+    const variants = TERRAIN_PLACEABLES['family-spectral'].familyVariants;
+    expect(profile.weights['family-spectral']).toBeUndefined();
+    expect(variants.every((id) => profile.weights[id] > 0)).toBe(true);
+    expect(variants.reduce((total, id) => total + profile.weights[id], 0)).toBeCloseTo(
+      expectedWeight
+    );
+  });
 });

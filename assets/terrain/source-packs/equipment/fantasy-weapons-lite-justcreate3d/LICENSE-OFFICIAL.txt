@@ -1,0 +1,84 @@
+Just Create Studios - Digital Asset License
+Source: https://justcreate3d.studio/licences/
+Captured: 2026-11-20
+
+Digital Asset License
+
+Direct purchases on this website are no longer available. This license
+describes the terms for assets previously purchased directly from this website.
+It does not replace different terms agreed at the time of purchase.
+
+1. License Types
+
+Single License
+
+A Single License allows:
+- Use of the assets by one individual or one small project team of up to 3
+  people.
+- Use of the assets in one or multiple projects controlled by the license
+  holder.
+- Commercial and non-commercial use of the assets.
+
+A Single License does not allow sharing the assets outside the licensed team,
+except with contractors working on a licensed project under Section 3. No more
+than 3 people, including contractors, may have access to the asset files at the
+same time.
+
+Multi License
+
+A Multi License allows:
+- Use of the assets by multiple users and teams within the same legal entity,
+  including employees, departments, and branches.
+- Use of the assets across multiple projects owned or controlled by that entity.
+- Collaboration across teams without purchasing separate licenses per user.
+
+Separate legal entities are not covered. A Multi License does not allow sharing
+assets outside the purchasing legal entity, except with contractors working on
+a licensed project under Section 3.
+
+2. Restrictions
+
+Under any license type, you may not:
+- Share, sell, sublicense, or redistribute the assets or their source files as
+  standalone files, whether original or modified, except as permitted under
+  Section 3.
+- Include the assets in asset packs, asset libraries, templates, starter kits,
+  tools, or products whose primary value is the assets themselves.
+- Include the assets in software, plugins, or tools where they are intended for
+  reuse, export, or modification by end users.
+- Allow third parties to access or reuse the assets outside the scope of a
+  finished project.
+- Use the assets for the creation of NFTs or blockchain-based assets.
+- Use the assets for training AI models, creating datasets, or powering
+  generative systems intended to produce new assets or content.
+- Claim the assets, or any modified version of them, as your own original
+  creation.
+
+3. Source Files and Contractors
+
+Source files may be shared with employees covered by the purchased license or
+contractors only for the purpose of working on a licensed project.
+
+Contractors must delete all copies of the assets once their work is completed
+and may not reuse the assets for any other purpose.
+
+4. Ownership
+
+All assets remain the intellectual property of Just Create (Oleh Lila).
+This license grants usage rights only and does not transfer ownership.
+
+5. Assets Provided As Is
+
+The assets are provided "as is," without warranties of any kind, to the maximum
+extent permitted by applicable law. We do not guarantee that the assets will
+meet your specific requirements or work with software versions or configurations
+not stated in the product description.
+
+6. Updates and Support
+
+Updates and technical support are not included with the assets and are not
+provided.
+
+7. Changes to Terms
+
+Just Create (Oleh Lila) reserves the right to update these license terms.

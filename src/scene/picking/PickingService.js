@@ -123,6 +123,9 @@ export class PickingService {
   }
 
   _executeGroundPick(three, clientX, clientY, targetElement = null) {
+    this.gameManager?.threeSceneManager?._boundaryWallCutaway?.update(
+      this.gameManager.threeSceneManager.camera
+    );
     if (!this._preparePointerRay(three, clientX, clientY, targetElement)) return null;
     const gm = this.gameManager;
     let worldX;
@@ -380,6 +383,21 @@ export class PickingService {
           const distance = ray.origin.distanceTo(new three.Vector3(local.x, local.y, local.z));
           if (!closest || distance < closest.distance)
             closest = { connection, distance, world: local };
+        }
+      }
+      const markers = gm.threeSceneManager.scene.getObjectByName('LogicalPassageMarkers');
+      if (markers?.visible) {
+        const passages = new Map(
+          (world.getLogicalPassages?.(mapId) || []).map((passage) => [passage.id, passage])
+        );
+        for (const hit of this._raycaster.intersectObjects(markers.children, false)) {
+          const passage = passages.get(hit.object.userData.passageId);
+          if (passage && (!closest || hit.distance < closest.distance))
+            closest = {
+              connection: passage,
+              distance: hit.distance,
+              world: { x: hit.point.x, y: hit.point.y, z: hit.point.z },
+            };
         }
       }
       const doors = gm.threeSceneManager.scene.getObjectByName('MapDoors');

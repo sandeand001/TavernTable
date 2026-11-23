@@ -271,20 +271,28 @@ function clearLanding(spec, feature) {
 
 const WINDOW_SPACING = Object.freeze({ residential: 25, civic: 20, fortress: 30 });
 
-export function createWindowLayout(style, sides = BUILDING_SIDES, seed = undefined) {
+export function createWindowLayout(
+  style,
+  sides = BUILDING_SIDES,
+  seed = undefined,
+  rhythm = 'varied'
+) {
   if (
     !Object.hasOwn(WINDOW_SPACING, style) ||
     !Array.isArray(sides) ||
     sides.some((side) => !BUILDING_SIDES.includes(side)) ||
     new Set(sides).size !== sides.length ||
-    (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff))
+    (seed !== undefined && (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)) ||
+    !['varied', 'symmetric'].includes(rhythm) ||
+    (rhythm === 'symmetric' && (seed === undefined || style !== 'fortress'))
   )
     throw new Error('Choose a valid automatic window style and unique wall sides');
   return {
-    version: seed === undefined ? 1 : 2,
+    version: rhythm === 'symmetric' ? 3 : seed === undefined ? 1 : 2,
     style,
     sides: [...sides],
     ...(seed !== undefined ? { seed } : {}),
+    ...(rhythm === 'symmetric' ? { rhythm } : {}),
   };
 }
 
@@ -334,19 +342,27 @@ export function normalizeBuilding(input, spec) {
       !layout ||
       typeof layout !== 'object' ||
       Array.isArray(layout) ||
-      ![1, 2].includes(layout.version) ||
+      ![1, 2, 3].includes(layout.version) ||
       Object.keys(layout).some(
         (key) =>
-          !['version', 'style', 'sides', ...(layout.version === 2 ? ['seed'] : [])].includes(key)
+          ![
+            'version',
+            'style',
+            'sides',
+            ...(layout.version >= 2 ? ['seed'] : []),
+            ...(layout.version === 3 ? ['rhythm'] : []),
+          ].includes(key)
       ) ||
-      (layout.version === 2 && layout.seed === undefined) ||
+      (layout.version >= 2 && layout.seed === undefined) ||
+      (layout.version === 3 && layout.rhythm !== 'symmetric') ||
       !Array.isArray(layout.sides)
     )
       throw new Error('The saved automatic window layout is invalid');
     building.windowLayout = createWindowLayout(
       layout.style,
       layout.sides,
-      layout.version === 2 ? layout.seed : undefined
+      layout.version >= 2 ? layout.seed : undefined,
+      layout.version === 3 ? layout.rhythm : 'varied'
     );
   }
   if (input.cellarLayout !== undefined) {
@@ -557,7 +573,8 @@ export function normalizeBuilding(input, spec) {
 
 function composedWindows(spec, layout) {
   const { length, width } = buildingDimensions(spec),
-    levels = buildingLevels(spec, { includeDeck: false });
+    levels = buildingLevels(spec, { includeDeck: false }),
+    symmetric = layout.version === 3;
   const result = [];
   for (const [sideIndex, side] of BUILDING_SIDES.entries()) {
     if (!layout.sides.includes(side)) continue;
@@ -566,25 +583,37 @@ function composedWindows(spec, layout) {
       const random = createSeededRNG(
         (layout.seed ^
           Math.imul(level.id + 1, 0x85ebca6b) ^
-          Math.imul(sideIndex + 1, 0xc2b2ae35)) >>>
+          Math.imul(
+            (symmetric ? (['north', 'south'].includes(side) ? 0 : 1) : sideIndex) + 1,
+            0xc2b2ae35
+          )) >>>
           0,
         173
       );
       const choose = (values) => values[Math.floor(random() * values.length)];
       const roomHeight = buildingLevelHeight(spec, level.id);
       const hall =
+        !symmetric &&
         spec.kind !== 'turret' &&
         layout.style !== 'residential' &&
         levelIndex === 1 &&
         levels[levelIndex + 1]?.elevationFeet === level.elevationFeet + roomHeight &&
         span >= 25 &&
         ['north', 'east'].includes(side);
-      if (!hall && levelIndex > 1 && (level.id + sideIndex + (layout.seed % 4)) % 4 === 2) continue;
+      if (
+        !symmetric &&
+        !hall &&
+        levelIndex > 1 &&
+        (level.id + sideIndex + (layout.seed % 4)) % 4 === 2
+      )
+        continue;
       const count =
         spec.kind === 'turret' || hall
           ? 1
-          : Math.min(2, Math.max(1, Math.floor(span / WINDOW_SPACING[layout.style])));
-      const shift = choose([-0.07, 0, 0.07]);
+          : symmetric && levelIndex === 0 && side === 'south' && span >= 25
+            ? 2
+            : Math.min(2, Math.max(1, Math.floor(span / WINDOW_SPACING[layout.style])));
+      const shift = symmetric ? 0 : choose([-0.07, 0, 0.07]);
       for (let slot = 0; slot < count; slot++) {
         const sill = hall
           ? choose([1, 1.5, 2])
@@ -616,11 +645,17 @@ function composedWindows(spec, layout) {
         const u =
           spec.kind === 'turret'
             ? 0.5
-            : count === 2
-              ? (slot === 0 ? 0.28 : 0.72) + shift
-              : !level.id && side === 'south'
-                ? choose([0.22, 0.78])
-                : [0.35, 0.5, 0.65][(levelIndex + sideIndex + (layout.seed % 3)) % 3];
+            : symmetric
+              ? count === 2
+                ? slot === 0
+                  ? 0.28
+                  : 0.72
+                : 0.5
+              : count === 2
+                ? (slot === 0 ? 0.28 : 0.72) + shift
+                : !level.id && side === 'south'
+                  ? choose([0.22, 0.78])
+                  : [0.35, 0.5, 0.65][(levelIndex + sideIndex + (layout.seed % 3)) % 3];
         const window = {
           id: `f${level.id}-${side}-${slot}`,
           floor: level.id,
@@ -666,7 +701,7 @@ export function buildingWindows(spec) {
   const { length, width } = buildingDimensions(spec);
   const windows = new Map();
   const layout = spec.building.windowLayout;
-  if (spec.building.autoWindows && layout?.version === 2)
+  if (spec.building.autoWindows && layout?.version >= 2)
     for (const window of composedWindows(spec, layout)) windows.set(window.id, window);
   else if (spec.building.autoWindows)
     for (const { id: floor } of buildingLevels(spec, { includeDeck: false }))
@@ -766,6 +801,30 @@ export function buildingWallPoint(spec, side, u, offset = 0, y = 0) {
         : { x: length / 2 + offset, y, z: (u - 0.5) * width };
 }
 
+const ENTRY_DOOR = Object.freeze({
+  side: 'south',
+  u: 0.5,
+  floor: 0,
+  widthFeet: 5,
+  sillFeet: 0,
+  heightFeet: 8,
+});
+
+function balconyDoorOpening({ side, u, floor }) {
+  return { ...ENTRY_DOOR, side, u, floor };
+}
+
+export function buildingWallApertures(spec) {
+  return [
+    ENTRY_DOOR,
+    ...buildingWindows(spec),
+    ...(spec.building?.balconies ?? []).map(balconyDoorOpening),
+  ].map(({ side, u, floor, widthFeet, sillFeet, heightFeet }) => {
+    const bottom = buildingLevelElevation(spec, floor) + sillFeet;
+    return { side, u, widthFeet, bottom, top: bottom + heightFeet };
+  });
+}
+
 export function buildingLocalToFeet(spec, point) {
   const c = Math.cos(spec.angleRadians),
     s = Math.sin(spec.angleRadians);
@@ -862,7 +921,10 @@ export function buildingVolumes(spec) {
         'subtract'
       )
     );
-  const cut = (id, side, u, floor, apertureWidth, sill, height) => {
+  const cut = (
+    id,
+    { side, u, floor, widthFeet: apertureWidth, sillFeet: sill, heightFeet: height }
+  ) => {
     const along = ['north', 'south'].includes(side) ? 'x' : 'z';
     const thin = along === 'x' ? 'z' : 'x';
     const elevation = buildingLevelElevation(spec, floor);
@@ -886,7 +948,7 @@ export function buildingVolumes(spec) {
     hi[thin] = Math.max(point[thin] + sign * 0.1, point[thin] - sign * thickness);
     result.push(box(spec, id, lo, hi, 'subtract'));
   };
-  cut('entry-door', 'south', 0.5, 0, 5, 0, 8);
+  cut('entry-door', ENTRY_DOOR);
   result.push(
     box(
       spec,
@@ -895,18 +957,9 @@ export function buildingVolumes(spec) {
       { x: 2.5, y: base, z: width / 2 + 3 }
     )
   );
-  for (const window of buildingWindows(spec))
-    cut(
-      `window-${window.id}`,
-      window.side,
-      window.u,
-      window.floor,
-      window.widthFeet,
-      window.sillFeet,
-      window.heightFeet
-    );
+  for (const window of buildingWindows(spec)) cut(`window-${window.id}`, window);
   for (const balcony of spec.building.balconies) {
-    cut(`balcony-${balcony.id}-door`, balcony.side, balcony.u, balcony.floor, 5, 0, 8);
+    cut(`balcony-${balcony.id}-door`, balconyDoorOpening(balcony));
     const along = ['north', 'south'].includes(balcony.side) ? 'x' : 'z',
       thin = along === 'x' ? 'z' : 'x';
     const sign = ['east', 'south'].includes(balcony.side) ? 1 : -1;

@@ -5,6 +5,7 @@
 
 // ── Imports & Constants ─────────────────────────────────────────
 import logger, { LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { getPurePolyAsset } from '../config/assets/PurePolyAssets.js';
 
 const MODEL_LOG_CATEGORY = LOG_CATEGORY.CACHE;
 const DEFAULT_TEXTURE_BASE = 'assets/terrain/3d Assets/Textures';
@@ -55,17 +56,36 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
         let tex = cache._textureCache.get(full);
         if (!tex) {
           try {
-            tex = cache._textureLoader.load(full, () => {
-              if (tex && 'colorSpace' in tex) {
-                if (colorSpace === 'srgb' && three.SRGBColorSpace) {
-                  tex.colorSpace = three.SRGBColorSpace;
-                } else if (colorSpace === 'linear' && three.LinearSRGBColorSpace) {
-                  tex.colorSpace = three.LinearSRGBColorSpace;
-                }
-                tex.needsUpdate = true;
-              }
+            let resolveTexture;
+            const readiness = new Promise((resolve) => {
+              resolveTexture = resolve;
             });
+            tex = cache._textureLoader.load(
+              full,
+              () => {
+                if (tex && 'colorSpace' in tex) {
+                  if (colorSpace === 'srgb' && three.SRGBColorSpace) {
+                    tex.colorSpace = three.SRGBColorSpace;
+                  } else if (colorSpace === 'linear' && three.LinearSRGBColorSpace) {
+                    tex.colorSpace = three.LinearSRGBColorSpace;
+                  }
+                  tex.needsUpdate = true;
+                }
+                resolveTexture();
+              },
+              undefined,
+              (error) => {
+                if (cache._textureCache.get(full) === tex) cache._textureCache.delete(full);
+                resolveTexture(
+                  new Error(`Texture "${file}" could not be loaded`, { cause: error })
+                );
+              }
+            );
             if (tex && !tex.name) tex.name = file;
+            if (tex) {
+              cache._textureReadiness ||= new WeakMap();
+              cache._textureReadiness.set(tex, readiness);
+            }
             cache._textureCache.set(full, tex);
           } catch (_) {
             tex = null;
@@ -101,6 +121,14 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
       mats.forEach((mat) => {
         if (!mat) return;
         try {
+          if (entry.opaqueMaterials) {
+            mat.opacity = 1;
+            mat.transparent = false;
+            mat.alphaMap = null;
+            mat.alphaTest = 0;
+            mat.depthWrite = true;
+            mat.needsUpdate = true;
+          }
           if (!mat.map) {
             const direct = getEntryTexture('baseColor', { colorSpace: 'srgb' });
             if (direct) {
@@ -108,7 +136,7 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
               mat.needsUpdate = true;
             }
           }
-          if (!mat.map) {
+          if (!mat.map && entry.inferTextures !== false) {
             const nameLc = (mat.name || '').toLowerCase();
             const pick = () => {
               if (/leaves_birch|birch_leaves/.test(nameLc)) return 'Leaves_Birch_C.png';
@@ -194,7 +222,10 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
             matchesKnownAlphaTexture(mapFileLc) ||
             matchesKnownAlphaTexture(alphaSrcLc) ||
             matchesKnownAlphaTexture(alphaFileLc);
-          const isFoliage = !heurTrunk && (heurFoliage || matchesHint || hasKnownAlpha);
+          const isFoliage =
+            entry.inferFoliage !== false &&
+            !heurTrunk &&
+            (heurFoliage || matchesHint || hasKnownAlpha);
           if (!mat.userData) mat.userData = {};
           if (!isFoliage) {
             mat.userData.__foliageCandidate = false;
@@ -298,6 +329,19 @@ export function postProcessModel(cache, three, root, key, path, kind, descriptor
  * These values preserve natural relative proportions (tree > bush > flower > pebble).
  */
 export function computeTargetHeight(key) {
+  const purchased = getPurePolyAsset(key);
+  if (purchased) return purchased.targetHeight;
+  if (key === 'source-medieval-wall-door') return 10;
+  if (/^source-medieval-wall-(?:straight|window-wide|window-thin)$/.test(key)) return 10;
+  if (key === 'source-medieval-roof') return 5;
+  if (key === 'source-medieval-roof-front') return 5;
+  if (key === 'source-medieval-balcony') return 4;
+  if (key === 'source-dungeon-wall') return 10;
+  if (key === 'source-dungeon-torch') return 0.9;
+  if (key === 'source-cave-entrance') return 12;
+  if (key === 'source-cave-stalagmite') return 2.2;
+  if (key === 'source-cave-column') return 2.4;
+  if (key === 'source-iron-chest') return 2.5;
   if (/^giant-pine-/.test(key)) return 9.5;
   if (/^tall-thick-/.test(key)) return 7.5;
   if (/^tropical-palm-/.test(key)) return 6.4;
@@ -315,6 +359,8 @@ export function computeTargetHeight(key) {
   if (/^grass-.*-tall$/.test(key)) return 1.0;
   if (/^grass-/.test(key)) return 0.7;
   if (/^flower-/.test(key)) return 0.9;
+  if (key === 'mushroom-glow') return 0.6;
+  if (key === 'mushroom-giant-cap') return 2.2;
   if (/^mushroom-laetiporus/.test(key)) return 0.9;
   if (/^mushroom-/.test(key)) return 0.75;
   if (/^pebble-/.test(key)) return 0.35;

@@ -2,6 +2,7 @@ import CampaignWorld from './CampaignWorld.js';
 import CombatSession from '../entities/characters/CombatSession.js';
 import {
   getTokenConditions,
+  getTokenMovementSettings,
   linkTokenCharacter,
   facingAngleFromDirection,
   buildMovementRange,
@@ -19,9 +20,9 @@ import {
 import { movementSpeed } from '../rules/flight.js';
 import { boundsIntersectSolid } from '../terrain/ConvexGeometry.js';
 import { playerCreatureVisibility } from './CreatureVisibility.js';
-import { collectCollisionObstacles } from '../systems/dice/DicePhysics.js';
 import ServerTargeting from './ServerTargeting.js';
 import { getCharacterDefinition } from '../config/CharacterCatalog.js';
+import { PLAYER_DICE_DEFAULT_COLOR } from '../config/PlayerDiceCatalog.js';
 import { PLAYER_COMMAND_KINDS } from './PlayerCommandProtocol.js';
 import { fallingDice } from '../rules/falling.js';
 import { ConnectionUnavailableError } from './CampaignConnections.js';
@@ -36,6 +37,7 @@ import { findCoverWall, coverDestination } from './CampaignCover.js';
 import { COVER_POSES } from '../config/token-adapter/CoverMetrics.js';
 import { connectionTravelCost } from './CampaignTravel.js';
 import { mapLocationId } from './CampaignLocations.js';
+import { blocksCreatureMovement } from '../terrain/PlaceableCollision.js';
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 
@@ -352,7 +354,16 @@ export async function movePlayerActor(
   library,
   tokenId,
   target,
-  { dice, id, useSlowFall, closest = false, world } = {}
+  {
+    dice,
+    id,
+    useSlowFall,
+    diceColor,
+    closest = false,
+    world,
+    ownerFreeRoam = false,
+    groundBatch = false,
+  } = {}
 ) {
   const runtime = gameplayRuntime(scene, library, undefined, world);
   const actor = runtime.actors.find((entry) => entry.id === tokenId);
@@ -365,6 +376,8 @@ export async function movePlayerActor(
     !Number.isInteger(target.gridY)
   )
     throw gameplayError('Choose a valid destination on this actor map', 'invalid-destination');
+  if (groundBatch && (runtime.combat.active || saved.pose.kind !== 'ground'))
+    throw gameplayError('This route requires a separate world command', 'ground-batch-unavailable');
   if (saved.pose.kind === 'flight')
     return moveFlyingActor(scene, library, runtime, actor, target, { closest });
   if (target.elevationFeet !== undefined)
@@ -381,7 +394,7 @@ export async function movePlayerActor(
     if (other === actor || !runtime.world.sharesLocation(other.mapId, actor.mapId)) continue;
     const position = runtime.world.toMapPosition(
       actor.mapId,
-      runtime.world.getCampaignPosition(other.id)
+      runtime.world.toCampaignPosition(other.mapId, other.world)
     );
     occupied.push({
       gridX: Math.floor(position.x / map.grid.tileWorldSize),
@@ -392,11 +405,12 @@ export async function movePlayerActor(
 
   const blocked = new Set(
     map.terrain.placeables
-      .filter((entry) => ['plant', 'structure'].includes(entry.type))
+      .filter(blocksCreatureMovement)
       .map((entry) => `${entry.gridX},${entry.gridY}`)
   );
-  const status = runtime.combat.status(actor);
-  if ((status.active && !status.isTurn) || status.busy || status.downed)
+  const unlinked = ownerFreeRoam && !runtime.combat.active && !actor.characterSheetId;
+  const status = unlinked ? null : runtime.combat.status(actor);
+  if (status && ((status.active && !status.isTurn) || status.busy || status.downed))
     throw gameplayError('Movement requires your active, available turn', 'not-your-turn');
   const range = buildSurfaceRange({
     geometry: navigationGeometry({
@@ -413,7 +427,9 @@ export async function movePlayerActor(
       heightFeet: actor.world.y / unit,
       surfaceId: saved.pose.surfaceId,
     },
-    speedFeet: playerMovementBudget(runtime.combat, actor).remaining,
+    speedFeet: unlinked
+      ? getTokenMovementSettings(actor).speed
+      : playerMovementBudget(runtime.combat, actor).remaining,
     prone: getTokenConditions(actor).includes('prone'),
     isOccupied: (x, y, height, bodyHeight) =>
       blocked.has(`${x},${y}`) ||
@@ -467,7 +483,12 @@ export async function movePlayerActor(
     }
     height = step.heightFeet;
   }
-  const next = copy(scene);
+  const next = groundBatch
+    ? {
+        ...scene,
+        creatures: scene.creatures.map((entry) => (entry.id === actor.id ? { ...entry } : entry)),
+      }
+    : copy(scene);
   const moved = next.creatures.find((entry) => entry.id === actor.id);
   const destination = {
     x: (last.xFeet ?? (last.gridX + 0.5) * 5) * unit,
@@ -498,8 +519,15 @@ export async function movePlayerActor(
       },
     };
   });
-  const ticket = runtime.combat.beginConnectionMovement(actor, last.cost);
-  runtime.combat.finishMovement(ticket, last.cost);
+  if ((ownerFreeRoam || groundBatch) && distanceFeet > 0)
+    throw gameplayError(
+      'This fall requires a separate world command',
+      ownerFreeRoam ? 'owner-movement-unavailable' : 'ground-batch-unavailable'
+    );
+  if (!unlinked) {
+    const ticket = runtime.combat.beginConnectionMovement(actor, last.cost);
+    runtime.combat.finishMovement(ticket, last.cost);
+  }
   moved.gridX = last.gridX;
   moved.gridY = last.gridY;
   moved.facingAngle = routeFacing;
@@ -510,11 +538,28 @@ export async function movePlayerActor(
   };
   const fall =
     distanceFeet > 0
-      ? await applyPlayerFall(runtime, library, actor, { id, distanceFeet, useSlowFall }, dice)
+      ? await applyPlayerFall(
+          runtime,
+          scene,
+          library,
+          actor,
+          { id, distanceFeet, useSlowFall, diceColor },
+          dice
+        )
       : null;
-  runtime.combat.completeFreeMovement(actor);
+  if (fall?.rerollRequired)
+    return {
+      scene,
+      receipt: {
+        type: 'move',
+        tokenId,
+        rerollRequired: true,
+        ...(fall.roll ? { roll: fall.roll } : {}),
+      },
+    };
+  if (!unlinked) runtime.combat.completeFreeMovement(actor);
   next.combat = runtime.combat.snapshot();
-  encodeScene(next, { ruleset: library.ruleset, library });
+  if (!groundBatch) encodeScene(next, { ruleset: library.ruleset, library });
   return {
     scene: next,
     receipt: {
@@ -522,7 +567,7 @@ export async function movePlayerActor(
       tokenId,
       costFeet: last.cost,
       route: approvedRoute,
-      ...(fall ? { fall } : {}),
+      ...(fall ? { fall: fall.outcome, roll: fall.roll } : {}),
       placement: {
         mapId: actor.mapId,
         gridX: moved.gridX,
@@ -596,7 +641,7 @@ function moveFlyingActor(scene, library, runtime, actor, target, { closest = fal
   }
   const blocked = new Set(
     map.terrain.placeables
-      .filter((entry) => ['plant', 'structure'].includes(entry.type))
+      .filter(blocksCreatureMovement)
       .map((entry) => `${entry.gridX},${entry.gridY}`)
   );
   for (let y = 0; y < map.grid.rows; y++)
@@ -718,9 +763,17 @@ function moveFlyingActor(scene, library, runtime, actor, target, { closest = fal
 
 async function applyPlayerFall(
   runtime,
+  scene,
   library,
   actor,
-  { id, distanceFeet, useSlowFall, ignoreFlight = false },
+  {
+    id,
+    distanceFeet,
+    useSlowFall,
+    diceColor = PLAYER_DICE_DEFAULT_COLOR,
+    rollMapId = actor.mapId,
+    ignoreFlight = false,
+  },
   dice
 ) {
   const character = runtime.combat.movementCharacter(actor, library.get(actor.characterSheetId));
@@ -734,13 +787,28 @@ async function applyPlayerFall(
     );
   if (useSlowFall && !availability.allowed)
     throw gameplayError('Slow Fall requires an available Monk reaction', 'reaction-unavailable');
-  const slowReduction = useSlowFall ? await runtime.combat.useSlowFall(actor, id) : 0;
   const expression = count ? `${count}d6` : '0';
-  const roll = await dice.roll({
-    expression,
-    label: `${character.name}: falling damage`,
-    mode: 'normal',
+  const targeting = new ServerTargeting({
+    runtime,
+    scene,
+    library,
+    actor,
+    ownedIds: [actor.characterSheetId],
   });
+  const roll = await dice.roll(
+    { expression, label: `${character.name}: falling damage`, mode: 'normal', diceColor },
+    targeting.rollContext(rollMapId)
+  );
+  roll.mapId = rollMapId;
+  if (roll.rerollRequired)
+    return {
+      roll: rollMapId === actor.mapId ? roll : null,
+      rerollRequired: true,
+      outcome: null,
+    };
+  if (roll.cancelled || !Number.isFinite(roll.total))
+    throw new Error('Falling damage requires a completed physical roll');
+  const slowReduction = useSlowFall ? await runtime.combat.useSlowFall(actor, id) : 0;
   const outcome = library.rules.resolveFall({
     distanceFeet,
     rawDamage: roll.total,
@@ -761,7 +829,7 @@ async function applyPlayerFall(
     roll: { ...roll, expression },
   });
   await library.flush();
-  return outcome;
+  return { outcome, roll, rerollRequired: false };
 }
 
 export function playerCommandReceipt(result, previousScene, library) {
@@ -777,7 +845,7 @@ export function playerCommandReceipt(result, previousScene, library) {
   );
   let world;
   const actor = runtime.actors.find((entry) => entry.id === receipt.tokenId);
-  if (actor) {
+  if (actor?.characterSheetId) {
     const status = runtime.combat.status(actor);
     const movement = playerMovementBudget(runtime.combat, actor);
     receipt.budget = {
@@ -911,7 +979,15 @@ export async function executePlayerCommand(
   scene,
   library,
   command,
-  { dice, ownedIds = [], placementGrant, undo = new Map(), world } = {}
+  {
+    dice,
+    ownedIds = [],
+    placementGrant,
+    undo = new Map(),
+    world,
+    ownerFreeRoam = false,
+    groundBatch = false,
+  } = {}
 ) {
   if (command.kind === 'place')
     return placePlayerCharacter(scene, library, command.payload, placementGrant);
@@ -920,8 +996,11 @@ export async function executePlayerCommand(
       dice,
       id: command.commandId,
       useSlowFall: command.payload.useSlowFall,
+      diceColor: command.payload.diceColor,
       closest: command.payload.closest,
       world,
+      ownerFreeRoam,
+      groundBatch,
     });
   const runtime = gameplayRuntime(scene, library, undo);
   const actor = runtime.actors.find((entry) => entry.id === command.tokenId);
@@ -1027,19 +1106,34 @@ export async function executePlayerCommand(
     const status = runtime.combat.status(actor);
     if ((status.active && !status.isTurn) || status.busy || status.downed)
       throw gameplayError('Movement requires your active, available turn', 'not-your-turn');
-    if (
-      !runtime.world
-        .getConnections(actor.mapId)
-        .some((entry) => entry.id === command.payload.connectionId)
-    )
+    const physical = runtime.world
+      .getConnections(actor.mapId)
+      .some((entry) => entry.id === command.payload.connectionId);
+    const logical = runtime.world
+      .getLogicalPassages(actor.mapId)
+      .some((entry) => entry.id === command.payload.connectionId);
+    if (!physical && !logical)
       throw gameplayError('This connection is not available here', 'unreachable');
     let plan;
     try {
-      plan = runtime.world.planConnection(command.payload.connectionId, actor.mapId, actor.world, {
+      const options = {
         travelMode: actor.flightActive ? 'fly' : 'ground',
         action: command.payload.action,
         occupants: runtime.actors.filter((entry) => entry !== actor),
-      });
+      };
+      plan = logical
+        ? runtime.world.planLogicalPassage(
+            command.payload.connectionId,
+            actor.mapId,
+            actor.world,
+            options
+          )
+        : runtime.world.planConnection(
+            command.payload.connectionId,
+            actor.mapId,
+            actor.world,
+            options
+          );
     } catch (error) {
       if (!(error instanceof ConnectionUnavailableError)) throw error;
       throw gameplayError(error.message, 'unreachable');
@@ -1091,18 +1185,31 @@ export async function executePlayerCommand(
     const landing = runtime.world.findSupportBelow(from, { mapId: actor.mapId });
     if (!landing) throw gameplayError('There is no supported landing below', 'landing-unavailable');
     const distanceFeet = Math.max(0, from.y - landing.positionFeet.y);
-    const outcome = await applyPlayerFall(
+    const fall = await applyPlayerFall(
       runtime,
+      scene,
       library,
       actor,
       {
         id: command.commandId,
         distanceFeet,
         useSlowFall: command.payload.useSlowFall,
+        diceColor: command.payload.diceColor,
+        rollMapId: landing.mapId,
         ignoreFlight: true,
       },
       dice
     );
+    if (fall.rerollRequired)
+      return {
+        scene,
+        receipt: {
+          type: 'flight.drop',
+          tokenId: actor.id,
+          rerollRequired: true,
+          ...(fall.roll ? { roll: fall.roll } : {}),
+        },
+      };
     const transfer = campaignLandingForSupport(runtime.world, actor, landing);
     const targetMap = runtime.world.getMap(landing.mapId);
     actor.mapId = landing.mapId;
@@ -1130,7 +1237,8 @@ export async function executePlayerCommand(
         type: 'flight.drop',
         tokenId: actor.id,
         distanceFeet,
-        result: outcome,
+        result: fall.outcome,
+        roll: fall.roll,
         placement: {
           mapId: actor.mapId,
           gridX: actor.gridX,
@@ -1280,7 +1388,10 @@ export async function executePlayerCommand(
             (request.attack && getTokenConditions(actor).includes('prone')));
         const mode =
           !!advantage === !!disadvantage ? 'normal' : advantage ? 'advantage' : 'disadvantage';
-        roll = await dice.roll({ ...request, mode }, targeting.rollContext());
+        roll = await dice.roll(
+          { ...request, mode, diceColor: command.payload.diceColor },
+          targeting.rollContext()
+        );
         roll.mapId = actor.mapId;
         rolls.push(roll);
         if (roll.rerollRequired) {
@@ -1335,47 +1446,15 @@ export async function executePlayerCommand(
     };
   }
   if (command.kind === 'roll') {
-    const map = runtime.world.getMap(actor.mapId);
-    const creatures = scene.creatures.map((entry) => ({
-      ...entry,
-      mapId: scene.version === 3 ? entry.mapId : 'map-main',
-    }));
-    const visibility = playerCreatureVisibility({
-      world: runtime.world,
-      creatures,
+    const targeting = new ServerTargeting({
+      runtime,
+      scene,
+      library,
+      actor,
       ownedIds: [actor.characterSheetId],
-      publishedIds: runtime.world.listMaps().map((entry) => entry.id),
-      observerTokenId: actor.id,
-    });
-    const projected = visibility.visible.map((entry) => {
-      const point = runtime.world.projectCreature(entry.id, actor.mapId).world;
-      return {
-        gridX: Math.floor(point.x / map.grid.tileWorldSize),
-        gridY: Math.floor(point.z / map.grid.tileWorldSize),
-      };
     });
     const scope = runtime.combat.captureRoll(actor);
-    const roll = await dice.roll(command.payload, {
-      metrics: { cols: map.grid.cols, rows: map.grid.rows, tileSize: map.grid.tileWorldSize },
-      groundHeights: map.terrain.heights.map((row) =>
-        row.map((height) => height * map.terrain.worldElevationUnit)
-      ),
-      obstacles: collectCollisionObstacles(
-        {
-          gameManager: {
-            placedTokens: projected,
-            spatial: {
-              tileWorldSize: map.grid.tileWorldSize,
-              gridToWorld: (x, z) => ({
-                x: x * map.grid.tileWorldSize,
-                z: z * map.grid.tileWorldSize,
-              }),
-            },
-          },
-        },
-        { tileSize: map.grid.tileWorldSize }
-      ),
-    });
+    const roll = await dice.roll(command.payload, targeting.rollContext());
     roll.mapId = actor.mapId;
     await runtime.combat.recordRoll(scope, {
       label: roll.label,

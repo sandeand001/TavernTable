@@ -12,6 +12,23 @@ export function logMeshPoolDebug(message, data = {}) {
   }
 }
 
+export function invalidatePlaceableBounds(group) {
+  for (const mesh of [group.instancedMesh, group.depthPrepass]) {
+    if (!mesh) continue;
+    mesh.boundingSphere = null;
+    mesh.boundingBox = null;
+  }
+}
+
+export function disposePlaceableDepthPrepass(group) {
+  const depth = group.depthPrepass;
+  if (!depth) return;
+  depth.parent?.remove(depth);
+  depth.material.dispose();
+  depth.dispose();
+  group.depthPrepass = null;
+}
+
 // ── Preview ──────────────────────────────────────────────────────────────────
 
 export async function setPreview(pool, gx, gy) {
@@ -71,6 +88,7 @@ export function dispose(pool) {
   pool._revision = (pool._revision || 0) + 1;
   pool._pendingGroups.clear();
   for (const g of pool._groups.values()) {
+    disposePlaceableDepthPrepass(g);
     try {
       g.instancedMesh.geometry?.dispose();
     } catch (_) {
@@ -149,6 +167,7 @@ export function clearAll(pool) {
           }
           try {
             inst.count = 0;
+            invalidatePlaceableBounds(group);
           } catch (_) {
             /* ignore */
           }
@@ -177,6 +196,7 @@ export async function fullReset(pool) {
     const old = Array.from(pool._groups.entries());
     // Remove & dispose
     for (const [, g] of old) {
+      disposePlaceableDepthPrepass(g);
       try {
         pool.gameManager?.threeSceneManager?.scene?.remove(g.instancedMesh);
       } catch (_) {
@@ -206,6 +226,7 @@ export async function fullReset(pool) {
 export function purgeAll(pool) {
   try {
     for (const g of pool._groups.values()) {
+      disposePlaceableDepthPrepass(g);
       try {
         pool.gameManager?.threeSceneManager?.scene?.remove(g.instancedMesh);
       } catch (_) {

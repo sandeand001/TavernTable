@@ -4,6 +4,8 @@ import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
 export const BRUSH_LAYER_HINT = 'aboveFacesBelowTokens';
 export const BRUSH_COLORS = Object.freeze({
   preview: 0x22d3ee,
+  treeScaled: 0xf59e0b,
+  treeBlocked: 0xef4444,
 });
 
 const DEFAULT_HIGHLIGHT_STYLE = Object.freeze({

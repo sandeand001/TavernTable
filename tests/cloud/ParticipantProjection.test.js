@@ -185,7 +185,7 @@ for (const stage of ['presentation', 'snapshot'])
       const entered = Promise.withResolvers();
       const release = Promise.withResolvers();
       t.after(() => release.resolve());
-      let head = { generation: 1 };
+      let head = { version: 1, generation: 1 };
       let notifyHead;
       const idleWatch = () => () => {};
       const reference = {
@@ -262,9 +262,13 @@ for (const stage of ['presentation', 'snapshot'])
       await slow.subscription.ready;
       const ready = observe(current);
       await ready.subscription.ready;
-      head = { generation: 2, presentationRef: {} };
+      const failOnObserverError = (observer) =>
+        observer.failed.promise.then((code) => {
+          throw new Error(`Unexpected observer error: ${code}`);
+        });
+      head = { version: 1, generation: 2, presentationRef: {} };
       notifyHead({ data: () => head });
-      await entered.promise;
+      await Promise.race([entered.promise, failOnObserverError(slow), failOnObserverError(ready)]);
       try {
         const delivered = await Promise.race([
           ready.advanced.get(2).promise.then(() => true),
@@ -273,7 +277,7 @@ for (const stage of ['presentation', 'snapshot'])
         assert.deepEqual(ready.errors, []);
         assert.equal(delivered, true, 'An independently authorized observer must advance now');
         assert.equal(slow.events.length, 1, 'The unconfirmed observer must still wait');
-        head = { generation: 3, presentationRef: {} };
+        head = { version: 1, generation: 3, presentationRef: {} };
         notifyHead({ data: () => head });
         const continued = await Promise.race([
           ready.advanced.get(3).promise.then((event) => event.kind),
@@ -288,11 +292,14 @@ for (const stage of ['presentation', 'snapshot'])
       } finally {
         release.resolve();
       }
-      assert.equal((await slow.advanced.get(3).promise).kind, 'owner-resync');
+      assert.equal(
+        (await Promise.race([slow.advanced.get(3).promise, failOnObserverError(slow)])).kind,
+        'owner-resync'
+      );
       assert.equal((await ready.advanced.get(2).promise).delta.generation, 2);
       assert.equal((await ready.advanced.get(3).promise).delta.generation, 3);
       assert.deepEqual(slow.errors, []);
-      head = { generation: 2 };
+      head = { version: 1, generation: 2 };
       notifyHead({ data: () => head });
       assert.deepEqual(
         await Promise.race([
@@ -418,6 +425,118 @@ test('shared motion geometry preserves per-observer visibility without changing 
     [update.commandId]
   );
   assert.deepEqual(await visibleMovementPresentations({ ...input, world, view: second.state }), []);
+});
+
+test('logical passages refresh cached artwork while keeping separate observers and crossing routes private', async (t) => {
+  const f = await fixture(t);
+  const context = { ruleset: '2014', library: f.library };
+  const original = decodeScene(f.state.scene, context);
+  const world = CampaignWorld.fromScene(original, context);
+  const main = world.getMap('map-main');
+  world.addLocation({
+    id: 'secret-depths',
+    name: 'Secret depths',
+    map: { ...main, id: 'secret-chamber', name: 'Secret chamber' },
+  });
+  const unlinked = world.save();
+  unlinked.creatures[1].mapId = 'secret-chamber';
+  const before = {
+    ...f.state,
+    scene: encodeScene(unlinked, context),
+  };
+  const project = (state, characterId, observerTokenId, mapId, assetKey = null) =>
+    participantState({
+      state,
+      catalog: f.catalog,
+      campaign: state.campaign,
+      characterIds: [characterId],
+      options: { observerTokenId, mapId, assetKey },
+      images: [],
+    });
+  const beforeMain = await project(before, f.first, 'token-1', 'map-main');
+  const beforeChamber = await project(before, f.second, 'token-2', 'secret-chamber');
+  const linked = structuredClone(unlinked);
+  linked.logicalPassages = [
+    {
+      version: 1,
+      id: 'private-passage',
+      kind: 'chamber',
+      ends: [
+        { mapId: 'map-main', side: 'east' },
+        { mapId: 'secret-chamber', side: 'west' },
+      ],
+    },
+  ];
+  const changed = {
+    ...before,
+    sceneRevision: before.sceneRevision + 1,
+    scene: encodeScene(linked, context),
+  };
+  reuseParticipantGeometry(changed, before);
+  const afterMain = await project(
+    changed,
+    f.first,
+    'token-1',
+    'map-main',
+    beforeMain.state.publicScene.assetKey
+  );
+  const afterChamber = await project(
+    changed,
+    f.second,
+    'token-2',
+    'secret-chamber',
+    beforeChamber.state.publicScene.assetKey
+  );
+  for (const [beforeView, afterView, mapId, side, hidden] of [
+    [beforeMain, afterMain, 'map-main', 'east', 'secret-chamber'],
+    [beforeChamber, afterChamber, 'secret-chamber', 'west', 'map-main'],
+  ]) {
+    assert.notEqual(afterView.state.publicScene.assetKey, beforeView.state.publicScene.assetKey);
+    assert.deepEqual(afterView.state.publicScene.assets.logicalPassages, [
+      { id: 'private-passage', mapId, side },
+    ]);
+    assert.ok(!JSON.stringify(afterView.state).includes(hidden));
+  }
+
+  const from = sceneActorPlacement(linked, linked.creatures[0]);
+  linked.creatures[0].mapId = 'secret-chamber';
+  linked.creatures[0].gridX = 0;
+  linked.creatures[0].gridY = 2;
+  linked.creatures[0].pose.world = { x: 0.5, y: 0, z: 2.5 };
+  linked.creatures[1].mapId = 'map-main';
+  const placement = sceneActorPlacement(linked, linked.creatures[0]);
+  const moved = {
+    ...changed,
+    sceneRevision: changed.sceneRevision + 1,
+    scene: encodeScene(linked, context),
+  };
+  reuseParticipantGeometry(moved, changed);
+  const owner = await project(moved, f.first, 'token-1', 'secret-chamber');
+  const other = await project(moved, f.second, 'token-2', 'map-main');
+  const source = participantProjectionSource(moved, f.catalog, moved.campaign);
+  const updates = [
+    {
+      commandId: 'private_crossing',
+      tokenId: 'token-1',
+      kind: 'move',
+      sceneRevision: moved.sceneRevision,
+      charactersRevision: moved.revision,
+      motion: { kind: 'walk', completed: true, from, route: [placement] },
+    },
+  ];
+  const input = {
+    root: path.resolve(__dirname, '..', '..'),
+    scene: source.scene,
+    library: source.library,
+    world: source.world,
+    state: moved,
+    updates,
+    sinceSceneRevision: changed.sceneRevision,
+  };
+  assert.deepEqual(await visibleMovementPresentations({ ...input, view: owner.state }), []);
+  assert.deepEqual(await visibleMovementPresentations({ ...input, view: other.state }), []);
+  assert.ok(!JSON.stringify(owner.state.publicScene).includes('map-main'));
+  assert.ok(!JSON.stringify(other.state.publicScene).includes('secret-chamber'));
 });
 
 test('certified public terrain is deeply immutable without trusting merely frozen or previously valid inputs', async (t) => {

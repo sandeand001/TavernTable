@@ -31,3 +31,28 @@ test('flight poses roundtrip at their absolute altitude and cannot be restored i
   scene.creatures[0].pose.world.y = 0;
   expect(() => encodeScene(scene, context)).toThrow('flight altitude');
 });
+
+test('formation offsets survive scene serialization and reject invalid positions', () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ catalog: [], ruleset: '2014', storage: localStorage });
+  const scene = sceneState();
+  const context = { ruleset: '2014', library };
+  const formation = {
+    type: 'plant',
+    modelKey: 'source-cave-stalagmite',
+    gridX: 1,
+    gridY: 1,
+    persistedScale: { x: 0.4, y: 1, z: 0.4 },
+    gridOffsetX: 0.12,
+    gridOffsetY: -0.2,
+  };
+  scene.terrain.placeables.push(formation);
+  expect(decodeScene(encodeScene(scene, context), context).terrain.placeables).toContainEqual(
+    formation
+  );
+  formation.gridOffsetX = 0.6;
+  expect(() => encodeScene(scene, context)).toThrow('placeable references');
+  formation.gridOffsetX = 0;
+  delete formation.gridOffsetY;
+  expect(() => encodeScene(scene, context)).toThrow('placeable references');
+});

@@ -7,6 +7,7 @@ import { TerrainRebuilder } from '../../../src/scene/terrain/TerrainRebuilder.js
 import { TerrainMeshBuilder } from '../../../src/scene/terrain/TerrainMeshBuilder.js';
 import { PlaceableMeshPool } from '../../../src/scene/terrain/PlaceableMeshPool.js';
 import { getBiomeColorWithHydrology } from '../../../src/config/biome/BiomePalettes.js';
+import { PLAYER_DICE_DEFAULT_COLOR } from '../../../src/config/PlayerDiceCatalog.js';
 import PlayerInputController from '../../../src/ui/sessions/PlayerInputController.js';
 import PlayerCommandAdapter from '../../../src/ui/sessions/PlayerCommandAdapter.js';
 import { InteractionManager } from '../../../src/managers/InteractionManager.js';
@@ -133,6 +134,7 @@ test('a visible moving DM sprite remains selectable without becoming player-auth
     await input.requestMove(foreign, { gridX: 4, gridY: 1 });
     expect(send).toHaveBeenCalledWith('move', state.observerTokenId, {
       target: { mapId: 'main', gridX: 4, gridY: 1 },
+      diceColor: PLAYER_DICE_DEFAULT_COLOR,
     });
   } finally {
     input.destroy();
@@ -162,6 +164,7 @@ test('player movement uses the assigned observer after selecting a DM sprite or 
     expect(send).toHaveBeenCalledWith('move', state.observerTokenId, {
       target: { mapId: 'main', gridX: 4, gridY: 1 },
       closest: true,
+      diceColor: PLAYER_DICE_DEFAULT_COLOR,
     });
   } finally {
     input.destroy();
@@ -298,6 +301,9 @@ test('unrelated snapshots preserve a visible peer position that is still animati
   const moving = jest
     .spyOn(gameManager.token3DAdapter, 'isMovementInProgress')
     .mockImplementation((token) => token === guard);
+  const reconcile = jest
+    .spyOn(gameManager.token3DAdapter, 'reconcileApprovedMovement')
+    .mockImplementation((token) => token === guard);
   const restore = jest.spyOn(gameManager.token3DAdapter, 'restoreStablePlacement');
   const next = JSON.parse(JSON.stringify(state));
   next.sceneRevision++;
@@ -315,6 +321,7 @@ test('unrelated snapshots preserve a visible peer position that is still animati
   expect(guard.world.x).toBe(3.75);
   expect(restore.mock.calls.some(([token]) => token === guard)).toBe(false);
   moving.mockRestore();
+  reconcile.mockRestore();
   restore.mockRestore();
   await runtime.destroy();
 });
@@ -532,6 +539,7 @@ test('a real map click sends a host movement intent without moving the sprite un
   expect(sent).toHaveLength(1);
   expect(sent[0][1][1].payload).toEqual({
     target: { mapId: 'main', gridX: 2, gridY: 1 },
+    diceColor: PLAYER_DICE_DEFAULT_COLOR,
   });
   expect(gameManager.placedTokens[0].world).toEqual(before);
   release({

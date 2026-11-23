@@ -10,7 +10,12 @@ import { buildingLevels, createWindowLayout } from '../BuildingModel.js';
 import { createSettlementLayout } from './SettlementLayouts.js';
 import { createCastleSiteLayout } from './CastleSites.js';
 import { createCastleCellarLayout } from './CastleCellars.js';
-import { createCavernInterior } from './CavernInteriors.js';
+import { createDungeonLayout } from './DungeonLayouts.js';
+import {
+  cavernExitsForCount,
+  createCavernInterior,
+  defaultCavernExits,
+} from './CavernInteriors.js';
 import { createBuildingSnapPreview } from '../BuildingSnaps.js';
 
 const LANDMARK_BIOMES = new Set([
@@ -70,6 +75,11 @@ export function generateBiomeStructures({
   geometry,
   feetPerLevel,
   cavernExits = [],
+  cavernExitCount = null,
+  cavernKind = 'main',
+  dungeonRoomCount,
+  layoutFamily = null,
+  outerWards = true,
   enabled = true,
 }) {
   const rows = heights.length,
@@ -87,14 +97,71 @@ export function generateBiomeStructures({
   const protectedBounds = protectedVolumes
     .filter((v) => v.operation === 'add')
     .map((v) => v.bounds);
+  if (biomeKey === 'dungeon') {
+    const layout = enabled
+      ? createDungeonLayout({
+          cols,
+          rows,
+          seed,
+          roomCount: dungeonRoomCount,
+          usedIds: preserved.map((spec) => spec.id),
+        })
+      : { structures: [], placements: [] };
+    const { structures } = layout;
+    if (
+      structures.some((spec) =>
+        protectedBounds.some((bounds) => intersects(structureBounds(spec), bounds))
+      )
+    )
+      throw new Error('The Dungeon layout conflicts with authored construction');
+    const next = heights.map((row) => [...row]);
+    for (const bounds of protectedBounds)
+      for (
+        let z = Math.max(0, Math.floor(bounds.min.z / 5));
+        z < Math.min(rows, Math.ceil(bounds.max.z / 5));
+        z++
+      )
+        for (
+          let x = Math.max(0, Math.floor(bounds.min.x / 5));
+          x < Math.min(cols, Math.ceil(bounds.max.x / 5));
+          x++
+        )
+          next[z][x] = previousHeights[z][x];
+    const generatedVolumes = structures.flatMap(structureVolumes);
+    if (structures.length > budget.structures || generatedVolumes.length > budget.volumes)
+      throw new Error('The Dungeon layout exceeds the map geometry budget');
+    const volumes = [...protectedVolumes, ...generatedVolumes];
+    const allStructures = [...preserved, ...structures];
+    return {
+      heights: next,
+      placements: layout.placements.filter(({ gridX, gridY }) => {
+        const x = (gridX + 0.5) * 5;
+        const z = (gridY + 0.5) * 5;
+        return !protectedBounds.some(
+          (bounds) =>
+            x >= bounds.min.x && x <= bounds.max.x && z >= bounds.min.z && z <= bounds.max.z
+        );
+      }),
+      geometry: {
+        version: allStructures.length ? 3 : volumes.some((volume) => volume.shape) ? 2 : 1,
+        ...(allStructures.length ? { structures: allStructures } : {}),
+        volumes,
+      },
+    };
+  }
   if (CAVERN_BIOME_KEYS.includes(biomeKey)) {
+    const automaticExits =
+      cavernExitCount === null
+        ? defaultCavernExits(biomeKey, seed)
+        : cavernExitsForCount(biomeKey, seed, cavernExitCount);
     const interior = createCavernInterior({
       biomeKey,
       seed,
       cols,
       rows,
       feetPerLevel,
-      exits: [...new Set([...(enabled ? ['north', 'east'] : []), ...cavernExits])],
+      kind: cavernKind,
+      exits: [...new Set([...(enabled ? automaticExits : []), ...cavernExits])],
     });
     for (const spec of preserved) {
       const bounds = structureBounds(spec);
@@ -243,6 +310,7 @@ export function generateBiomeStructures({
       width,
       depth,
       feetPerLevel,
+      ...(!settlement.site ? { layoutFamily, outerWards } : {}),
     });
     const proposed = [];
     for (const [index, input] of layout.structures.entries()) {

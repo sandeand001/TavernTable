@@ -3,6 +3,7 @@ import CloudLiveConnection from './CloudLiveConnection.js';
 import { CloudAccountError } from './CloudAccount.js';
 import { sha256 } from '../storage/sha256.js';
 import { encodeBase64 as base64 } from '../storage/base64.js';
+import { isProtectedAssetId } from '../core/ProtectedAsset.js';
 import { campaignRecordCharacterId } from './CampaignCharacters.js';
 import {
   isCloudUUID,
@@ -85,6 +86,7 @@ const expectedPresenceCloseFailures = new Set([
   'invalid-identity',
   'email-verification-required',
   'pilot-access-required',
+  'account-disabled',
   'identity-unavailable',
   'auth-unavailable',
   'cloud-unavailable',
@@ -136,12 +138,16 @@ export default class CloudCampaignClientStore {
     this.saveListeners = new Set();
     this.streams = new Set();
     this.liveConnections = new Set();
+    this.protectedKeyRequests = new Map();
     this.ownerWorlds = new Map();
     this.issuedCommands = new Set();
     this.saveState = Object.freeze({ phase: 'idle', error: null });
     this.reconciliationRequired = globalThis.navigator?.onLine === false;
     this.stopPrivateInvalidation = connection.subscribePrivateInvalidation?.((invalidatedUid) => {
-      if (invalidatedUid === this.uid) this.reconciliationRequired = true;
+      if (invalidatedUid === this.uid) {
+        this.reconciliationRequired = true;
+        this.protectedKeyRequests.clear();
+      }
     });
     const window = globalThis.window;
     const offline = () => {
@@ -415,6 +421,57 @@ export default class CloudCampaignClientStore {
     )
       throw invalidResponse();
     return copy(result);
+  }
+
+  async getProtectedAssetKey(id, keyId) {
+    const requireVerifiedIdentity = () => {
+      this._identity();
+      if (this.connection.account.identity()?.emailVerified !== true)
+        throw failure(
+          403,
+          'email-verification-required',
+          'Verify your email before loading protected models.'
+        );
+    };
+    requireVerifiedIdentity();
+    this._online();
+    const resource = this._resource(id, '/protected-asset-key');
+    if (!isProtectedAssetId(keyId))
+      throw failure(400, 'invalid-protected-asset-request', 'Choose a protected model key.');
+    const requestId = `${id}\0${keyId}`;
+    let pending = this.protectedKeyRequests.get(requestId);
+    if (!pending) {
+      pending = (async () => {
+        const { access } = await this.getParticipantAccess(id);
+        const result = await this._call(resource, {
+          method: 'POST',
+          body: { keyId },
+          accessScope: access,
+        });
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          Array.isArray(result) ||
+          Object.keys(result).sort().join(',') !== 'key,keyId,version' ||
+          result.version !== 1 ||
+          result.keyId !== keyId ||
+          typeof result.key !== 'string' ||
+          !/^[A-Za-z0-9+/]{43}=$/.test(result.key) ||
+          globalThis.btoa(globalThis.atob(result.key)) !== result.key
+        )
+          throw invalidResponse();
+        return result.key;
+      })();
+      this.protectedKeyRequests.set(requestId, pending);
+    }
+    try {
+      const key = await pending;
+      requireVerifiedIdentity();
+      return key;
+    } finally {
+      if (this.protectedKeyRequests.get(requestId) === pending)
+        this.protectedKeyRequests.delete(requestId);
+    }
   }
 
   subscribeSave(listener) {
@@ -763,6 +820,7 @@ export default class CloudCampaignClientStore {
           item.error === null &&
           [
             'pilot-access-required',
+            'account-disabled',
             'email-verification-required',
             'invalid-identity',
             'authentication-required',
@@ -774,6 +832,7 @@ export default class CloudCampaignClientStore {
             'campaign-access-changed',
             'campaign-not-found',
             'pilot-access-required',
+            'account-disabled',
             'email-verification-required',
             'invalid-identity',
             'authentication-required',
@@ -820,6 +879,8 @@ export default class CloudCampaignClientStore {
   async retryPending() {
     this._identity();
     const item = this.pending;
+    if (!item && this.pendingWorld?.scope.role === 'owner' && this.pendingWorld.error)
+      return this.retryWorldCommand();
     if (!item)
       throw failure(
         400,
@@ -1473,7 +1534,7 @@ export default class CloudCampaignClientStore {
       !isCloudAccessScope(expected) ||
       expected.uid !== this.uid ||
       expected.campaignId !== id ||
-      expected.role !== 'member' ||
+      (expected.role !== 'member' && request?.command?.kind !== 'move') ||
       !request ||
       typeof request !== 'object' ||
       Array.isArray(request) ||
@@ -1503,6 +1564,8 @@ export default class CloudCampaignClientStore {
       );
     if (!previous) this._editing();
     const item = previous ?? { id, input, scope, error: null, promise: null };
+    if (scope.role === 'owner' && !previous && this.pending)
+      throw failure(409, 'pending-cloud-command', 'Finish the previous cloud save first.');
     this.pendingWorld = item;
     return this._worldAttempt(item);
   }
@@ -1526,6 +1589,7 @@ export default class CloudCampaignClientStore {
       .then((result) => {
         this._identity();
         this.pendingWorld = null;
+        if (item.scope.role === 'owner' && item.error) this._saveStatus('saved');
         return result;
       })
       .catch((error) => {
@@ -1535,7 +1599,10 @@ export default class CloudCampaignClientStore {
           [400, 401, 403, 404, 409, 413, 422].includes(error.status)
         )
           this.pendingWorld = null;
-        else item.error = error;
+        else {
+          item.error = error;
+          if (item.scope.role === 'owner') this._saveStatus('uncertain', error);
+        }
         throw error;
       })
       .finally(() => {
@@ -1562,12 +1629,16 @@ export default class CloudCampaignClientStore {
       !isCloudWorldCommandReceipt(receipt) ||
       receipt.access.uid !== this.uid ||
       receipt.campaignId !== id ||
+      receipt.access.role !== scope.role ||
       receipt.access.seatId !== scope.seatId ||
       receipt.access.accessGeneration !== scope.accessGeneration ||
       receipt.sessionId !== input.sessionId ||
       receipt.commandId !== input.command.commandId ||
       receipt.kind !== input.command.kind ||
-      receipt.applied.sceneRevision !== input.command.sceneRevision + 1 ||
+      (receipt.freeRoam
+        ? receipt.applied.sceneRevision <= input.command.sceneRevision ||
+          receipt.applied.charactersRevision !== input.command.charactersRevision
+        : receipt.applied.sceneRevision !== input.command.sceneRevision + 1) ||
       receipt.applied.charactersRevision < input.command.charactersRevision ||
       (input.command.kind === 'place' &&
         presentation !== null &&
@@ -1779,6 +1850,7 @@ export default class CloudCampaignClientStore {
             'invalid-identity',
             'email-verification-required',
             'pilot-access-required',
+            'account-disabled',
             'account-changed',
           ].includes(error.code)
         )
@@ -1845,6 +1917,7 @@ export default class CloudCampaignClientStore {
             'invalid-identity',
             'email-verification-required',
             'pilot-access-required',
+            'account-disabled',
           ].includes(error.code)
         )
           this.pendingBackup = null;
@@ -1966,6 +2039,7 @@ export default class CloudCampaignClientStore {
     this.stopPrivateInvalidation?.();
     this.stopConnectivity();
     this.ownerWorlds.clear();
+    this.protectedKeyRequests.clear();
     this.issuedCommands.clear();
     this.saveListeners.clear();
     for (const connection of this.liveConnections)

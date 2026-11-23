@@ -186,7 +186,8 @@ export function createCastleSiteLayout({ biomeKey, seed, width, depth, feetPerLe
               windowLayout: createWindowLayout(
                 'fortress',
                 sides,
-                (seed ^ Math.imul(structures.length + 1, 0x9e3779b1)) >>> 0
+                (seed ^ Math.imul(structures.length + 1, 0x9e3779b1)) >>> 0,
+                kind === 'turret' ? 'varied' : 'symmetric'
               ),
             },
           }

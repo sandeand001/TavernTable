@@ -353,7 +353,7 @@ export class UndergroundConstructionView {
         seen.add(object);
         const previous = this.materials.get(object);
         if (previous?.replacement === object.material) {
-          this._syncWire(object, previous);
+          if (!object.userData.waterSurface) this._syncWire(object, previous);
           return;
         }
         if (previous) {
@@ -376,7 +376,7 @@ export class UndergroundConstructionView {
         const entry = { original, replacement };
         this.materials.set(object, entry);
         object.material = replacement;
-        this._syncWire(object, entry);
+        if (!object.userData.waterSurface) this._syncWire(object, entry);
       });
     }
     for (const [object, entry] of this.materials)

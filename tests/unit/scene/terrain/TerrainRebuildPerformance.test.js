@@ -34,6 +34,7 @@ describe('TerrainRebuildPerformance', () => {
           this.name = '';
           this.position = { set() {} };
         }
+        getObjectByName() {}
       },
     };
 

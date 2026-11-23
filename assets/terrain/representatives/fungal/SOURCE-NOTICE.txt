@@ -1,0 +1,8 @@
+Free Stylized Forest Asset Kit
+Creator: Asset Quest
+Source: https://assetquest.itch.io/
+License: Creative Commons CC0 1.0 Universal
+Original license: Forest_Kit_License.txt
+
+The two mushroom models and their shared color atlas are copied unchanged from
+the existing forest kit. This selection does not activate the rest of the kit.

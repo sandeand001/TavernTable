@@ -38,7 +38,11 @@ function attach3DControls() {
   section.id = 'hybrid-3d-extended-section';
   section.innerHTML = `
     <div class="section-title">3D Experimental Controls</div>
-    <p class="small-text">Hold Space and left-drag the map to pan. Right-drag rotates and tilts; the mouse wheel zooms.</p>
+    <p class="small-text" data-camera-instructions>${
+      window.gameManager?.playerInput
+        ? 'Your view stays locked to the active character. Right-drag rotates and tilts; the mouse wheel zooms closer or farther away.'
+        : 'Hold Space and left-drag the map to pan. Right-drag rotates and tilts; the mouse wheel zooms.'
+    }</p>
     <div class="setting-item" style="display:flex;flex-direction:column;gap:6px;">
       <span>Graphics driver</span>
       <output id="graphics-status" class="small-text" aria-live="polite" style="overflow-wrap:anywhere;">Not initialized</output>

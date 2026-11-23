@@ -1,4 +1,5 @@
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
+import { isProtectedAssetId } from '../core/ProtectedAsset.js';
 
 export async function sessionJSON(fetch, url, options = {}) {
   const response = await fetch(url, { cache: 'no-store', ...options });
@@ -41,6 +42,59 @@ export async function sessionJSON(fetch, url, options = {}) {
     throw denial;
   }
   return data;
+}
+
+export async function getLocalProtectedAssetKey(
+  identity,
+  campaignId,
+  keyId,
+  { fetch = globalThis.fetch, baseURL = globalThis.location.href } = {}
+) {
+  if (
+    identity?.localProtectedAssets !== true ||
+    typeof identity.csrf !== 'string' ||
+    typeof campaignId !== 'string' ||
+    !campaignId ||
+    !isProtectedAssetId(keyId)
+  )
+    throw new Error('Local protected-asset access is unavailable');
+  const result = await sessionJSON(fetch, new URL('api/protected-asset-key', baseURL).href, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-TavernTable-Host': identity.csrf,
+    },
+    body: JSON.stringify({ campaignId, keyId }),
+  });
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    Array.isArray(result) ||
+    Object.keys(result).sort().join(',') !== 'key,keyId,version' ||
+    result.version !== 1 ||
+    result.keyId !== keyId ||
+    typeof result.key !== 'string' ||
+    !/^[A-Za-z0-9+/]{43}=$/.test(result.key) ||
+    globalThis.btoa(globalThis.atob(result.key)) !== result.key
+  )
+    throw new Error('The local protected-asset key response is invalid');
+  return result.key;
+}
+
+export function createLocalProtectedAssetKeyProvider(identity, campaignId, options) {
+  const pending = new Map();
+  return async (keyId) => {
+    let request = pending.get(keyId);
+    if (!request) {
+      request = getLocalProtectedAssetKey(identity, campaignId, keyId, options);
+      pending.set(keyId, request);
+    }
+    try {
+      return await request;
+    } finally {
+      if (pending.get(keyId) === request) pending.delete(keyId);
+    }
+  };
 }
 
 export default class SessionConnection {

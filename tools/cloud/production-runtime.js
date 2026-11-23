@@ -15,6 +15,7 @@ function readProductionEnvironment(environment = process.env) {
   const projectId = environment.GCLOUD_PROJECT;
   const bucketName = environment.TAVERNTABLE_CLOUD_BUCKET;
   const port = environment.PORT ?? '8080';
+  const eligibilityMode = environment.TAVERNTABLE_CLOUD_ELIGIBILITY ?? 'pilot';
   if (
     environment.TAVERNTABLE_CLOUD_MODE !== 'production' ||
     typeof projectId !== 'string' ||
@@ -26,6 +27,7 @@ function readProductionEnvironment(environment = process.env) {
     typeof port !== 'string' ||
     !/^[1-9][0-9]{0,4}$/.test(port) ||
     Number(port) > 65535 ||
+    !['pilot', 'public'].includes(eligibilityMode) ||
     [
       'FIREBASE_AUTH_EMULATOR_HOST',
       'FIRESTORE_EMULATOR_HOST',
@@ -64,6 +66,7 @@ function readProductionEnvironment(environment = process.env) {
     projectId,
     bucketName,
     port: Number(port),
+    eligibilityMode,
     allowedOrigins: Object.freeze(allowedOrigins),
   });
 }

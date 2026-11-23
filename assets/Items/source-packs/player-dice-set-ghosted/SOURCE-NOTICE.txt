@@ -1,0 +1,23 @@
+RPG Dice Set
+Creator: ghosted (Sketchfab username dianaavlis2002)
+Source: https://sketchfab.com/3d-models/rpg-dice-set-2498c370c56842f89fa3d7096c72ed56
+Acquired: 2026-11-20
+Acquired tier: Original FBX archive
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+Required attribution:
+“RPG Dice Set” by ghosted
+https://sketchfab.com/3d-models/rpg-dice-set-2498c370c56842f89fa3d7096c72ed56
+licensed under CC BY 4.0.
+
+Downloaded archive: rpg-dice-set.zip
+Contents: one FBX model source and seven color variants with BaseColor, Normal,
+Roughness and Height maps at 2048x2048. The creator describes each six-die set as
+62 vertices / 100 triangles; the complete seven-variant preview is 700 triangles.
+
+The original FBX and textures remain source-only. A normalized runtime model
+with seven reduced-resolution color sets is integrated for player d4, d6, d8,
+d10, d12 and d20 rolls. The existing gold d20 remains the DM physical die.
+The runtime implementation calibrates face mappings and colliders, supports
+deterministic replay, and retains the attribution in the application notices.

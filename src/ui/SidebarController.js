@@ -18,6 +18,7 @@ import {
   getSunTimeControl,
   getBiomeButtons,
   getBiomeButtonByKey,
+  getTreeDensityControls,
   getTerrainPlaceablesRoot,
   getTerrainModeEls,
 } from './dom-helpers.js';
@@ -27,8 +28,44 @@ import CompendiumSidebar from './characters/CompendiumSidebar.js';
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../utils/error/ErrorHandler.js';
 import { copyRollSummary } from '../systems/dice/rollSummary.js';
 import { rollSummaryMarkup } from './dice/rollSummary.js';
-import { generateCampaignBiome } from '../campaigns/CampaignBiomeGeneration.js';
+import { replaceCampaignBiome } from '../campaigns/CampaignBiomeGeneration.js';
+import { cavernNetworkDefaults } from '../campaigns/CampaignLogicalPassages.js';
 import { attachPanelToggles, setPanelCollapsed } from './controls/PanelVisibilityControls.js';
+import { openBiomeGenerationReview } from './terrain/BiomeGenerationReview.js';
+import {
+  BIOME_REPLACEMENT_WARNING_KEY,
+  confirmBiomeReplacement,
+  replacementWarningEnabled,
+  setReplacementWarningEnabled,
+} from './terrain/BiomeReplacementConfirmation.js';
+import {
+  getBiomeGenerationFamily,
+  getBiomeGenerationVariant,
+} from '../config/biome/BiomeGenerationFamilies.js';
+import { isAssetAllowedInBiome } from '../config/assets/BiomeAssetMatrix.js';
+import { PURE_POLY_ASSETS } from '../config/assets/PurePolyAssets.js';
+import { chooseDifferentDungeonSeed } from '../terrain/generation/DungeonLayouts.js';
+
+const PROTECTED_SCENERY_CHECK_TIMEOUT_MS = 10000;
+
+async function verifyProtectedScenery(cache) {
+  if (typeof cache?.verifyProtectedAssetAccess !== 'function')
+    throw new Error('Protected scenery access is unavailable');
+  let timeout;
+  try {
+    await Promise.race([
+      cache.verifyProtectedAssetAccess(PURE_POLY_ASSETS[0].id),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('The protected scenery access check timed out')),
+          PROTECTED_SCENERY_CHECK_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 class SidebarController {
   // ── Constructor ─────────────────────────────────────────────
@@ -42,6 +79,11 @@ class SidebarController {
     this._lifecycle = 0;
     this._disposers = [];
     this.init();
+    if (typeof window !== 'undefined')
+      this._listen(window, 'taverntable:campaignViewStateChanged', () => {
+        this._syncGenerationSelection();
+        this._syncPlaceableSuitability();
+      });
   }
 
   init() {
@@ -300,7 +342,10 @@ class SidebarController {
             key: 'trees',
             title: 'Trees',
             filter: ([id, def]) =>
-              def.type === 'plant-family' || /^family-/.test(id) || /^tree-/i.test(id),
+              def.type === 'plant-family' ||
+              def.treeModel === true ||
+              /^family-/.test(id) ||
+              /^tree-/i.test(id),
           },
           {
             key: 'tropical',
@@ -313,7 +358,8 @@ class SidebarController {
           {
             key: 'plants',
             title: 'Flowers & Plants',
-            filter: ([id]) => /flower|bush|plant/i.test(id),
+            filter: ([id]) =>
+              /flower|bush|plant/i.test(id) || /^pure-poly-(grass|cactus)-/.test(id),
           },
           {
             key: 'mushrooms',
@@ -324,6 +370,16 @@ class SidebarController {
             key: 'rocks',
             title: 'Rocks',
             filter: ([id]) => /rock|boulder|pebble/i.test(id),
+          },
+          {
+            key: 'lighting',
+            title: 'Light Sources',
+            filter: ([id, def]) => id === 'source-dungeon-torch' || def.lightSource === true,
+          },
+          {
+            key: 'source-representatives',
+            title: 'Source Pack Representatives',
+            filter: ([id]) => /^(?:source-|pure-poly-)/.test(id),
           },
         ];
 
@@ -341,11 +397,13 @@ class SidebarController {
         });
 
         // Helper to build a button (family vs individual)
-        const buildBtn = (id, def) => {
+        const buildBtn = (id, def, bucketKey) => {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'placeable-btn';
           btn.dataset.placeable = id;
+          btn.dataset.placeableBucket = bucketKey;
+          if (def.protectedKeyId) btn.dataset.protectedKeyId = def.protectedKeyId;
           btn.title = def.label || id;
           if (def.type === 'plant-family') {
             btn.classList.add('no-thumb', 'plant-family');
@@ -367,6 +425,14 @@ class SidebarController {
             try {
               const engine = window.gameManager?.terrainEngine;
               if (!engine) throw new Error('Terrain editing is not ready yet');
+              if (
+                next &&
+                def.protectedKeyId &&
+                !window.gameManager?.modelAssetCache?.hasProtectedAssetKeyProvider?.()
+              )
+                throw new Error('Configure protected-asset access before placing this model');
+              if (next && engine.biomeKey && !isAssetAllowedInBiome(id, engine.biomeKey))
+                throw new Error(`"${def.label || id}" is not available in this biome`);
               engine.setSelectedPlaceable(next);
             } catch (e) {
               new ErrorHandler().handle(e, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
@@ -389,6 +455,7 @@ class SidebarController {
           // Section header
           const hdr = document.createElement('div');
           hdr.className = 'placeables-section-header';
+          hdr.dataset.placeableBucket = bucket.key;
           hdr.textContent = bucket.title;
           root.appendChild(hdr);
           // Sort alphabetically by label for consistency
@@ -399,23 +466,85 @@ class SidebarController {
               const lb = (b[1].label || b[0]).toLowerCase();
               return la.localeCompare(lb);
             })
-            .forEach(([id, def]) => root.appendChild(buildBtn(id, def)));
+            .forEach(([id, def]) => root.appendChild(buildBtn(id, def, bucket.key)));
         });
 
         this._placeablesBuilt = true;
+        this._syncPlaceableSuitability(root);
       })
       .catch(() => {
         /* ignore load error */
       });
   }
 
+  _syncPlaceableSuitability(root = getTerrainPlaceablesRoot()) {
+    if (!root) return;
+    const biomeKey = window.gameManager?.terrainEngine?.biomeKey;
+    const protectedAssetsAvailable =
+      window.gameManager?.modelAssetCache?.hasProtectedAssetKeyProvider?.() === true;
+    for (const button of root.querySelectorAll('.placeable-btn')) {
+      const allowed =
+        (!button.dataset.protectedKeyId || protectedAssetsAvailable) &&
+        (!biomeKey || isAssetAllowedInBiome(button.dataset.placeable, biomeKey));
+      button.hidden = !allowed;
+      button.disabled = !allowed;
+    }
+    for (const header of root.querySelectorAll('.placeables-section-header')) {
+      header.hidden = ![...root.querySelectorAll('.placeable-btn')].some(
+        (button) =>
+          button.dataset.placeableBucket === header.dataset.placeableBucket && !button.hidden
+      );
+    }
+  }
+
   // ── DOM Helpers (Biomes) ───────────────────────────────────
 
   _wireGenerateMapButton() {
     const btn = document.getElementById('generate-map');
+    const cycle = document.getElementById('dungeon-next-layout');
+    const palette = document.getElementById('biome-apply-palette');
     const lock = document.getElementById('biome-seed-lock');
     const reseed = document.getElementById('biome-reseed');
     const structures = document.getElementById('biome-structures-toggle');
+    const warning = document.getElementById('biome-replacement-warning');
+    const syncWarning = () => {
+      if (!warning) return;
+      try {
+        warning.checked = replacementWarningEnabled();
+        warning.disabled = false;
+      } catch (error) {
+        warning.checked = true;
+        warning.disabled = true;
+        this._reportBiomeGenerationError(
+          document.getElementById('biome-generation-status'),
+          error,
+          'replacementWarning'
+        );
+      }
+    };
+    syncWarning();
+    if (warning && !warning.dataset.boundWarning) {
+      this._listen(
+        warning,
+        'change',
+        () => {
+          try {
+            setReplacementWarningEnabled(warning.checked);
+          } catch (error) {
+            warning.checked = !warning.checked;
+            this._reportBiomeGenerationError(
+              document.getElementById('biome-generation-status'),
+              error,
+              'replacementWarning'
+            );
+          }
+        },
+        { boundKey: 'boundWarning' }
+      );
+      this._listen(window, 'storage', (event) => {
+        if (event.key === null || event.key === BIOME_REPLACEMENT_WARNING_KEY) syncWarning();
+      });
+    }
     if (structures && window.gameManager?.terrainEngine)
       structures.checked = window.gameManager.terrainEngine.structureGenerationEnabled;
     if (structures && !structures.dataset.boundStructures) {
@@ -428,6 +557,7 @@ class SidebarController {
           try {
             if (!engine) throw new Error('Terrain generation is not ready yet');
             engine.setStructureGeneration(structures.checked);
+            this._syncDungeonCycleControl();
           } catch (error) {
             if (engine) structures.checked = engine.structureGenerationEnabled;
             new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
@@ -439,53 +569,248 @@ class SidebarController {
       );
     }
 
+    if (palette && !palette.dataset.boundClick) {
+      this._listen(
+        palette,
+        'click',
+        () => {
+          const status = document.getElementById('biome-generation-status');
+          try {
+            const engine = window.gameManager?.terrainEngine;
+            if (!engine) throw new Error('Terrain editing is not ready yet');
+            this._syncGenerationSelection();
+            if (!this._generationBiome) throw new Error('Choose a biome family first');
+            engine.setBiome(this._generationBiome, { generateIfFlat: false });
+            window.selectedBiome = engine.biomeKey;
+            window.__TT_USER_SELECTED_BIOME__ = true;
+            this._syncPlaceableSuitability();
+            if (status) {
+              const label = getBiomeGenerationVariant(engine.biomeKey)?.label || engine.biomeKey;
+              status.setAttribute('role', 'status');
+              status.textContent = `Applied the ${label} palette without generating terrain.`;
+            }
+          } catch (error) {
+            if (status) {
+              status.setAttribute('role', 'alert');
+              status.textContent = `Cannot apply palette: ${error.message}.`;
+            }
+            new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+              context: 'applyBiomePalette',
+            });
+          }
+        },
+        { boundKey: 'boundClick' }
+      );
+    }
+
     if (btn && !btn.dataset.boundClick) {
       this._listen(
         btn,
         'click',
         async () => {
+          if (this._biomeGenerationBusy) return;
           const status = document.getElementById('biome-generation-status');
           try {
-            const engine = window.gameManager?.terrainEngine;
+            const gm = window.gameManager;
+            const engine = gm?.terrainEngine;
             if (!engine) throw new Error('Terrain editing is not ready yet');
-            if (!engine.biomeKey) throw new Error('Choose a biome before generating a map');
+            this._syncGenerationSelection();
+            const selectedBiome = this._generationBiome;
+            if (!selectedBiome) throw new Error('Choose a biome before generating a map');
             if (engine.isActive || engine.isGenerating) {
               throw new Error('Finish terrain editing before generating a new map');
             }
-            btn.disabled = true;
-            btn.classList.add('disabled');
-            if (status) {
+            const mapId = gm.campaignMapId ?? null;
+            const campaignId = gm.campaign?.id ?? null;
+            const beforeReview = JSON.stringify(engine.save());
+            const mapUnchanged = () =>
+              window.gameManager === gm &&
+              gm.terrainEngine === engine &&
+              (gm.campaignMapId ?? null) === mapId &&
+              (gm.campaign?.id ?? null) === campaignId &&
+              JSON.stringify(engine.save()) === beforeReview;
+            const cancelled = () => {
+              if (!status) return;
               status.setAttribute('role', 'status');
-              status.textContent = 'Generating terrain and biome structures...';
+              status.textContent = 'Generation cancelled; no terrain was generated.';
+            };
+            this._setBiomeGenerationBusy(true);
+            let protectedAssetsAvailable = false;
+            let protectedAssetsUnavailableReason = null;
+            const family = getBiomeGenerationFamily(selectedBiome);
+            if (
+              family?.fields.some((field) => field.id === 'assetPack') &&
+              gm.modelAssetCache?.hasProtectedAssetKeyProvider?.() === true
+            ) {
+              if (status) {
+                status.setAttribute('role', 'status');
+                status.textContent = 'Checking protected scenery access...';
+              }
+              try {
+                await verifyProtectedScenery(gm.modelAssetCache);
+                protectedAssetsAvailable = true;
+              } catch (error) {
+                const failure = error instanceof Error ? error : new Error(String(error));
+                protectedAssetsUnavailableReason = failure.message;
+                logger.warn(
+                  'Protected scenery access check failed',
+                  { reason: failure.message },
+                  LOG_CATEGORY.UI
+                );
+                if (status) {
+                  status.setAttribute('role', 'alert');
+                  status.textContent = `Protected scenery is unavailable: ${failure.message}. Built-in scenery remains available.`;
+                }
+              }
+              if (!mapUnchanged())
+                throw new Error('The active map changed while checking protected scenery');
+              if (this._generationBiome !== selectedBiome)
+                throw new Error('The biome selection changed while checking protected scenery');
             }
+            const variant = getBiomeGenerationVariant(selectedBiome);
+            const scene = gm.campaignWorld?.save();
+            const reviewed = await openBiomeGenerationReview({
+              biomeKey: selectedBiome,
+              biomeName: variant?.label,
+              generationRecipe: engine.generationRecipe,
+              gridSize: { cols: engine.cols, rows: engine.rows },
+              structuresEnabled: structures
+                ? structures.checked
+                : engine.structureGenerationEnabled,
+              protectedAssetsAvailable,
+              protectedAssetsUnavailableReason,
+              ...(scene ? { cavernDefaults: cavernNetworkDefaults(scene, mapId) } : {}),
+            });
+            if (!reviewed) {
+              cancelled();
+              return;
+            }
+            if (!mapUnchanged())
+              throw new Error('The active map changed while reviewing generation');
+            const confirmed = await confirmBiomeReplacement();
+            syncWarning();
+            if (!confirmed) {
+              cancelled();
+              return;
+            }
+            if (!mapUnchanged())
+              throw new Error('The active map changed while reviewing generation');
+            const { gridSize, ...generationOptions } = reviewed;
+            if (generationOptions.assetPack === 'pure-poly') {
+              if (status) {
+                status.setAttribute('role', 'status');
+                status.textContent = 'Rechecking protected scenery access...';
+              }
+              await verifyProtectedScenery(gm.modelAssetCache);
+              if (!mapUnchanged())
+                throw new Error('The active map changed while checking protected scenery');
+              if (this._generationBiome !== selectedBiome)
+                throw new Error('The biome selection changed while checking protected scenery');
+            }
+            const includeStructures = structures
+              ? structures.checked
+              : engine.structureGenerationEnabled;
+            const sameDungeon =
+              engine.biomeKey === 'dungeon' &&
+              generationOptions.biomeKey === 'dungeon' &&
+              includeStructures &&
+              gridSize.cols === engine.cols &&
+              gridSize.rows === engine.rows &&
+              engine.generationRecipe?.values?.dungeonRoomCount ===
+                generationOptions.dungeonRoomCount;
             const seed =
               lock && !lock.checked
-                ? Math.floor(Math.random() * 0xffffffff) >>> 0
+                ? sameDungeon
+                  ? chooseDifferentDungeonSeed({
+                      cols: gridSize.cols,
+                      rows: gridSize.rows,
+                      roomCount: generationOptions.dungeonRoomCount,
+                      currentSeed: engine.biomeSeed,
+                      currentStructures: engine.geometry.getStructures(),
+                    })
+                  : Math.floor(Math.random() * 0x100000000) >>> 0
                 : engine.biomeSeed;
-            if (
-              !(await generateCampaignBiome(window.gameManager, {
-                structures: structures ? structures.checked : engine.structureGenerationEnabled,
-                seed,
-              }))
-            ) {
-              throw new Error('Terrain generation could not begin');
-            }
-            if (status) {
-              const name =
-                getBiomeButtonByKey(engine.biomeKey)?.textContent.trim() || engine.biomeKey;
-              status.textContent = `Generated ${name} on the ${engine.cols} x ${engine.rows} map.`;
-            }
+            await this._commitBiomeGeneration(
+              gm,
+              { structures: includeStructures, seed, ...generationOptions },
+              gridSize,
+              status
+            );
           } catch (error) {
-            if (status) {
-              status.setAttribute('role', 'alert');
-              status.textContent = `Cannot generate: ${error.message}. Creatures are never moved automatically. Move or remove creatures from structures before replacing the map.`;
-            }
-            new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
-              context: 'generateTerrainMap',
-            });
+            this._reportBiomeGenerationError(status, error, 'generateTerrainMap');
           } finally {
-            btn.disabled = false;
-            btn.classList.remove('disabled');
+            this._setBiomeGenerationBusy(false);
+          }
+        },
+        { boundKey: 'boundClick' }
+      );
+    }
+
+    if (cycle && !cycle.dataset.boundClick) {
+      this._listen(
+        cycle,
+        'click',
+        async () => {
+          if (this._biomeGenerationBusy) return;
+          const status = document.getElementById('biome-generation-status');
+          try {
+            const gm = window.gameManager;
+            const engine = gm?.terrainEngine;
+            const recipe = engine?.generationRecipe;
+            const roomCount =
+              recipe?.biomeKey === 'dungeon' ? recipe.values?.dungeonRoomCount : null;
+            if (
+              !engine ||
+              engine.biomeKey !== 'dungeon' ||
+              !Number.isInteger(roomCount) ||
+              !engine.structureGenerationEnabled
+            )
+              throw new Error('Generate a Dungeon with a room count before cycling its layout');
+            if (engine.isActive || engine.isGenerating)
+              throw new Error('Finish terrain editing before generating a new map');
+            const mapId = gm.campaignMapId ?? null;
+            const campaignId = gm.campaign?.id ?? null;
+            const before = JSON.stringify(engine.save());
+            const unchanged = () =>
+              window.gameManager === gm &&
+              gm.terrainEngine === engine &&
+              (gm.campaignMapId ?? null) === mapId &&
+              (gm.campaign?.id ?? null) === campaignId &&
+              JSON.stringify(engine.save()) === before;
+            this._setBiomeGenerationBusy(true);
+            const confirmed = await confirmBiomeReplacement();
+            syncWarning();
+            if (!confirmed) {
+              if (status) {
+                status.setAttribute('role', 'status');
+                status.textContent = 'Generation cancelled; no terrain was generated.';
+              }
+              return;
+            }
+            if (!unchanged()) throw new Error('The active map changed while reviewing generation');
+            const seed = chooseDifferentDungeonSeed({
+              cols: engine.cols,
+              rows: engine.rows,
+              roomCount,
+              currentSeed: engine.biomeSeed,
+              currentStructures: engine.geometry.getStructures(),
+            });
+            await this._commitBiomeGeneration(
+              gm,
+              {
+                ...recipe.values,
+                biomeKey: 'dungeon',
+                dungeonRoomCount: roomCount,
+                structures: true,
+                seed,
+              },
+              { cols: engine.cols, rows: engine.rows },
+              status
+            );
+          } catch (error) {
+            this._reportBiomeGenerationError(status, error, 'cycleDungeonLayout');
+          } finally {
+            this._setBiomeGenerationBusy(false);
           }
         },
         { boundKey: 'boundClick' }
@@ -580,45 +905,28 @@ class SidebarController {
       const root = getBiomeRootEl();
       if (!root) return;
       root.textContent = '';
-      import('../config/biome/BiomeConstants.js')
+      import('../config/biome/BiomeGenerationFamilies.js')
         .then((mod) => {
           if (lifecycle !== this._lifecycle) return;
-          const { BIOME_GROUPS } = mod;
-          Object.entries(BIOME_GROUPS).forEach(([group, list]) => {
-            const groupContainer = document.createElement('div');
-            groupContainer.className = 'biome-group';
-            const headerBtn = document.createElement('button');
-            headerBtn.className = 'biome-group-toggle';
-            headerBtn.type = 'button';
-            headerBtn.setAttribute('aria-expanded', 'false');
-            headerBtn.textContent = group;
-            const listEl = document.createElement('div');
-            listEl.className = 'biome-group-list';
-            listEl.style.display = 'none';
-            this._listen(headerBtn, 'click', () => {
-              const expanded = headerBtn.getAttribute('aria-expanded') === 'true';
-              headerBtn.setAttribute('aria-expanded', String(!expanded));
-              listEl.style.display = expanded ? 'none' : 'grid';
+          const { BIOME_GENERATION_FAMILIES } = mod;
+          for (const entry of BIOME_GENERATION_FAMILIES) {
+            const button = document.createElement('button');
+            button.className = 'biome-btn';
+            button.type = 'button';
+            button.dataset.biomeFamily = entry.key;
+            button.dataset.biome = entry.fields[0].default;
+            button.dataset.biomeVariants = entry.variants.map(({ key }) => key).join('|');
+            button.title = entry.label;
+            button.textContent = `${entry.emoji ? `${entry.emoji} ` : ''}${entry.label}`;
+            button.setAttribute('aria-pressed', 'false');
+            this._listen(button, 'click', () => {
+              window.__TT_USER_SELECTED_BIOME__ = true;
+              this.selectBiome(entry.fields[0].default);
             });
-            list.forEach((b) => {
-              const bBtn = document.createElement('button');
-              bBtn.className = 'biome-btn';
-              bBtn.type = 'button';
-              bBtn.dataset.biome = b.key;
-              bBtn.title = b.label;
-              bBtn.textContent = (b.emoji || '') + ' ' + b.label;
-              this._listen(bBtn, 'click', () => {
-                window.__TT_USER_SELECTED_BIOME__ = true;
-                this.selectBiome(b.key);
-              });
-              listEl.appendChild(bBtn);
-            });
-            groupContainer.appendChild(headerBtn);
-            groupContainer.appendChild(listEl);
-            root.appendChild(groupContainer);
-          });
+            root.appendChild(button);
+          }
           this._biomesBuilt = true;
-          if (window.selectedBiome) this.selectBiome(window.selectedBiome);
+          this._syncGenerationSelection();
         })
         .catch(() => {
           /* ignore */
@@ -632,8 +940,10 @@ class SidebarController {
     try {
       const engine = window.gameManager?.terrainEngine;
       if (!engine) throw new Error('Terrain editing is not ready yet');
-      engine.setBiome(biomeKey, { generateIfFlat: false });
-      window.selectedBiome = engine.biomeKey;
+      if (!getBiomeGenerationVariant(biomeKey)) throw new Error('Choose a supported biome family');
+      this._syncGenerationSelection();
+      this._generationBiome = biomeKey;
+      this._renderBiomeSelection();
     } catch (error) {
       new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
         context: 'selectTerrainBiome',
@@ -641,21 +951,118 @@ class SidebarController {
       });
       return;
     }
-    try {
-      const root = getBiomeRootEl();
-      if (root) {
-        getBiomeButtons(root).forEach((btn) => {
-          btn.classList.remove('selected');
-          btn.setAttribute('aria-pressed', 'false');
-        });
-        const newly = getBiomeButtonByKey(biomeKey, root);
-        if (newly) {
-          newly.classList.add('selected');
-          newly.setAttribute('aria-pressed', 'true');
-        }
-      }
-    } catch (e) {
-      /* ignore */
+  }
+
+  _setBiomeGenerationBusy(busy) {
+    this._biomeGenerationBusy = busy;
+    const generate = document.getElementById('generate-map');
+    const palette = document.getElementById('biome-apply-palette');
+    if (generate) {
+      generate.disabled = busy;
+      generate.classList.toggle('disabled', busy);
+    }
+    if (palette) palette.disabled = busy;
+    this._syncDungeonCycleControl();
+  }
+
+  _syncDungeonCycleControl() {
+    const button = document.getElementById('dungeon-next-layout');
+    if (!button) return;
+    const engine = window.gameManager?.terrainEngine;
+    const recipe = engine?.generationRecipe;
+    const count = recipe?.biomeKey === 'dungeon' ? recipe.values?.dungeonRoomCount : null;
+    button.hidden = engine?.biomeKey !== 'dungeon';
+    button.disabled =
+      button.hidden ||
+      !!this._biomeGenerationBusy ||
+      !Number.isInteger(count) ||
+      !engine.structureGenerationEnabled ||
+      engine.isActive ||
+      engine.isGenerating;
+    button.title = !Number.isInteger(count)
+      ? 'Generate a Dungeon with a chosen room count first.'
+      : !engine.structureGenerationEnabled
+        ? 'Enable Structures & landmarks to generate another layout.'
+        : 'Replace this Dungeon with a different layout and seed, even when the seed is locked.';
+  }
+
+  async _commitBiomeGeneration(gm, options, gridSize, status) {
+    if (status) {
+      status.setAttribute('role', 'status');
+      status.textContent = 'Generating terrain and biome structures...';
+    }
+    if (!(await replaceCampaignBiome(gm, options, gridSize)))
+      throw new Error('Terrain generation could not begin');
+    const engine = gm.terrainEngine;
+    this._generationBiome = engine.biomeKey;
+    this._generationAppliedBiome = engine.biomeKey;
+    window.selectedBiome = engine.biomeKey;
+    window.__TT_USER_SELECTED_BIOME__ = true;
+    this._renderBiomeSelection();
+    this._syncPlaceableSuitability();
+    this._syncDungeonCycleControl();
+    if (status) {
+      const name = getBiomeGenerationVariant(engine.biomeKey)?.label || engine.biomeKey;
+      const seed = engine.biomeKey === 'dungeon' ? ` Layout seed: ${engine.biomeSeed}.` : '';
+      status.textContent = `Generated ${name} on the ${engine.cols} x ${engine.rows} map.${seed}`;
+    }
+    window.treeDensityMultiplier = engine.treeDensityMultiplier;
+    const density = getTreeDensityControls();
+    const densityPercent = Math.round(engine.treeDensityMultiplier * 100);
+    if (density.slider) density.slider.value = String(densityPercent);
+    if (density.valueEl) density.valueEl.textContent = `${densityPercent}%`;
+  }
+
+  _reportBiomeGenerationError(status, error, context) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    if (status) {
+      status.setAttribute('role', 'alert');
+      const guidance = /creature|occupied/i.test(failure.message)
+        ? ' Resolve affected creatures or effects on linked maps before replacing the map.'
+        : '';
+      status.textContent = failure.committed
+        ? failure.message
+        : `Cannot generate: ${failure.message}.${guidance}`;
+    }
+    new ErrorHandler().handle(failure, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, { context });
+  }
+
+  _syncGenerationSelection() {
+    const gm = window.gameManager;
+    const engine = gm?.terrainEngine;
+    const mapId = gm?.campaignMapId ?? null;
+    const campaignId = gm?.campaign?.id ?? null;
+    const appliedBiome = engine?.biomeKey ?? null;
+    if (
+      this._generationManager !== gm ||
+      this._generationEngine !== engine ||
+      this._generationMapId !== mapId ||
+      this._generationCampaignId !== campaignId
+    ) {
+      this._generationManager = gm;
+      this._generationEngine = engine;
+      this._generationMapId = mapId;
+      this._generationCampaignId = campaignId;
+      this._generationBiome = appliedBiome;
+    } else if (
+      appliedBiome !== this._generationAppliedBiome &&
+      this._generationBiome === this._generationAppliedBiome
+    ) {
+      this._generationBiome = appliedBiome;
+    }
+    this._generationAppliedBiome = appliedBiome;
+    this._syncDungeonCycleControl();
+    this._renderBiomeSelection();
+  }
+
+  _renderBiomeSelection() {
+    const root = getBiomeRootEl();
+    if (!root) return;
+    const selected = getBiomeButtonByKey(this._generationBiome, root);
+    for (const button of getBiomeButtons(root)) {
+      const active = button === selected;
+      button.classList.toggle('selected', active);
+      button.setAttribute('aria-pressed', String(active));
     }
   }
 

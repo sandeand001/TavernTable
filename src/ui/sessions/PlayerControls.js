@@ -1,5 +1,6 @@
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { CHARACTER_DEFINITIONS, getCharacterDefinition } from '../../config/CharacterCatalog.js';
+import { persistPlayerDiceColor, readPlayerDiceColor } from '../../config/PlayerDiceCatalog.js';
 import { escapeHtml as escape } from '../characters/escapeHtml.js';
 import { reconcileContent } from '../characters/reconcileContent.js';
 
@@ -24,6 +25,7 @@ export default class PlayerControls {
   constructor({
     identity,
     library,
+    gameManager = null,
     onObserver = () => {},
     onArea = () => {},
     onSheet = () => {},
@@ -35,12 +37,25 @@ export default class PlayerControls {
     onPlace = null,
     onRetrieve = null,
     onDoor = null,
+    onPassage = null,
   }) {
     if (identity.role !== 'player')
       throw new Error('Player controls require an authenticated player');
     this.library = library;
+    this.gameManager = gameManager;
     this.appearanceChoices = new Map();
     document.body.dataset.sessionRole = 'player';
+    this.diceColorSelect = document.querySelector('[data-dice-color]');
+    if (this.diceColorSelect) {
+      this.diceColorSelect.value = readPlayerDiceColor();
+      this.diceColorChange = () => persistPlayerDiceColor(this.diceColorSelect.value);
+      if (!this.diceColorSelect.dataset.boundDiceColor) {
+        this.diceColorSelect.addEventListener('change', this.diceColorChange);
+        this.diceColorSelect.dataset.boundDiceColor = 'player';
+      } else {
+        this.diceColorChange = null;
+      }
+    }
     this.hidden = [];
     const restricted = [
       ...document.querySelectorAll(
@@ -67,6 +82,8 @@ export default class PlayerControls {
       <output aria-label="Current location"></output>
       <label>Area<select aria-label="Location area"></select></label>
       <p data-player-observer-notice></p>
+      <p data-player-passage-notice hidden>Gold circles mark passages. Select your creature and click one to travel.</p>
+      <div aria-label="Cavern passages" data-player-passages></div>
       <div aria-label="Nearby doors" data-player-doors></div>
       <div class="player-session-actions">
         <button type="button" data-player-reconnect>Reconnect</button>
@@ -79,7 +96,16 @@ export default class PlayerControls {
     this.status = this.root.querySelector('[aria-label="Player session status"]');
     this.retry = this.root.querySelector('[data-player-retry]');
     this.doors = this.root.querySelector('[data-player-doors]');
+    this.passages = this.root.querySelector('[data-player-passages]');
     this.onDoor = onDoor;
+    this.onPassage = onPassage;
+    this.passageClick = (event) => {
+      const button = event.target.closest('[data-player-passage]');
+      if (!button || button.disabled || !this.onPassage) return;
+      const rect = button.getBoundingClientRect();
+      this.onPassage(button.dataset.playerPassage, { clientX: rect.left, clientY: rect.bottom });
+    };
+    this.passages.addEventListener('click', this.passageClick);
     this.doorClick = async (event) => {
       const button = event.target.closest('[data-player-door]');
       if (!button || button.disabled) return;
@@ -202,22 +228,52 @@ export default class PlayerControls {
         ? state.view.id
         : state.publicScene?.presentation.mapId
     );
-    if (state.view?.mode === 'placement-preview') this.area.disabled = true;
+    if (state.view?.mode === 'placement-preview' || state.observerTokenId)
+      this.area.disabled = true;
     if (this.commandPending || this.commandUncertain) {
       this.observer.disabled = true;
       this.area.disabled = true;
     }
     this.root.querySelector('[data-player-observer-notice]').textContent = state.observerTokenId
-      ? 'Sight follows this character. Opening another sheet does not switch your viewpoint.'
+      ? 'Sight and camera follow the active assigned character. Select another assigned sprite or sheet to switch viewpoints.'
       : state.view?.mode === 'placement-preview'
         ? 'DM-granted arrival preview only. No character vision or movement budget is created.'
         : 'Assigned sheets remain available. Ask the DM for an arrival grant before placement.';
+    this.root.querySelector('[data-player-passage-notice]').hidden =
+      !state.observerTokenId ||
+      !this.gameManager?.campaignWorld?.getLogicalPassages?.(this.gameManager.campaignMapId)
+        ?.length;
     this.updateRoster();
     this.status.textContent = this.commandPending
       ? 'Waiting for the host command and its visual checkpoint...'
       : this.commandStateError?.message || `${state.profile.name} - Connected`;
     this.updateDiceControls();
     this.updateDoorControls();
+    this.updatePassageControls();
+  }
+
+  updatePassageControls() {
+    const world = this.gameManager?.campaignWorld;
+    const mapId = this.gameManager?.campaignMapId;
+    const passages = mapId ? world?.getLogicalPassages?.(mapId) || [] : [];
+    const disabled =
+      this.commandPending ||
+      this.commandUncertain ||
+      this.library.isSaving ||
+      this.accessEnded ||
+      !this.state?.observerTokenId ||
+      !this.onPassage;
+    const markup = passages
+      .map(
+        (passage) =>
+          `<button type="button" data-player-passage="${escape(passage.id)}" ${disabled ? 'disabled' : ''}>Use ${escape(passage.side)} passage</button>`
+      )
+      .join('');
+    reconcileContent(
+      this.passages,
+      markup,
+      this.passages.contains(document.activeElement) ? document.activeElement : null
+    );
   }
 
   updateDoorControls() {
@@ -315,6 +371,7 @@ export default class PlayerControls {
     this.updateDiceControls();
     this.updateRoster();
     this.doors.replaceChildren();
+    this.passages.replaceChildren();
   }
 
   updateCommandState(commands) {
@@ -345,6 +402,7 @@ export default class PlayerControls {
     this.updateDiceControls();
     this.updateRoster();
     this.updateDoorControls();
+    this.updatePassageControls();
   }
 
   updateDiceControls() {
@@ -382,12 +440,15 @@ export default class PlayerControls {
     this.roster.removeEventListener('click', this.rosterClick);
     this.roster.removeEventListener('change', this.rosterChange);
     this.doors.removeEventListener('click', this.doorClick);
+    this.passages.removeEventListener('click', this.passageClick);
     for (const { button, disabled, title } of this.diceButtons) {
       button.removeEventListener('click', this.diceClick, true);
       button.disabled = disabled;
       button.title = title;
     }
     this.diceNotice.remove();
+    if (this.diceColorChange)
+      this.diceColorSelect.removeEventListener('change', this.diceColorChange);
     for (const [element, hidden, inert] of this.hidden) {
       element.hidden = hidden;
       element.inert = inert;

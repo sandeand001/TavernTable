@@ -3,7 +3,12 @@ import {
   cloneDice,
   applyCriticalRollTint,
 } from './DiceModelManager.js';
-import { FACE_INDEX_TO_NUMBER, resolveUpFacingFace } from './DiceState.js';
+import {
+  ensureAuthoritativePlayerDiceBlueprint,
+  clonePlayerDie,
+} from './PlayerDiceModelManager.js';
+import { FACE_INDEX_TO_NUMBER, resolveUpFacingFace, resolvePlayerDiceFace } from './DiceState.js';
+import { getPlayerDiceColor, getPlayerDiceDefinition } from '../../config/PlayerDiceCatalog.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -25,12 +30,17 @@ export function validateAuthoritativeRoll(roll) {
   )
     invalid();
   const expression = roll.expression.toLowerCase().replace(/\s+/g, '');
-  let physicalCount = [...expression.matchAll(/(?:^|[+-])(\d*)d20(?=[+-]|$)/g)].reduce(
+  const physics = roll.physics || [];
+  const playerPhysical =
+    Array.isArray(physics) && physics.some((die) => die?.type === 'physical-die');
+  const physicalPattern = playerPhysical
+    ? /(?:^|[+-])(\d*)d(?:4|6|8|10|12|20)(?=[+-]|$)/g
+    : /(?:^|[+-])(\d*)d20(?=[+-]|$)/g;
+  let physicalCount = [...expression.matchAll(physicalPattern)].reduce(
     (count, match) => count + Number(match[1] || 1),
     0
   );
   if (roll.mode !== 'normal') physicalCount *= 2;
-  const physics = roll.physics || [];
   if (
     !Array.isArray(physics) ||
     physics.length > 100 ||
@@ -48,10 +58,19 @@ export function validateAuthoritativeRoll(roll) {
       invalid();
   } else if (!Number.isFinite(roll.total) || !Array.isArray(roll.values)) invalid();
   for (const die of physics) {
+    const playerDie = die?.type === 'physical-die';
+    let definition = null;
+    if (playerDie) {
+      try {
+        definition = getPlayerDiceDefinition(die.sides);
+      } catch {
+        invalid();
+      }
+    }
     if (
       !object(die) ||
       die.version !== 1 ||
-      die.type !== 'physical-d20' ||
+      (!playerDie && die.type !== 'physical-d20') ||
       !/^[a-f0-9]{64}$/.test(die.geometryKey) ||
       !(Number.isFinite(die.scale) && die.scale > 0) ||
       typeof die.cocked !== 'boolean' ||
@@ -60,7 +79,11 @@ export function validateAuthoritativeRoll(roll) {
       die.frames.length > 15000 ||
       (die.cocked
         ? die.value !== null || die.faceIndex !== null
-        : !Number.isInteger(die.value) || FACE_INDEX_TO_NUMBER[die.faceIndex] !== die.value)
+        : playerDie
+          ? !Number.isInteger(die.value) ||
+            definition.faceValues[die.faceIndex] !== die.value ||
+            !getPlayerDiceColor(die.color)
+          : !Number.isInteger(die.value) || FACE_INDEX_TO_NUMBER[die.faceIndex] !== die.value)
     )
       invalid();
     let previousTime = -1;
@@ -96,8 +119,10 @@ export default class AuthoritativeDiceReplay {
     this.seen = new Set();
   }
 
-  preload(geometryKey) {
-    return ensureAuthoritativeBlueprint(geometryKey);
+  preload(geometryKey, type = 'physical-d20') {
+    return type === 'physical-die'
+      ? ensureAuthoritativePlayerDiceBlueprint(geometryKey)
+      : ensureAuthoritativeBlueprint(geometryKey);
   }
 
   async play(input, { commandId }) {
@@ -116,7 +141,11 @@ export default class AuthoritativeDiceReplay {
       throw new Error('The physical dice roll is outside the authorized location');
     const three = gm.threeSceneManager.three;
     const roots = await Promise.all(
-      roll.physics.map((die) => ensureAuthoritativeBlueprint(die.geometryKey))
+      roll.physics.map((die) =>
+        die.type === 'physical-die'
+          ? ensureAuthoritativePlayerDiceBlueprint(die.geometryKey)
+          : ensureAuthoritativeBlueprint(die.geometryKey)
+      )
     );
     if (this.destroyed || generation !== this.generation)
       return { completed: false, reason: 'presentation-replaced' };
@@ -128,12 +157,17 @@ export default class AuthoritativeDiceReplay {
       ((viewMap.quarterTurns - sourceMap.quarterTurns) * Math.PI) / 2
     );
     const scale = viewMap.grid.tileWorldSize / sourceMap.grid.tileWorldSize;
-    const dice = roll.physics.map((descriptor, index) => {
-      const mesh = cloneDice(roots[index]);
+    const dice = [];
+    for (let index = 0; index < roll.physics.length; index += 1) {
+      const descriptor = roll.physics[index];
+      const mesh =
+        descriptor.type === 'physical-die'
+          ? await clonePlayerDie(roots[index].root, descriptor.sides, descriptor.color)
+          : cloneDice(roots[index]);
       mesh.scale.setScalar(descriptor.scale * scale);
       group.add(mesh);
-      return { mesh, descriptor, index: 0 };
-    });
+      dice.push({ mesh, descriptor, index: 0 });
+    }
     this.group = group;
     gm.threeSceneManager.scene.add(group);
     this.seen.add(commandId);
@@ -202,10 +236,17 @@ export default class AuthoritativeDiceReplay {
       die.mesh.updateMatrixWorld(true);
       if (die.index !== frames.length - 1) settled = false;
       else if (!die.descriptor.cocked) {
-        const face = resolveUpFacingFace(die.mesh, three);
+        const face =
+          die.descriptor.type === 'physical-die'
+            ? resolvePlayerDiceFace(die.mesh, getPlayerDiceDefinition(die.descriptor.sides), three)
+            : resolveUpFacingFace(die.mesh, three);
         if (face?.value !== die.descriptor.value || face.faceIndex !== die.descriptor.faceIndex)
           throw new Error('The visible physical die does not match the host-settled face');
-        applyCriticalRollTint(die.mesh, die.descriptor.value);
+        if (
+          die.descriptor.type === 'physical-d20' ||
+          (die.descriptor.type === 'physical-die' && die.descriptor.sides === 20)
+        )
+          applyCriticalRollTint(die.mesh, die.descriptor.value);
       }
     }
     if (settled) this._finish();

@@ -59,9 +59,12 @@ export class ThreeSceneManager {
     this._gridOverlayStyle = { ...this._gridOverlayBaseStyle };
     this._gridOverlayStyleStack = [];
     this._terrainMeshOpacity = 1;
+    this._boundaryWallCutaway = null;
     this._ambientLight = null;
     this._hemisphereLight = null;
     this._timeOfDayProfile = null;
+    this._sceneLightingBiome = null;
+    this._undergroundLighting = false;
     this._terrainColorAttribute = null;
     this._terrainBaseColors = null;
     this._terrainColorGeometryId = null;
@@ -272,12 +275,7 @@ export class ThreeSceneManager {
         this._updateSunCoverage();
         this._ensureSunAnimator();
         this._applyStoredSunTime();
-        try {
-          const profile = this.getTimeOfDayProfile(this._sunTimeMinutes ?? 720);
-          this._applyTimeOfDayProfile(profile);
-        } catch (_) {
-          /* ignore initial lighting profile errors */
-        }
+        this.setSceneLightingBiome(this.gameManager?.terrainEngine?.biomeKey ?? null);
       } catch (_) {
         /* ignore sun light */
       }
@@ -1019,10 +1017,12 @@ export class ThreeSceneManager {
       // zoom easing
       try {
         this._updateZoom(ts - (this._prevZoomTs || ts));
+        this.syncPlayerCameraFollow();
       } catch (_) {
         /* noop */
       }
       this._prevZoomTs = ts;
+      this._boundaryWallCutaway?.update(this.camera);
       // render
       try {
         this.renderer.render(this.scene, this.camera);
@@ -1109,6 +1109,7 @@ export class ThreeSceneManager {
   // ── Cleanup ───────────────────────────────────────────────────────────
 
   dispose() {
+    this.disposeLocalLighting();
     this._disposeDebugOverlay();
     this._clearGraphicsContextListeners();
     this.gameManager?.token3DAdapter?.disposeTacticalTokens?.();
@@ -1170,6 +1171,7 @@ export class ThreeSceneManager {
     this.renderer = null;
     this.scene = null;
     this.camera = null;
+    this._boundaryWallCutaway = null;
     this._perspectiveCamera = null;
     this._orthographicCamera = null;
     this._cameraRaycaster = null;

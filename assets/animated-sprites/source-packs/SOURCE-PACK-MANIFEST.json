@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Preserve unintegrated character and animation source packs for later token ingestion.",
+  "runtimeIntegrated": false,
+  "packs": [
+    {
+      "id": "universal-animation-library-quaternius",
+      "creator": "Quaternius",
+      "name": "Universal Animation Library",
+      "source": "https://quaternius.itch.io/universal-animation-library",
+      "tier": "Standard",
+      "archive": "animations/universal-animation-library-quaternius/Universal Animation Library[Standard].zip",
+      "contents": "animations/universal-animation-library-quaternius/contents",
+      "sha256": "CC73FC4E495B82958207316596317A3F40B9FA38065BDE1027937452DA537724",
+      "formats": ["FBX", "GLB"],
+      "license": "CC0 1.0",
+      "licenseFile": "contents/Universal Animation Library[Standard]/License.txt",
+      "intendedUse": ["humanoid-locomotion", "combat", "emotes"],
+      "integrationNotes": "Requires bone-name mapping or retargeting validation against TavernTable's Mixamo-style rig contract.",
+      "status": "downloaded-and-extracted"
+    },
+    {
+      "id": "universal-animation-library-2-quaternius",
+      "creator": "Quaternius",
+      "name": "Universal Animation Library 2",
+      "source": "https://quaternius.itch.io/universal-animation-library-2",
+      "tier": "Standard",
+      "archive": "animations/universal-animation-library-2-quaternius/Universal Animation Library 2[Standard].zip",
+      "contents": "animations/universal-animation-library-2-quaternius/contents",
+      "sha256": "4008EA208A604773A2B2177D965F0F5D3195498B5BF838C3F5785D68E95F2A68",
+      "formats": ["FBX", "GLB", "BLEND"],
+      "license": "CC0 1.0",
+      "licenseFile": "contents/Universal Animation Library 2[Standard]/License.txt",
+      "intendedUse": ["humanoid-combat", "parkour", "farming", "fishing", "zombie-locomotion"],
+      "integrationNotes": "Requires bone-name mapping or retargeting validation against TavernTable's Mixamo-style rig contract.",
+      "status": "downloaded-and-extracted"
+    },
+    {
+      "id": "fantasy-races-quaternius",
+      "creator": "Quaternius",
+      "name": "Characters - Fantasy Races",
+      "source": "https://quaternius.itch.io/characters-fantasy-races",
+      "tier": "Standard",
+      "archive": "characters/fantasy-races-quaternius/Characters - Fantasy Races Kit[Standard].zip",
+      "contents": "characters/fantasy-races-quaternius/contents",
+      "sha256": "C9CBA9BC0E4EF9A06026C5454EAA9BDCE7BCCF88211FDA843CBE34C1EFF67BCD",
+      "formats": ["FBX", "GLB"],
+      "license": "Quaternius Asset License (QAL) v1.0",
+      "licenseFile": "contents/Characters - Fantasy Races Kit[Standard]/License_Standard.txt",
+      "intendedUse": ["player-character-roster", "humanoid-npcs"],
+      "integrationNotes": "Rigged models only. Verify bone names, rest pose, scale, embedded textures, and retargeted animation contracts before registration.",
+      "status": "downloaded-and-extracted"
+    },
+    {
+      "id": "dungeon-monsters-quaternius",
+      "creator": "Quaternius",
+      "name": "Bestiary - Dungeon Monsters Kit",
+      "source": "https://quaternius.itch.io/bestiary-dungeon-monsters-kit",
+      "tier": "Standard",
+      "archive": "characters/dungeon-monsters-quaternius/Bestiary - Dungeon Monsters Kit[Standard].zip",
+      "contents": "characters/dungeon-monsters-quaternius/contents",
+      "sha256": "94DBEED196B6EAD9776C2ED0CFA02DE818730886A25A507FB9D6C379BBBC4645",
+      "formats": ["FBX", "GLB"],
+      "license": "Quaternius Asset License (QAL) v1.0",
+      "licenseFile": "contents/Bestiary - Dungeon Monsters Kit[Standard]/License_Standard.txt",
+      "intendedUse": ["dungeon-enemies", "cavern-enemies", "humanoid-npcs"],
+      "integrationNotes": "Rigged models only. Verify scale, weapons, bone names, texture variants, and animation retargeting before registration.",
+      "status": "downloaded-and-extracted"
+    }
+  ]
+}

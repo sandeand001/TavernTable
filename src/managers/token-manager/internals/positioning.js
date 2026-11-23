@@ -1,6 +1,7 @@
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
+import { blocksCreatureMovement } from '../../../terrain/PlaceableCollision.js';
 // Depth utils no longer used for token layering; use tile depth bands instead.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/error/ErrorHandler.js';
 
@@ -24,9 +25,7 @@ export function snapTokenToGrid(c, token, pointerLocalX = null, pointerLocalY = 
         if (!map.has(key)) return false;
         const list = map.get(key);
         if (!Array.isArray(list)) return false;
-        return list.some(
-          (p) => p && (p.placeableType === 'plant' || p.placeableType === 'structure')
-        );
+        return list.some(blocksCreatureMovement);
       } catch (_) {
         return false;
       }

@@ -132,7 +132,7 @@ export class TerrainConstructionPanel {
             ).join('')}
           </div>
           <label data-roof-rise>Roof rise (ft)<input name="roofRiseFeet" type="number" min="1" max="30" step="1" class="grid-input"></label>
-          <label title="New buildings use sparse, varied window sizes and facade patterns. New turrets put automatic windows on their entrance side; manual windows can use any wall. Saved layouts keep their original pattern."><input name="autoWindows" type="checkbox" checked> Automatic windows</label>
+          <label title="New buildings use sparse, style-specific facade patterns; castle walls are symmetric and turrets follow their entrance/stair orientation. Manual windows can use any wall. Saved layouts keep their original pattern."><input name="autoWindows" type="checkbox" checked> Automatic windows</label>
           <label><input name="stairs" type="checkbox" checked> Automatic stairs</label>
           <div class="construction-levels" data-level-controls>
             <div class="section-subtitle">Floors and room height</div>

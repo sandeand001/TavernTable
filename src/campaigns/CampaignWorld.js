@@ -11,6 +11,7 @@ import { isOpeningHoldValid } from './CampaignOpeningClimb.js';
 import { isSurfaceGripValid, openingSurfaceGrip } from './CampaignSurfaceClimb.js';
 import { DEFAULT_LOCATION_ID, mapLocationId } from './CampaignLocations.js';
 import { doorLeafCells } from './CampaignDoors.js';
+import { planLogicalPassage } from './CampaignLogicalPassageTravel.js';
 import {
   mapGeometryObstacles,
   mapSolidToCampaign,
@@ -115,7 +116,7 @@ export default class CampaignWorld {
   }
 
   hasSameMapData(world) {
-    return ['maps', 'connections', 'locations'].every(
+    return ['maps', 'connections', 'logicalPassages', 'locations'].every(
       (key) => JSON.stringify(this._scene[key]) === JSON.stringify(world._scene[key])
     );
   }
@@ -212,6 +213,8 @@ export default class CampaignWorld {
     const sameMaps = JSON.stringify(this._scene.maps) === JSON.stringify(next.maps);
     const sameConnections =
       JSON.stringify(this._scene.connections) === JSON.stringify(next.connections);
+    const sameLogicalPassages =
+      JSON.stringify(this._scene.logicalPassages) === JSON.stringify(next.logicalPassages);
     const oldMaps = new Map(this._scene.maps.map((map) => [map.id, map]));
     const kept = new Map();
     for (const map of next.maps) {
@@ -224,7 +227,7 @@ export default class CampaignWorld {
     this._scene = next;
     this._mapsById = new Map(next.maps.map((map) => [map.id, map]));
     this._geometries = kept;
-    if (!sameMaps || !sameConnections) {
+    if (!sameMaps || !sameConnections || !sameLogicalPassages) {
       this._mapRevision++;
       this._locationObstacles.clear();
     }
@@ -258,6 +261,25 @@ export default class CampaignWorld {
     const next = this.save();
     next.connections = [...(next.connections || []), copy(connection)];
     this._commit(next);
+  }
+
+  addLogicalPassage(passage) {
+    const next = this.save();
+    next.logicalPassages = [...(next.logicalPassages || []), copy(passage)];
+    this._commit(next);
+  }
+
+  getLogicalPassages(mapId = null) {
+    if (mapId !== null) this._map(mapId);
+    return copy(this._scene.logicalPassages || []).filter(
+      (passage) => mapId === null || passage.ends.some((end) => end.mapId === mapId)
+    );
+  }
+
+  planLogicalPassage(id, mapId, localWorld, options = {}) {
+    const passage = this.getLogicalPassages(mapId).find((entry) => entry.id === id);
+    if (!passage) throw new Error('The cavern passage no longer exists on this map');
+    return planLogicalPassage(this, passage, mapId, localWorld, options);
   }
 
   setDoorState(id, change) {

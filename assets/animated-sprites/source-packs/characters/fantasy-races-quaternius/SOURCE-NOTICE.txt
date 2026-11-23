@@ -1,0 +1,13 @@
+Characters - Fantasy Races
+Creator: Quaternius
+Source: https://quaternius.itch.io/characters-fantasy-races
+Acquired: 2026-11-20
+Acquired tier: Standard
+License: Quaternius Asset License (QAL) v1.0
+License URL: https://quaternius.com/license.html
+Included full terms: contents/Characters - Fantasy Races Kit[Standard]/License_Standard.txt
+
+Commercial incorporation is permitted without attribution. The raw or modified
+asset files may not be resold or redistributed as standalone assets, templates,
+libraries, or packs. Models are not registered until rig and animation contracts
+are verified.

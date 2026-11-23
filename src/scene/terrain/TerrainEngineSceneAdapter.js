@@ -1,9 +1,16 @@
 import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
 import { BRUSH_COLORS } from '../../terrain/brush/BrushCommon.js';
-import { autoPopulateBiomeFlora } from '../../terrain/flora/BiomePopulation.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { validateConstructionEdit } from '../../campaigns/CampaignConstruction.js';
 import { CampaignBuildingEditor } from '../../campaigns/CampaignBuildingEditor.js';
+import { getModelSupportBounds } from '../../core/ModelPostProcessing.js';
+import { getPurePolyAsset } from '../../config/assets/PurePolyAssets.js';
+import { fitTreeScale } from './treeSupport.js';
+import { resolveCavernSceneryClearance } from './CavernSceneryClearance.js';
+import {
+  cavernEntranceCells,
+  naturalCavernRoutes,
+} from '../../terrain/generation/CavernInteriors.js';
 
 export class TerrainEngineSceneAdapter {
   constructor({ engine, gameManager, threeSceneManager } = {}) {
@@ -14,6 +21,12 @@ export class TerrainEngineSceneAdapter {
     this.gameManager = gameManager;
     this.scene = threeSceneManager;
     this._unsubs = [];
+    this._treeChoices = new Map();
+    this._treeBounds = new Map();
+    this._previewRevision = 0;
+    this._lastTreePreview = null;
+    this._previewRefreshQueued = false;
+    this._treeSupportNoticeQueued = false;
   }
 
   attach() {
@@ -48,6 +61,7 @@ export class TerrainEngineSceneAdapter {
         if (!active) this.scene.clearTerrainBrushPreview();
       }),
       e.onBiomeChanged(({ biomeKey, biomeSeed }) => {
+        this.scene.setSceneLightingBiome?.(biomeKey);
         if (typeof window !== 'undefined') {
           window.selectedBiome = biomeKey;
           window.richShadingSettings ??= {};
@@ -67,17 +81,25 @@ export class TerrainEngineSceneAdapter {
   detach() {
     for (const unsubscribe of this._unsubs) unsubscribe();
     this._unsubs = [];
+    this._previewRevision++;
+    this._lastTreePreview = null;
+    this._treeChoices.clear();
+    this._treeBounds.clear();
     this.scene.clearTerrainBrushPreview();
   }
 
-  _renderPreview({ cells, tool, heightStep }) {
+  _renderPreview(preview) {
+    const { cells, tool, heightStep } = preview;
     const e = this.engine;
+    const revision = ++this._previewRevision;
     const visible = e.isActive || (e.getSelectedPlaceable() && e.isPlaceablesPanelVisible());
     if (!visible || !cells.length) {
+      this._lastTreePreview = null;
+      this._treeChoices.clear();
       this.scene.clearTerrainBrushPreview();
       return;
     }
-    this.scene.setTerrainBrushPreview(cells, {
+    const style = {
       color: BRUSH_COLORS.preview,
       fillAlpha: 0.12,
       lineAlpha: 0.9,
@@ -85,28 +107,152 @@ export class TerrainEngineSceneAdapter {
       previewMode: 'terrain-height',
       brushTool: tool,
       heightStep,
+    };
+    const selected = e.isPlaceablesPanelVisible() ? e.getSelectedPlaceable() : null;
+    if (!this._isTreeSelection(selected)) {
+      this._lastTreePreview = null;
+      this._treeChoices.clear();
+      this.scene.setTerrainBrushPreview(cells, style);
+      return;
+    }
+    this._lastTreePreview = preview;
+    const activeKeys = new Set(cells.map(({ x, y }) => this._treeChoiceKey(selected, x, y)));
+    for (const key of this._treeChoices.keys())
+      if (!activeKeys.has(key)) this._treeChoices.delete(key);
+    this.scene.clearTerrainBrushPreview();
+    void Promise.all(
+      cells.map(async (cell) => {
+        const id = this._manualVariant(selected, cell.x, cell.y);
+        const bounds = await this._treeSupportBounds(TERRAIN_PLACEABLES[id].modelKey);
+        const scale = fitTreeScale(this.gameManager, { gridX: cell.x, gridY: cell.y }, bounds);
+        return {
+          ...cell,
+          color:
+            scale === null
+              ? BRUSH_COLORS.treeBlocked
+              : scale < 1 - 1e-6
+                ? BRUSH_COLORS.treeScaled
+                : BRUSH_COLORS.preview,
+        };
+      })
+    )
+      .then((result) => {
+        if (revision !== this._previewRevision) return;
+        this.scene.setTerrainBrushPreview(result, { ...style, fillAlpha: 0.3 });
+      })
+      .catch((error) => {
+        if (revision !== this._previewRevision) return;
+        this.scene.clearTerrainBrushPreview();
+        GameErrors.gameState(error, {
+          component: 'TerrainEngineSceneAdapter',
+          operation: 'tree-preview',
+          placeableId: selected,
+        });
+      });
+  }
+
+  _isTreeSelection(id) {
+    return (
+      /^tree-/.test(id || '') ||
+      TERRAIN_PLACEABLES[id]?.type === 'plant-family' ||
+      ['cactus', 'rock', 'prop', 'ore', 'light', 'tree'].includes(getPurePolyAsset(id)?.kind)
+    );
+  }
+
+  _treeChoiceKey(id, x, y) {
+    return `${id}:${x},${y}`;
+  }
+
+  _manualVariant(id, x, y) {
+    const definition = TERRAIN_PLACEABLES[id];
+    if (definition?.type !== 'plant-family') return id;
+    const key = this._treeChoiceKey(id, x, y);
+    if (this._treeChoices.has(key)) return this._treeChoices.get(key);
+    const variants = definition.familyVariants;
+    if (
+      !Array.isArray(variants) ||
+      !variants.length ||
+      variants.some((variant) => {
+        const entry = TERRAIN_PLACEABLES[variant];
+        return !/^tree-/.test(variant) || entry?.type !== 'plant' || !entry.modelKey;
+      })
+    )
+      throw new Error(`Tree family "${id}" has no valid model variants`);
+    const chosen = variants[Math.floor(Math.random() * variants.length)];
+    this._treeChoices.set(key, chosen);
+    return chosen;
+  }
+
+  _treeSupportBounds(modelKey) {
+    const cache = this.gameManager.modelAssetCache;
+    const three = this.scene.three;
+    if (!cache?.getModel || !three) throw new Error('Tree preview model loading is unavailable');
+    if (this._treeBoundsOwner !== cache) {
+      this._treeBounds.clear();
+      this._treeBoundsOwner = cache;
+    }
+    if (!this._treeBounds.has(modelKey)) {
+      const pending = Promise.resolve(cache.getModel(modelKey))
+        .then((model) => {
+          if (!model) throw new Error(`Tree model "${modelKey}" could not be loaded`);
+          return getModelSupportBounds(three, model);
+        })
+        .catch((error) => {
+          if (this._treeBounds.get(modelKey) === pending) this._treeBounds.delete(modelKey);
+          throw error;
+        });
+      this._treeBounds.set(modelKey, pending);
+    }
+    return this._treeBounds.get(modelKey);
+  }
+
+  _refreshTreePreview() {
+    if (this._previewRefreshQueued) return;
+    this._previewRefreshQueued = true;
+    queueMicrotask(() => {
+      this._previewRefreshQueued = false;
+      if (this._lastTreePreview) this._renderPreview(this._lastTreePreview);
     });
   }
 
-  _populateFlora({ biomeKey, biomeSeed }) {
+  _populateFlora({ placements }) {
     const gm = this.gameManager;
     const pool = gm.placeableMeshPool;
     if (!pool) return;
     pool.purgeAll();
-    autoPopulateBiomeFlora(
-      {
-        gameManager: gm,
-        getTerrainHeight: (x, y) => this.engine.getHeightAt(x, y),
-        getTreeDensityMultiplier: () => this.engine.treeDensityMultiplier,
-        _biomeSeed: biomeSeed,
-      },
-      biomeKey,
-      biomeSeed
-    );
+    for (const placement of placements) pool.addPlaceable(placement);
     if (pool.whenSettled) {
-      void pool.whenSettled().catch((error) => {
-        GameErrors.gameState(error, { component: 'TerrainEngineSceneAdapter', operation: 'flora' });
-      });
+      const epoch = pool._clearEpoch;
+      void pool
+        .whenSettled()
+        .then(() => {
+          if (pool._clearEpoch !== epoch || !this.engine.cavern) return;
+          const cavern = this.engine.cavern;
+          const routeCells = naturalCavernRoutes({
+            cols: this.engine.cols,
+            rows: this.engine.rows,
+            getHeight: (x, z) => this.engine.getHeightAt(x, z),
+            exits: cavern.exits,
+            seed: cavern.seed,
+          }).flatMap(({ cells }) => cells);
+          routeCells.push(
+            ...cavern.exits.flatMap((side) =>
+              cavernEntranceCells(side, this.engine.cols, this.engine.rows)
+            )
+          );
+          resolveCavernSceneryClearance(pool, {
+            routeCells,
+            tileWorldSize: gm.spatial.tileWorldSize,
+            checkSupport: true,
+            biomeKey: this.engine.biomeKey,
+          });
+        })
+        .catch((error) => {
+          GameErrors.gameState(error, {
+            component: 'TerrainEngineSceneAdapter',
+            operation: 'flora',
+          });
+        });
     }
   }
 
@@ -117,29 +263,54 @@ export class TerrainEngineSceneAdapter {
       pool.removePlantsAt(gridX, gridY);
       return;
     }
-    const definition = TERRAIN_PLACEABLES[placeableId];
-    if (!definition) throw new Error(`Unknown terrain placeable: ${placeableId}`);
+    const selected = TERRAIN_PLACEABLES[placeableId];
+    if (!selected) throw new Error(`Unknown terrain placeable: ${placeableId}`);
+    if (selected.type === 'plant-family' && variant && !selected.familyVariants?.includes(variant))
+      throw new Error(`"${variant}" is not a variant of tree family "${placeableId}"`);
+    const concreteId =
+      selected.type === 'plant-family'
+        ? variant || this._manualVariant(placeableId, gridX, gridY)
+        : placeableId;
+    const definition = TERRAIN_PLACEABLES[concreteId];
+    if (selected.type === 'plant-family' && (definition?.type !== 'plant' || !definition.modelKey))
+      throw new Error(`Tree family "${placeableId}" has an invalid model variant`);
+    const tree = this._isTreeSelection(concreteId);
+    this._treeChoices.delete(this._treeChoiceKey(placeableId, gridX, gridY));
+    if (tree) this._refreshTreePreview();
     void pool
-      .addPlaceable({
-        type: definition.type,
-        modelKey: definition.modelKey,
-        variantKey: variant || placeableId,
-        placeableId,
-        gridX,
-        gridY,
-        biomeKey: this.engine.biomeKey,
-        biomeSeed: this.engine.biomeSeed,
-      })
+      .addPlaceable(
+        {
+          type: definition.type,
+          modelKey: definition.modelKey,
+          variantKey: selected.type === 'plant-family' ? concreteId : variant || concreteId,
+          placeableId: concreteId,
+          gridX,
+          gridY,
+          biomeKey: this.engine.biomeKey,
+          biomeSeed: this.engine.biomeSeed,
+        },
+        { fitManualTree: tree, strict: true }
+      )
       .then((handle) => {
         if (!handle) throw new Error(`Terrain placeable "${placeableId}" could not be placed`);
       })
       .catch((error) => {
-        GameErrors.gameState(error, {
+        const context = {
           component: 'TerrainEngineSceneAdapter',
           operation: 'place',
           placeableId,
           gridX,
           gridY,
+        };
+        if (error.code !== 'tree-support-unavailable') {
+          GameErrors.gameState(error, context);
+          return;
+        }
+        if (this._treeSupportNoticeQueued) return;
+        this._treeSupportNoticeQueued = true;
+        queueMicrotask(() => {
+          this._treeSupportNoticeQueued = false;
+          GameErrors.input(error, context);
         });
       });
   }

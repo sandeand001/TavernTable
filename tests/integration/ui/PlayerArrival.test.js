@@ -94,6 +94,8 @@ test('the assigned roster reaches grant preview, explicit Next sprite placement 
     await app.commands.idle;
     expect(gameManager.placedTokens).toHaveLength(1);
     expect(gameManager.placedTokens[0].type).toBe('female-archer');
+    expect(gameManager.threeSceneManager.scene.visible).toBe(true);
+    expect(app.commands.canRetry).toBe(false);
     document.querySelector(`[data-player-retrieve="${table.characterId}"]`).click();
     await app.commands.idle;
     expect(gameManager.placedTokens).toEqual([]);

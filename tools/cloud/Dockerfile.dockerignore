@@ -19,12 +19,14 @@ tools/cloud/*
 !tools/cloud/admin-runtime.js
 !tools/cloud/production-runtime.js
 !tools/cloud/production-host.js
+!tools/cloud/protected-assets.js
 !tools/cloud/account-access.js
 !tools/cloud/cloud-error.js
 !tools/cloud/cloud-http.js
 !tools/cloud/campaign-store.js
 !tools/cloud/participant-state.js
 !tools/cloud/participant-changes.js
+!tools/cloud/free-roam-moves.js
 !tools/cloud/event-stream.js
 !tools/cloud/usage-limits.js
 !tools/cloud/immutable-objects.js
@@ -42,3 +44,7 @@ assets/data/*
 !assets/Items/
 assets/Items/*
 !assets/Items/d20-gold.glb
+!assets/Items/player-dice-set/
+assets/Items/player-dice-set/*
+!assets/Items/player-dice-set/player-dice-set.glb
+!assets/Items/player-dice-set/NOTICE.txt

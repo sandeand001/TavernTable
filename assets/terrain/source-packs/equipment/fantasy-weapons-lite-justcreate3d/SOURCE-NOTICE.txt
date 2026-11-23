@@ -1,0 +1,22 @@
+Low Poly RPG Fantasy Weapons Lite
+Creator: JustCreate3D (Oleh Lila)
+Original source: https://justcreate3d.itch.io/low-poly-rpg-fantasy-weapons-lite
+Creator product page: https://justcreate3d.studio/product/low-poly-rpg-fantasy-weapons-lite/
+License page: https://justcreate3d.studio/licences/
+Acquired: 2026-11-20
+Acquired tier: Free sample; seven FBX models and one 1024x1024 texture
+Archive: LowPolyRPGWeapons_Lite_FBX.zip
+
+The archive itself does not contain a license file. The creator's published
+Digital Asset License permits commercial and non-commercial incorporation into
+finished projects. It prohibits standalone redistribution, asset-pack/library/
+template reuse, third-party reuse outside a finished project, NFT/blockchain use,
+and AI training, datasets, or generative asset/content systems.
+
+The current published terms are retained in LICENSE-OFFICIAL.txt. The page says
+they describe prior direct purchases and do not replace different terms agreed
+at acquisition time; preserve any future acquisition-specific terms supplied by
+the creator. All assets remain owned by Just Create (Oleh Lila).
+
+Status: Downloaded and extracted as source assets. No models are registered in
+the TavernTable runtime or biome catalogs.

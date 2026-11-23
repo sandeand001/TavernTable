@@ -1,3 +1,4 @@
+// @ts-check
 import { FLIGHT_ELEVATION_STEPS } from '../config/TokenMovementConfig.js';
 
 export const PLAYER_COMMAND_VERSION = 1;
@@ -71,10 +72,11 @@ export function validatePlayerCommand(command) {
     invalid();
   if (
     command.kind === 'move' &&
-    (!only(command.payload, ['target', 'useSlowFall', 'closest']) ||
+    (!only(command.payload, ['target', 'useSlowFall', 'closest', 'diceColor']) ||
       (command.payload.closest !== undefined && typeof command.payload.closest !== 'boolean') ||
       (command.payload.useSlowFall !== undefined &&
         typeof command.payload.useSlowFall !== 'boolean') ||
+      (command.payload.diceColor !== undefined && !identifier(command.payload.diceColor)) ||
       !only(command.payload.target, ['mapId', 'gridX', 'gridY', 'elevationFeet']) ||
       (command.payload.target.elevationFeet !== undefined &&
         !Number.isFinite(command.payload.target.elevationFeet)) ||
@@ -90,7 +92,9 @@ export function validatePlayerCommand(command) {
     invalid();
   if (
     command.kind === 'flight.drop' &&
-    (!only(command.payload, ['useSlowFall']) || typeof command.payload.useSlowFall !== 'boolean')
+    (!only(command.payload, ['useSlowFall', 'diceColor']) ||
+      typeof command.payload.useSlowFall !== 'boolean' ||
+      (command.payload.diceColor !== undefined && !identifier(command.payload.diceColor)))
   )
     invalid();
   if (
@@ -128,18 +132,20 @@ export function validatePlayerCommand(command) {
     invalid();
   if (
     command.kind === 'roll' &&
-    (!only(command.payload, ['expression', 'label', 'mode']) ||
+    (!only(command.payload, ['expression', 'label', 'mode', 'diceColor']) ||
       typeof command.payload.expression !== 'string' ||
       command.payload.expression.length > 160 ||
       typeof command.payload.label !== 'string' ||
       command.payload.label.length > 240 ||
-      !['normal', 'advantage', 'disadvantage'].includes(command.payload.mode))
+      !['normal', 'advantage', 'disadvantage'].includes(command.payload.mode) ||
+      (command.payload.diceColor !== undefined && !identifier(command.payload.diceColor)))
   )
     invalid();
   if (
     command.kind === 'action.use' &&
-    (!only(command.payload, ['actionId', 'choice', 'targeting']) ||
+    (!only(command.payload, ['actionId', 'choice', 'targeting', 'diceColor']) ||
       !identifier(command.payload.actionId) ||
+      (command.payload.diceColor !== undefined && !identifier(command.payload.diceColor)) ||
       (command.payload.choice !== undefined &&
         !only(command.payload.choice, ['slotLevel', 'amount', 'variant'])))
   )

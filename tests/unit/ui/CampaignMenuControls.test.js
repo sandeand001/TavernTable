@@ -105,7 +105,10 @@ test.each(['player', 'unknown'])('%s does not receive floating Maps & focus cont
 test('explicit browser-only campaigns retain their local DM map controls', () => {
   delete services.workspace.store.identity;
   mountCampaignControls(gm, services);
-  expect(CampaignMapControls).toHaveBeenCalledWith({ gameManager: gm });
+  expect(CampaignMapControls).toHaveBeenCalledWith({
+    gameManager: gm,
+    onPassage: expect.any(Function),
+  });
   expect(document.querySelector('.campaign-tools')).not.toBeNull();
 });
 

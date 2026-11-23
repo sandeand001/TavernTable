@@ -1,0 +1,8 @@
+LowPoly Modular Dungeon Pack
+Creator: Quaternius
+Source: https://quaternius.itch.io/lowpoly-modular-dungeon-pack
+Acquired: 2026-11-20
+Acquired tier: Free
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Included license: contents/.Updated Modular Dungeon - May 2019/License.txt

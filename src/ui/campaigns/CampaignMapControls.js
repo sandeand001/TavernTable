@@ -2,8 +2,13 @@ import { changeCampaignView } from '../../campaigns/SceneWorld.js';
 import { getTokenDisplayName } from '../../entities/creatures/creatureHelpers.js';
 import { GameErrors } from '../../utils/error/ErrorHandler.js';
 import { createCampaignLocation } from '../../campaigns/CampaignLocationEditing.js';
-import { createCampaignCavernArea } from '../../campaigns/CampaignCavernEditing.js';
+import {
+  createCampaignCavernArea,
+  createCampaignLogicalCavernArea,
+} from '../../campaigns/CampaignCavernEditing.js';
 import { oppositeCavernSide } from '../../terrain/generation/CavernInteriors.js';
+import { occupiedCavernSides } from '../../campaigns/CampaignLogicalPassages.js';
+import LocationOverviewView from './LocationOverviewView.js';
 
 function options(select, rows) {
   const signature = JSON.stringify(rows);
@@ -20,8 +25,9 @@ function options(select, rows) {
 }
 
 export default class CampaignMapControls {
-  constructor({ gameManager }) {
+  constructor({ gameManager, onPassage = null }) {
     this.gameManager = gameManager;
+    this.onPassage = onPassage;
     this.pending = false;
     this.pendingViews = 0;
     this.error = null;
@@ -35,27 +41,56 @@ export default class CampaignMapControls {
       <div class="campaign-map-panel">
         <label>Location<select aria-label="Viewed location"></select></label>
         <label>Map<select aria-label="Viewed map"></select></label>
+        <button type="button" aria-label="Open location overview">Location overview</button>
         <label>Focus creature<select aria-label="Focused creature"></select></label>
         <button type="button" aria-label="Center focused creature">Center focused creature</button>
         <output role="status" aria-live="polite" aria-label="Map view status"></output>
+        <p data-logical-passage-help hidden>Gold circles mark passages. Select a creature and click one to travel.</p>
+        <div aria-label="Cavern passages" data-logical-passage-list></div>
         <form aria-label="Create independent location">
           <label>New location<input aria-label="New location name" maxlength="100" required></label>
           <button type="submit">Create empty location</button>
         </form>
         <form aria-label="Add connected cavern area" hidden>
+          <p>Physical area: generated immediately beside this map.</p>
           <label>New cavern area<input aria-label="Cavern area name" maxlength="100" placeholder="Optional name"></label>
           <label>Area type<select aria-label="Cavern area type"><option value="chamber">Cavern chamber</option><option value="tunnel">Winding tunnel</option></select></label>
           <label>Side<select aria-label="Cavern passage side"><option value="south">South</option><option value="west">West</option><option value="north">North</option><option value="east">East</option></select></label>
-          <button type="submit">Add tunnel / chamber</button>
+          <button type="submit">Add physical tunnel / chamber</button>
+        </form>
+        <form aria-label="Add blank linked cavern area" hidden>
+          <p>New logical areas start blank in separate locations. Outside destinations can be shared.</p>
+          <label>New linked area<input aria-label="Linked area name" maxlength="100" placeholder="Optional name"></label>
+          <label>Destination type<select aria-label="Linked area type"><option value="chamber">Blank chamber</option><option value="outside">Blank outside map</option></select></label>
+          <label>Main entrance<select aria-label="Linked cavern entrance"><option value="north">North</option><option value="east">East</option><option value="south">South</option><option value="west">West</option></select></label>
+          <label data-outside-destination hidden>Outside destination<select aria-label="Linked outside destination"></select></label>
+          <button type="submit">Add blank linked area</button>
         </form>
       </div>`;
     this.location = this.root.querySelector('[aria-label="Viewed location"]');
     this.map = this.root.querySelector('[aria-label="Viewed map"]');
+    this.overviewButton = this.root.querySelector('[aria-label="Open location overview"]');
+    this.overview = new LocationOverviewView({
+      gameManager,
+      onViewMap: async (id) => {
+        await this.change({ mapId: id });
+        return !this.error;
+      },
+    });
+    this.overviewButton.addEventListener('click', () => void this.openOverview());
     this.focus = this.root.querySelector('[aria-label="Focused creature"]');
     this.center = this.root.querySelector('[aria-label="Center focused creature"]');
     this.newLocation = this.root.querySelector('[aria-label="Create independent location"]');
     this.newCavern = this.root.querySelector('[aria-label="Add connected cavern area"]');
+    this.newLogical = this.root.querySelector('[aria-label="Add blank linked cavern area"]');
     this.status = this.root.querySelector('output');
+    this.passageList = this.root.querySelector('[data-logical-passage-list]');
+    this.passageList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-logical-passage]');
+      if (!button || button.disabled || !this.onPassage) return;
+      const rect = button.getBoundingClientRect();
+      this.onPassage(button.dataset.logicalPassage, { clientX: rect.left, clientY: rect.bottom });
+    });
     this.location.addEventListener('change', () => {
       const world = gameManager.campaignWorld;
       const map = world
@@ -71,6 +106,13 @@ export default class CampaignMapControls {
       event.preventDefault();
       void this.createCavernArea();
     });
+    this.newLogical.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.createLogicalArea();
+    });
+    this.newLogical
+      .querySelector('[aria-label="Linked area type"]')
+      .addEventListener('change', () => this.render());
     this.map.addEventListener('change', () => {
       void this.change({ mapId: this.map.value });
     });
@@ -139,6 +181,7 @@ export default class CampaignMapControls {
       this.focus.disabled =
         unavailable || !gm.campaignWorld;
     this.center.disabled = unavailable || !focusId;
+    this.overviewButton.disabled = disabled || !gm.campaignWorld;
     for (const control of this.newLocation.querySelectorAll('input,button'))
       control.disabled = disabled || !gm.characterServices?.library?.saveScene;
     this.newCavern.hidden = !gm.campaignWorld || !gm.terrainEngine?.cavern;
@@ -151,12 +194,69 @@ export default class CampaignMapControls {
             : oppositeCavernSide(connection.cavern.side)
         )
     );
+    const logicalPassages = gm.campaignWorld?.getLogicalPassages?.(gm.campaignMapId) || [];
+    const passageRows = logicalPassages.map((passage) => {
+      const end = passage.ends?.find((entry) => entry.mapId === gm.campaignMapId) || passage;
+      return { id: passage.id, side: end.side };
+    });
+    const passageSignature = JSON.stringify(passageRows);
+    if (this.passageList.dataset.signature !== passageSignature) {
+      this.passageList.replaceChildren(
+        ...passageRows.map(({ id, side }) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.logicalPassage = id;
+          button.textContent = `Use ${side} passage`;
+          return button;
+        })
+      );
+      this.passageList.dataset.signature = passageSignature;
+    }
+    for (const button of this.passageList.querySelectorAll('button'))
+      button.disabled = disabled || !this.onPassage;
+    for (const passage of logicalPassages) {
+      const end = passage.ends?.find((entry) => entry.mapId === gm.campaignMapId) || passage;
+      used.add(end.side);
+    }
+    this.root.querySelector('[data-logical-passage-help]').hidden = !logicalPassages.length;
     const side = this.newCavern.querySelector('[aria-label="Cavern passage side"]');
     for (const option of side.options) option.disabled = used.has(option.value);
     if (used.has(side.value))
       side.value = [...side.options].find((option) => !option.disabled)?.value || '';
     for (const control of this.newCavern.querySelectorAll('input,select,button'))
       control.disabled = disabled || !side.value || !gm.characterServices?.library?.saveScene;
+    this.newLogical.hidden =
+      !gm.campaignWorld ||
+      !gm.terrainEngine?.cavern ||
+      !!gm.campaignWorld.getMap(gm.campaignMapId).building;
+    const logicalSide = this.newLogical.querySelector('[aria-label="Linked cavern entrance"]');
+    const exits = new Set(gm.terrainEngine?.cavern?.exits || []);
+    for (const option of logicalSide.options)
+      option.disabled = !exits.has(option.value) || used.has(option.value);
+    if (!logicalSide.value || logicalSide.selectedOptions[0]?.disabled)
+      logicalSide.value = [...logicalSide.options].find((option) => !option.disabled)?.value || '';
+    const logicalKind = this.newLogical.querySelector('[aria-label="Linked area type"]').value;
+    const destinationLabel = this.newLogical.querySelector('[data-outside-destination]');
+    destinationLabel.hidden = logicalKind !== 'outside';
+    const destination = this.newLogical.querySelector('[aria-label="Linked outside destination"]');
+    const scene = gm.campaignWorld?.save();
+    const outsideIds = new Set(
+      (scene?.logicalPassages || [])
+        .filter((passage) => passage.kind === 'outside')
+        .map((passage) => passage.ends[1].mapId)
+    );
+    options(destination, [
+      ['', 'Create a new outside map'],
+      ...[...outsideIds]
+        .filter((id) => occupiedCavernSides(scene, id).size < 4)
+        .map((id) => [id, names.get(id) || id]),
+    ]);
+    for (const control of this.newLogical.querySelectorAll('input,select,button'))
+      control.disabled =
+        disabled ||
+        !logicalSide.value ||
+        !gm.characterServices?.library?.saveScene ||
+        (control === destination && logicalKind !== 'outside');
     this.root.setAttribute('aria-busy', String(!!busy));
     const error = this.error || gm.campaignMapFailure;
     this.status.textContent = busy
@@ -190,6 +290,17 @@ export default class CampaignMapControls {
     }
   }
 
+  async openOverview() {
+    this.error = null;
+    try {
+      await this.overview.open();
+    } catch (error) {
+      this.error = error;
+      GameErrors.input(error, { component: 'CampaignMapControls', operation: 'locationOverview' });
+      this.render();
+    }
+  }
+
   async createCavernArea() {
     if (this.pending) return;
     this.pending = true;
@@ -207,6 +318,37 @@ export default class CampaignMapControls {
     } catch (error) {
       this.error = error;
       GameErrors.input(error, { component: 'CampaignMapControls', operation: 'createCavernArea' });
+    } finally {
+      this.pending = false;
+      this.render();
+    }
+  }
+
+  async createLogicalArea() {
+    if (this.pending) return;
+    this.pending = true;
+    this.error = null;
+    const field = this.newLogical.querySelector('[aria-label="Linked area name"]');
+    const kind = this.newLogical.querySelector('[aria-label="Linked area type"]').value;
+    const options = {
+      name: field.value,
+      side: this.newLogical.querySelector('[aria-label="Linked cavern entrance"]').value,
+      kind,
+      ...(kind === 'outside'
+        ? {
+            outsideMapId:
+              this.newLogical.querySelector('[aria-label="Linked outside destination"]').value ||
+              null,
+          }
+        : {}),
+    };
+    this.render();
+    try {
+      await createCampaignLogicalCavernArea(this.gameManager, options);
+      field.value = '';
+    } catch (error) {
+      this.error = error;
+      GameErrors.input(error, { component: 'CampaignMapControls', operation: 'createLogicalArea' });
     } finally {
       this.pending = false;
       this.render();
@@ -231,6 +373,7 @@ export default class CampaignMapControls {
   }
 
   dispose() {
+    this.overview.dispose();
     this.unsubscribe?.();
     for (const event of [
       'taverntable:tokenNamesChanged',

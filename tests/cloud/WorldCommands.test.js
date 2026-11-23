@@ -334,7 +334,7 @@ async function publishPlayer(f, request, identity = f.member, scope = f.grant.ac
       Authorization: 'Bearer ' + identity.token,
       Origin: f.api.origin,
       'Content-Type': 'application/json',
-      'X-TavernTable-Seat': scope.seatId,
+      'X-TavernTable-Seat': scope.seatId ?? 'owner',
       'X-TavernTable-Access-Generation': String(scope.accessGeneration),
     },
     body: JSON.stringify(request),
@@ -1065,6 +1065,7 @@ test(
           member: members[0],
           command: command(members[0], 'move', {
             target: { mapId: 'map-main', gridX: 2, gridY: 1 },
+            closest: true,
           }),
         },
         {
@@ -3359,6 +3360,151 @@ for (const ruleset of ['2014', '2024']) {
 }
 
 test(
+  'independent free-roam moves submitted from the same world both survive a fresh owner read',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const other = await f.account();
+    const invite = await f.owner.client.createInvitation(f.campaign.id, { name: 'Second mover' });
+    await other.client.redeemInvitation(invite);
+    const joined = await other.client.getParticipantAccess(f.campaign.id);
+    await f.owner.client.assignCharacter(f.campaign.id, {
+      seatId: joined.access.seatId,
+      accessGeneration: joined.access.accessGeneration,
+      characterId: f.npc,
+      assigned: true,
+    });
+    const grant = await other.client.getParticipantAccess(f.campaign.id);
+    const view = (observerTokenId) => ({
+      sessionId: f.live.sessionId,
+      observerTokenId,
+      mapId: 'map-main',
+      assetKey: null,
+    });
+    const [left, right] = await Promise.all([
+      f.member.client.readParticipantSnapshot(f.campaign.id, view('token-1'), f.grant.access),
+      other.client.readParticipantSnapshot(f.campaign.id, view('token-2'), grant.access),
+    ]);
+    assert.equal(left.state.sceneRevision, right.state.sceneRevision);
+    const ownerEvents = await f.openOwner();
+    const playerEvents = await f.openMember();
+    assert.equal((await ownerEvents.next()).value.kind, 'owner-checkpoint');
+    assert.equal((await playerEvents.next()).value.kind, 'checkpoint');
+    const first = playerMove(f, left, { mapId: 'map-main', gridX: 1, gridY: 2 });
+    const second = playerMove(f, right, { mapId: 'map-main', gridX: 3, gridY: 2 });
+    Object.assign(second.command, { tokenId: 'token-2', observerTokenId: 'token-2' });
+    const results = await Promise.all([
+      publishPlayer(f, first),
+      publishPlayer(f, second, other, grant.access),
+    ]);
+    assert.deepEqual(
+      results.map(({ status, body }) => [status, body.code]),
+      [
+        [200, undefined],
+        [200, undefined],
+      ]
+    );
+    const saved = await f.owner.client.readScene(f.campaign.id);
+    assert.equal(saved.revision, left.state.sceneRevision + 2);
+    assert.deepEqual(
+      JSON.parse(saved.scene).creatures.map(({ id, gridX, gridY }) => [id, gridX, gridY]),
+      [
+        ['token-1', 1, 2],
+        ['token-2', 3, 2],
+      ]
+    );
+    const targetGeneration = left.generation + 2;
+    for (const [stream, kind] of [
+      [ownerEvents, 'owner-delta'],
+      [playerEvents, 'delta'],
+    ]) {
+      const routes = [];
+      let generation = left.generation;
+      while (generation < targetGeneration) {
+        const { value } = await stream.next();
+        assert.equal(value.kind, kind, 'An already-visible actor should get a route, not a resync');
+        routes.push(...(value.delta.presentations || []));
+        generation = value.delta.generation;
+      }
+      assert.deepEqual(
+        routes
+          .map(({ tokenId, commandId, motion }) => [
+            tokenId,
+            commandId,
+            motion.from.gridY,
+            motion.route.at(-1).gridY,
+          ])
+          .sort(),
+        [
+          ['token-1', first.command.commandId, 1, 2],
+          ['token-2', second.command.commandId, 1, 2],
+        ]
+      );
+    }
+  }
+);
+
+test(
+  'DM and player share the same Free Roam board and only the genuinely blocked move is refused',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const ownerScope = (await f.owner.client.getParticipantAccess(f.campaign.id)).access;
+    const linked = await f.owner.client.readCharacters(f.campaign.id);
+    const board = JSON.parse(linked.scene);
+    const npc = board.creatures.find(({ id }) => id === 'token-2');
+    Object.assign(npc, { characterId: null, nameMode: 'custom' });
+    npc.movement.speed = 30;
+    await f.owner.client.commitScene(f.campaign.id, {
+      ruleset: f.campaign.ruleset,
+      revision: linked.sceneRevision,
+      charactersRevision: linked.revision,
+      scene: encodeScene(board, f.validation),
+    });
+    const start = await f.owner.client.readCharacters(f.campaign.id);
+    const request = (base, gridX, gridY) =>
+      playerMove(
+        f,
+        { state: { ...base, publicScene: { assetKey: null } } },
+        { mapId: 'map-main', gridX, gridY }
+      );
+    const own = (base, x, y) => {
+      const move = request(base, x, y);
+      Object.assign(move.command, { tokenId: 'token-2', observerTokenId: 'token-2' });
+      return move;
+    };
+    const [playerReply, ownerReply] = await Promise.all([
+      publishPlayer(f, request(start, 1, 2)),
+      f.owner.client.commitWorldCommand(f.campaign.id, own(start, 3, 2), ownerScope),
+    ]);
+    assert.equal(playerReply.status, 200);
+    assert.equal(playerReply.body.result.freeRoam, true);
+    assert.equal(ownerReply.freeRoam, true);
+    assert.equal(ownerReply.presentation.motion.route.at(-1).gridY, 2);
+    const middle = await f.owner.client.readCharacters(f.campaign.id);
+    const blocked = await Promise.all([
+      publishPlayer(f, request(middle, 2, 2)),
+      publishPlayer(f, own(middle, 2, 2), f.owner, ownerScope),
+    ]);
+    assert.deepEqual(blocked.map(({ status }) => status).sort(), [200, 422]);
+    assert.equal(blocked.find(({ status }) => status === 422).body.code, 'unreachable');
+    const end = await f.owner.client.readScene(f.campaign.id);
+    assert.equal(end.revision, start.sceneRevision + 3);
+    const actors = JSON.parse(end.scene).creatures;
+    assert.equal(actors.filter(({ gridX, gridY }) => gridX === 2 && gridY === 2).length, 1);
+    await f.owner.client.controlLiveSession(
+      f.campaign.id,
+      'end',
+      await f.owner.client.getLiveSession(f.campaign.id)
+    );
+    const backup = await f.owner.client.finishBackupSession(f.campaign.id);
+    assert.ok(backup, 'Pause must export the latest compact movement checkpoint');
+    const restored = JSON.parse(await f.owner.client.readBackup(f.campaign.id, backup.name));
+    assert.equal(restored.scene, end.scene);
+  }
+);
+
+test(
   'competing member movement intents publish exactly one canonical scene and one journal generation',
   { timeout: 60000 },
   async (t) => {
@@ -3402,7 +3548,7 @@ test(
 );
 
 test(
-  'membership removal after a staged player route prevents scene, cost and command-receipt publication',
+  'membership removal during Free Roam resolution prevents scene, cost and command-receipt publication',
   { timeout: 60000 },
   async (t) => {
     const f = await fixture(t);
@@ -3418,20 +3564,22 @@ test(
     );
     const request = playerMove(f, initial);
     const before = await f.owner.client.readCharacters(f.campaign.id);
-    const uploaded = Promise.withResolvers();
+    const planning = Promise.withResolvers();
     const release = Promise.withResolvers();
-    const stage = f.store.objects.stage.bind(f.store.objects);
-    f.store.objects.stage = async (...args) => {
-      const object = await stage(...args);
-      if (args[1] === 'presentations') {
-        uploaded.resolve();
+    const catalog = f.store.resources.catalog.bind(f.store.resources);
+    let held = false;
+    f.store.resources.catalog = async (...args) => {
+      const current = await catalog(...args);
+      if (!held) {
+        held = true;
+        planning.resolve();
         await release.promise;
       }
-      return object;
+      return current;
     };
     const pending = publishPlayer(f, request);
     try {
-      await uploaded.promise;
+      await planning.promise;
       await f.owner.client.removeMember(f.campaign.id, {
         seatId: f.grant.access.seatId,
         accessGeneration: f.grant.access.accessGeneration,
@@ -3628,6 +3776,14 @@ test(
   { timeout: 60000 },
   async (t) => {
     const f = await fixture(t, { ruleset: '2024' });
+    let seed = 13;
+    f.store.worldDice = new PhysicalDice({
+      root: path.resolve(__dirname, '..', '..'),
+      random: () => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed / 4294967296;
+      },
+    });
     await f.library.edit(f.hero, { fallTraits: { flySpeed: 60, hover: true } });
     const native = gameplayRuntime(f.scene, f.library);
     await native.combat.startTurn(native.actors.find((actor) => actor.id === 'token-1'));
@@ -3668,6 +3824,19 @@ test(
         f.grant.access
       );
       assert.equal(accepted.presentation.motion.kind, motionKind);
+      if (kind === 'flight.drop') {
+        const roll = accepted.presentation.roll;
+        assert.equal(roll.mapId, 'map-main');
+        assert.equal(roll.physical, true);
+        assert.deepEqual(
+          roll.physics.map(({ type, sides, color, cocked }) => ({ type, sides, color, cocked })),
+          [{ type: 'physical-die', sides: 6, color: 'ocean', cocked: false }]
+        );
+        assert.deepEqual(
+          roll.values,
+          roll.physics.map(({ value }) => value)
+        );
+      }
       const received = (await events.next()).value;
       assert.equal(received.kind, 'owner-delta');
       assert.equal(received.delta.presentations[0].commandId, command.commandId);

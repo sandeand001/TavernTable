@@ -1,6 +1,7 @@
 import { CoordinateUtils } from '../../../utils/coordinates/CoordinateUtils.js';
 import { TerrainHeightUtils } from '../../../utils/terrain/TerrainHeightUtils.js';
 import { logger, LOG_CATEGORY } from '../../../utils/logger/Logger.js';
+import { blocksCreatureMovement } from '../../../terrain/PlaceableCollision.js';
 // Depth utils no longer used for rendering order; we align to tile depth bands.
 import { ErrorHandler, ERROR_SEVERITY, ERROR_CATEGORY } from '../../../utils/error/ErrorHandler.js';
 
@@ -17,9 +18,7 @@ export function placeNewToken(c, gridX, gridY) {
         if (!map.has(key)) return false;
         const list = map.get(key);
         if (!Array.isArray(list)) return false;
-        return list.some(
-          (p) => p && (p.placeableType === 'plant' || p.placeableType === 'structure')
-        );
+        return list.some(blocksCreatureMovement);
       } catch (_) {
         return false;
       }
@@ -41,9 +40,7 @@ export function placeNewToken(c, gridX, gridY) {
       const placeables = c.gameManager?.terrainManager?.placeables;
       if (placeables && placeables.has(`${gridX},${gridY}`)) {
         const list = placeables.get(`${gridX},${gridY}`) || [];
-        const blocked = list.some(
-          (p) => p && (p.placeableType === 'plant' || p.placeableType === 'structure')
-        );
+        const blocked = list.some(blocksCreatureMovement);
         if (blocked) {
           logger.debug(
             'Attempted to place token on tile with a blocking placeable; aborting placement',

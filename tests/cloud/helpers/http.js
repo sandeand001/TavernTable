@@ -2,9 +2,14 @@ const http = require('node:http');
 const { once } = require('node:events');
 const { createCloudHttpHandler } = require('../../../tools/cloud/cloud-http.js');
 
-async function cloudApi({ access, store = null, port = 0 }) {
+async function cloudApi({ access, store = null, port = 0, protectedAssetKeys = null }) {
   const origin = 'http://127.0.0.1:4300';
-  const handler = createCloudHttpHandler({ access, store, allowedOrigins: [origin] });
+  const handler = createCloudHttpHandler({
+    access,
+    store,
+    allowedOrigins: [origin],
+    protectedAssetKeys,
+  });
   const server = http.createServer((request, response) => {
     void handler(request, response).then(
       (handled) => {

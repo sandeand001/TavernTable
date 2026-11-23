@@ -1,5 +1,6 @@
 import CampaignWorld from './CampaignWorld.js';
 import { validateScene } from './CampaignScene.js';
+import { reconcileCavernScene } from './CavernAssembly.js';
 import { TerrainGeometry } from '../terrain/TerrainGeometry.js';
 import { structureVolumes } from '../terrain/ConstructionBlueprints.js';
 import {
@@ -118,7 +119,7 @@ function outsidePolygon(rect, normal, distance) {
   );
 }
 
-function floorMap(owner, spec, floor, previous) {
+function floorMap(owner, spec, floor, previous, gridSize = null) {
   const { length, width } = buildingDimensions(spec),
     unit = owner.grid.tileWorldSize;
   const desired = mapFeetToCampaign(
@@ -163,8 +164,18 @@ function floorMap(owner, spec, floor, previous) {
   const originFeet = mapFeetToCampaign(anchor, shift);
   const shell = { originFeet, quarterTurns, grid: { tileWorldSize: unit } };
   const offset = campaignToMapFeet(shell, desired);
-  const cols = Math.max(GRID_CONFIG.MIN_COLS, Math.ceil((offset.x + length - EPS) / 5));
-  const rows = Math.max(GRID_CONFIG.MIN_ROWS, Math.ceil((offset.z + width - EPS) / 5));
+  const minCols = Math.max(GRID_CONFIG.MIN_COLS, Math.ceil((offset.x + length - EPS) / 5));
+  const minRows = Math.max(GRID_CONFIG.MIN_ROWS, Math.ceil((offset.z + width - EPS) / 5));
+  const cols =
+    gridSize?.cols ??
+    (previous?.terrain.generationRecipe ? Math.max(minCols, previous.grid.cols) : minCols);
+  const rows =
+    gridSize?.rows ??
+    (previous?.terrain.generationRecipe ? Math.max(minRows, previous.grid.rows) : minRows);
+  if (cols < minCols || rows < minRows)
+    throw new Error(
+      `The building footprint needs a grid of at least ${minCols} by ${minRows} squares`
+    );
   const id = buildingFloorId(owner.id, spec.id, floor);
   const map = {
     id,
@@ -210,7 +221,7 @@ function floorMap(owner, spec, floor, previous) {
         placeables: [],
       };
   terrain.heights = heights;
-  terrain.biome = owner.terrain.biome;
+  if (!previous?.terrain.generationRecipe) terrain.biome = owner.terrain.biome;
   const prefix = `${id}:auto:`;
   const geometry = new TerrainGeometry({
     widthFeet: cols * 5,
@@ -324,16 +335,23 @@ function floorMap(owner, spec, floor, previous) {
     geometry.load(saved);
   }
   for (const placement of terrain.placeables) {
+    const hasOffsets = placement.gridOffsetX !== undefined && placement.gridOffsetY !== undefined;
     const p = campaignToMapFeet(
       map,
       mapFeetToCampaign(contentFrame, {
-        x: (placement.gridX + 0.5) * 5,
+        x: (placement.gridX + 0.5 + (placement.gridOffsetX ?? 0)) * 5,
         y: 0,
-        z: (placement.gridY + 0.5) * 5,
+        z: (placement.gridY + 0.5 + (placement.gridOffsetY ?? 0)) * 5,
       })
     );
     placement.gridX = Math.floor(p.x / 5);
     placement.gridY = Math.floor(p.z / 5);
+    if (hasOffsets) {
+      placement.gridOffsetX = p.x / 5 - placement.gridX - 0.5;
+      placement.gridOffsetY = p.z / 5 - placement.gridY - 0.5;
+      if (placement.angleRadians !== undefined)
+        placement.angleRadians += ((previous.quarterTurns - map.quarterTurns) * Math.PI) / 2;
+    }
     if (
       placement.gridX < 0 ||
       placement.gridY < 0 ||
@@ -345,6 +363,30 @@ function floorMap(owner, spec, floor, previous) {
   terrain.geometry = geometry.save();
   map.terrain = terrain;
   return map;
+}
+
+export function prepareBuildingFloorGeometry(scene, mapId, gridSize) {
+  const floor = scene.maps.find((map) => map.id === mapId);
+  const owner = scene.maps.find((map) => map.id === floor?.building?.ownerMapId);
+  const spec = owner?.terrain.geometry?.structures?.find(
+    (structure) => structure.id === floor?.building?.structureId
+  );
+  if (!floor?.building || !owner || !spec?.building)
+    throw new Error('The linked building floor no longer has its exterior structure');
+  const previous = copy(floor);
+  delete previous.terrain.geometry;
+  previous.terrain.placeables = [];
+  const resized = floorMap(owner, spec, floor.building.floor, previous, gridSize);
+  if (
+    ['x', 'y', 'z'].some(
+      (axis) => Math.abs(resized.originFeet[axis] - floor.originFeet[axis]) > EPS
+    ) ||
+    resized.quarterTurns !== floor.quarterTurns ||
+    Math.abs(resized.building.offsetX - floor.building.offsetX) > EPS ||
+    Math.abs(resized.building.offsetZ - floor.building.offsetZ) > EPS
+  )
+    throw new Error('The building floor cannot be resized without moving its physical anchor');
+  return resized.terrain.geometry;
 }
 
 function featureConnection(owner, spec, maps, kind, id, side, u, floor, featureId, offset = 2.5) {
@@ -607,6 +649,21 @@ export function reconcileBuildingScene(
   context,
   { ownerMapId = null, restoreContext = null } = {}
 ) {
+  const next = assembleBuildingScene(input, context, { ownerMapId, restoreContext });
+  if (restoreContext?.cavernGeneration === true) {
+    // Validate the completed topology, not a castle that still points to the old cavern.
+    return reconcileCavernScene(next, context, {
+      ownerMapId,
+      regenerate: true,
+      preserveAreas: restoreContext.preserveCavernAreas === true,
+      preserveAreaSeeds: restoreContext.preserveCavernAreaSeeds === true,
+      createAreas: restoreContext.createCavernAreas !== false,
+    });
+  }
+  return next === input ? next : validateScene(next, context);
+}
+
+function assembleBuildingScene(input, context, { ownerMapId, restoreContext }) {
   const hasBuildings = (input.version === 3 ? input.maps : [input]).some((map) =>
     map.terrain.geometry?.structures?.some((spec) => spec.building)
   );
@@ -615,7 +672,7 @@ export function reconcileBuildingScene(
   const next = input.version === 3 ? copy(input) : CampaignWorld.fromScene(input, context).save();
   const oldMaps = new Map(next.maps.map((map) => [map.id, map]));
   const restoredCameras = new Set();
-  if (restoreContext) {
+  if (restoreContext && !restoreContext.clearingMap) {
     if (restoreContext.ownerMapId !== undefined && restoreContext.ownerMapId !== ownerMapId)
       throw new Error('The building Undo context belongs to another exterior map');
     const oldIds = new Set(
@@ -668,7 +725,8 @@ export function reconcileBuildingScene(
           old?.building.signature === buildingSignature(spec)
             ? copy(old)
             : floorMap(owner, spec, floor, old);
-        map.terrain.biome = owner.terrain.biome;
+        if (map.id !== ownerMapId && !old?.terrain.generationRecipe)
+          map.terrain.biome = owner.terrain.biome;
         floors.push(map);
         maps.push(map);
       }
@@ -885,5 +943,5 @@ export function reconcileBuildingScene(
   next.buildingAssemblies = 1;
   if (next.view.cameras)
     next.view.cameras = next.view.cameras.filter((camera) => byId.has(camera.mapId));
-  return validateScene(next, context);
+  return next;
 }

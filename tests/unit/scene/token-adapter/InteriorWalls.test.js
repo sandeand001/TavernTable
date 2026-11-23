@@ -13,11 +13,20 @@ import { TerrainMeshBuilder } from '../../../../src/scene/terrain/TerrainMeshBui
 import { TerrainRebuilder } from '../../../../src/scene/terrain/TerrainRebuilder.js';
 import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
 
-async function fixture({ interiorOwnsShell = false, stories = 1, quarterTurns = 0 } = {}) {
+async function fixture({
+  interiorOwnsShell = false,
+  stories = 1,
+  quarterTurns = 0,
+  exteriorWater = false,
+} = {}) {
   localStorage.clear();
   const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
   const scene = sceneState();
   scene.terrain.heights = scene.terrain.heights.map((row) => row.map(() => 0));
+  if (exteriorWater) {
+    scene.terrain.biome = 'riverLake';
+    for (const row of scene.terrain.heights) row[0] = -2;
+  }
   const geometry = new TerrainGeometry({
     widthFeet: 25,
     depthFeet: 25,
@@ -140,6 +149,108 @@ test('an interior doorway shows the actual exterior ground without needing an ex
     expect(ground[0].point.y).toBeCloseTo(0);
   } finally {
     terrain?.dispose();
+    dispose(gm);
+  }
+});
+
+test.each([0, 1, 2, 3])(
+  'an interior rotated %i quarter turns shows exterior water without changing ground or picking',
+  async (quarterTurns) => {
+    const gm = await fixture({ exteriorWater: true, quarterTurns });
+    let projection;
+    try {
+      await changeCampaignView(gm, { mapId: 'inside' });
+      const world = gm.campaignWorld;
+      const physical = world.save();
+      const relative = (point) =>
+        world.toMapPosition('inside', world.toCampaignPosition('map-main', point));
+      const observer = relative({ x: 1.5, y: 0, z: 3.3 });
+      const target = relative({ x: 0.5, y: 0, z: 3.3 });
+      projection = new MapProjectionTerrain(gm);
+      projection.update({ id: 'viewer', mapId: 'inside', world: observer }, []);
+      const water = projection.root.getObjectByName('MapProjectionWater:map-main');
+      expect(water?.visible).toBe(true);
+      expect(water.material.transparent).toBe(true);
+      const ray = new three.Raycaster(
+        new three.Vector3(target.x, 5, target.z),
+        new three.Vector3(0, -1, 0)
+      );
+      const hits = [];
+      water.updateWorldMatrix(true, false);
+      three.Mesh.prototype.raycast.call(water, ray, hits);
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].point.y).toBeCloseTo(0);
+      expect(ray.intersectObject(water)).toEqual([]);
+      expect(world.save()).toEqual(physical);
+      const disposeGeometry = jest.spyOn(water.geometry, 'dispose');
+      const disposeMaterial = jest.spyOn(water.material, 'dispose');
+      projection.dispose();
+      projection = null;
+      expect(disposeGeometry).toHaveBeenCalledTimes(1);
+      expect(disposeMaterial).toHaveBeenCalledTimes(1);
+    } finally {
+      projection?.dispose();
+      dispose(gm);
+    }
+  }
+);
+
+test('projected water respects the player observer physical line of sight', async () => {
+  const gm = await fixture({ exteriorWater: true });
+  let projection;
+  try {
+    await changeCampaignView(gm, { mapId: 'inside' });
+    gm.playerVisibleMapIds = new Set(['inside', 'map-main']);
+    const observer = { id: 'viewer', mapId: 'inside', world: { x: 1, y: 0, z: 4.6 } };
+    const from = gm.campaignWorld.toCampaignPosition('inside', observer.world);
+    const target = (z) => gm.campaignWorld.toCampaignPosition('inside', { x: -1, y: 0, z });
+    const sight = { mapId: 'inside' };
+    expect(gm.campaignWorld.hasSurfaceLineOfSight(from, target(4.6), sight)).toBe(true);
+    expect(gm.campaignWorld.hasSurfaceLineOfSight(from, target(7), sight)).toBe(false);
+    projection = new MapProjectionTerrain(gm);
+    projection.update(observer, []);
+    const water = projection.root.getObjectByName('MapProjectionWater:map-main');
+    const covered = (z) => {
+      water.updateWorldMatrix(true, false);
+      const ray = new three.Raycaster(new three.Vector3(-1, 5, z), new three.Vector3(0, -1, 0));
+      const result = [];
+      three.Mesh.prototype.raycast.call(water, ray, result);
+      return result.length > 0;
+    };
+    expect(covered(4.6)).toBe(true);
+    expect(covered(7)).toBe(false);
+  } finally {
+    projection?.dispose();
+    dispose(gm);
+  }
+});
+
+test('changing exterior terrain replaces and disposes its projected water', async () => {
+  const gm = await fixture({ exteriorWater: true });
+  let projection;
+  try {
+    await changeCampaignView(gm, { mapId: 'inside' });
+    const observer = { id: 'viewer', mapId: 'inside', world: { x: 1, y: 0, z: 4.6 } };
+    projection = new MapProjectionTerrain(gm);
+    projection.update(observer, []);
+    const previous = projection.root.getObjectByName('MapProjectionWater:map-main');
+    const disposedGeometry = jest.spyOn(previous.geometry, 'dispose');
+    const disposedMaterial = jest.spyOn(previous.material, 'dispose');
+    const scene = gm.campaignWorld.save();
+    scene.maps.find((map) => map.id === 'map-main').terrain.heights[3][0] = 0;
+    gm.campaignWorld.acceptCheckpoint(scene);
+    projection.update(observer, []);
+    const current = projection.root.getObjectByName('MapProjectionWater:map-main');
+    expect(current).not.toBe(previous);
+    expect(disposedGeometry).toHaveBeenCalledTimes(1);
+    expect(disposedMaterial).toHaveBeenCalledTimes(1);
+    const ray = new three.Raycaster(new three.Vector3(-1, 5, 4.6), new three.Vector3(0, -1, 0));
+    const hits = [];
+    current.updateWorldMatrix(true, false);
+    three.Mesh.prototype.raycast.call(current, ray, hits);
+    expect(hits).toHaveLength(0);
+  } finally {
+    projection?.dispose();
     dispose(gm);
   }
 });

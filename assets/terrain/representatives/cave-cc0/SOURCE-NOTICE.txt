@@ -1,0 +1,22 @@
+Selected CC0 cave-model derivatives
+
+mine-frame.glb and stalagmite-cluster.glb:
+Free Mine Assets by rubberduck, CC0 1.0 Universal
+https://opengameart.org/content/free-mine-assets-pack
+Source objects: Wooden_14 and stalags_1_high in mine_parts.blend.
+Exported to GLB with replacement materials; the stalagmite uses flat shading
+and an embedded stone texture. The entrance frame is decorative and does not
+create terrain.
+
+stone-column.glb:
+Low Poly Cave Assets by agdg reject, CC0 1.0 Universal
+https://opengameart.org/content/low-poly-cave-assets
+Source object: cave_pillar1.obj. Exported to GLB with a replacement textured
+material and flat shading; the source MTL was not supplied.
+
+The embedded stone texture is derived from the CC0 rock1.png included in Free
+Mine Assets, credited by the pack creator to Yughues. It was resized to 512px,
+converted to grayscale and tone-adjusted for the application's cave lighting.
+
+CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/
+Source and derivative fingerprints are recorded in ASSET_MANIFEST.json.

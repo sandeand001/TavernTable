@@ -84,7 +84,7 @@ export default class CampaignTraversalPopup {
     this.error = null;
     const option = this._refresh();
     const connection = gm.campaignWorld.getConnections().find((entry) => entry.id === connectionId);
-    if (option?.approach && !(connection.kind === 'door' && connection.open !== true)) {
+    if (option?.approach && !(connection?.kind === 'door' && connection.open !== true)) {
       if (gm.playerInput) {
         this.ready = this._approachPlayer(option);
         return;

@@ -1,0 +1,41 @@
+Low Poly Mining, Cave & Blacksmith Pack - individual FBX download
+Creator: Pure Poly
+Source: https://www.fab.com/listings/626d3388-33d2-4012-a944-cb512baf83b4
+Acquired: 2026-11-22; purchase reported by the project owner
+License: Fab Standard License; NoAI; no standalone redistribution
+License reference: https://www.fab.com/eula
+
+The downloaded individual-model archive contains 2,597 FBX files, including
+named color and material variants. The per-asset inventory records each file
+variant separately; it does not assert that every variant has unique geometry.
+The publisher advertises 1,156 unique assets and 2,649 assets including variants;
+those published totals have not been independently reconciled with this download.
+The listing describes 52 Unity particle effects, equal to the difference from
+the downloaded FBX count. They are not in the audited archive, and it is not
+verified whether the publisher includes them in the advertised total.
+
+Individual FBX ZIP SHA-256:
+de6db8190f44330a65e1e5b6b1019a2ee2104eeda302541092cc4b654efe878c
+FBX filename index SHA-256: 5aa9b11ff23de6d453245ec25a39a46e7ed9bcfa83126070fe20cc4ddd057cac
+Texture ZIP SHA-256:
+b9239762c23d7b05120f3a42d94f86f4549a9a91b1af9283ccfd6454f14f0351
+PP_Color_Palette.png: 5,034 bytes; SHA-256:
+0eca4545953390c4ede5d652fa010f09a05795c7c449f17339b9293a4086fe4a
+Demo-scenes ZIP SHA-256:
+590673b0040485d0ec832275d237c2e8c1db0c97657be735ef526a7153a642d9
+Standalone demo-list FBX SHA-256:
+1445a7adbc267dfd7c1c1386acefd9e42a557ee3f5577a7df3349d26cfccc737
+
+The demo archive contains two composite FBX scenes:
+- PP_Ultimate_Mining_Pack_Demo_List_Scene.fbx
+- PP_Ultimate_Mining_Pack_Demo_Scene.fbx
+The standalone demo-list file duplicates the first scene. These scenes are not
+additional individual assets.
+Original archives, plaintext models, textures and keys remain outside the
+repository and served roots. Eighty-one selected formations, rocks, pebbles, crystal
+clusters, trees, grass, cacti, mushrooms, ore and deliberate-site props have encrypted GLB
+derivatives for runtime use with protected access;
+their source names and encrypted fingerprints are in ENCRYPTED-MODELS.json.
+All other models remain source-only candidates. Production distribution has
+not been approved or deployed. Confirm the accepted license and browser-editor
+distribution before deployment.

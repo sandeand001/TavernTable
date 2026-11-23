@@ -20,7 +20,7 @@ export class TerrainMeshBuilder {
 
   // ── Build: Geometry Generation ────────────────────────────────────
 
-  build({ cols, rows, getHeight, three, getBiomeColor, getWallColor }) {
+  build({ cols, rows, getHeight, three, getBiomeColor, getWallColor, getBoundaryWallCell }) {
     if (!three) throw new Error('Three namespace required');
     if (!Number.isInteger(cols) || !Number.isInteger(rows)) {
       throw new Error('cols/rows must be integers');
@@ -29,6 +29,7 @@ export class TerrainMeshBuilder {
     const canLegacy =
       !this.forceAdvanced &&
       !this.hardEdges &&
+      typeof getBoundaryWallCell !== 'function' &&
       typeof getWallColor !== 'function' &&
       three.PlaneGeometry;
     if (canLegacy) {
@@ -74,6 +75,7 @@ export class TerrainMeshBuilder {
     const positions = [];
     const colors = wantsColors ? [] : null;
     const indices = [];
+    const boundaryCells = getBoundaryWallCell ? [] : null;
     const ts = this.tileWorldSize;
     const getElev = (x, y) => (typeof getHeight === 'function' ? getHeight(x, y) : 0);
     // Pre-cache heights for neighbor lookups.
@@ -95,6 +97,7 @@ export class TerrainMeshBuilder {
     };
 
     let vertCount = 0;
+    let boundaryCell = 0;
     const addQuad = (v0, v1, v2, v3) => {
       // v*: [x,y,z]
       positions.push(
@@ -119,11 +122,13 @@ export class TerrainMeshBuilder {
         vertCount + 2,
         vertCount + 3
       );
+      if (boundaryCells) boundaryCells.push(boundaryCell, boundaryCell, boundaryCell, boundaryCell);
       vertCount += 4;
     };
 
     for (let gy = 0; gy < rows; gy++) {
       for (let gx = 0; gx < cols; gx++) {
+        boundaryCell = getBoundaryWallCell ? getBoundaryWallCell(gx, gy) : 0;
         const baseX = gx * ts;
         const baseZ = gy * ts;
         const elev = heightGrid[gy][gx];
@@ -229,6 +234,11 @@ export class TerrainMeshBuilder {
 
     const geo = new three.BufferGeometry();
     geo.setAttribute('position', new three.BufferAttribute(new Float32Array(positions), 3));
+    if (boundaryCells)
+      geo.setAttribute(
+        'boundaryWallCell',
+        new three.BufferAttribute(new Float32Array(boundaryCells), 1)
+      );
     geo.setIndex(new three.BufferAttribute(new Uint32Array(indices), 1));
     if (colors) geo.setAttribute('color', new three.BufferAttribute(new Float32Array(colors), 3));
     // Generate normals so lit materials (Standard/Lambert/Phong) shade correctly.

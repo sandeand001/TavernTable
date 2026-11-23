@@ -70,6 +70,7 @@ export const BIOME_GROUPS = {
   // ── Underground Biomes ────────────────────────────────────────
   Underground: [
     { key: 'cavern', label: 'Cavern', emoji: '🕳️', rarity: 'uncommon' },
+    { key: 'dungeon', label: 'Dungeon', emoji: '🏰', rarity: 'uncommon' },
     { key: 'fungalGrove', label: 'Fungal Grove', emoji: '🍄', rarity: 'rare' },
     { key: 'crystalFields', label: 'Crystal Fields', emoji: '💎', rarity: 'rare' },
     { key: 'crystalSpires', label: 'Crystal Spires', emoji: '💠', rarity: 'exotic' },
@@ -106,7 +107,36 @@ export const BIOME_GROUPS = {
 
 // ── Derived Lookups ───────────────────────────────────────────
 export const ALL_BIOMES = Object.values(BIOME_GROUPS).flat();
+export const BLOOD_MARSH_MIN_PLANT_LEVEL = -2;
 export const SETTLEMENT_BIOME_KEYS = Object.freeze(BIOME_GROUPS.Settlements.map(({ key }) => key));
-export const CAVERN_BIOME_KEYS = Object.freeze(BIOME_GROUPS.Underground.map(({ key }) => key));
+export const CAVERN_BIOME_KEYS = Object.freeze(
+  BIOME_GROUPS.Underground.filter(({ key }) => key !== 'dungeon').map(({ key }) => key)
+);
+export const DUNGEON_ROOM_COUNT = Object.freeze({
+  min: 1,
+  max: 16,
+  default: 6,
+  minimumGrid: 12,
+  minimumSide: 4,
+  corridorWidth: 2,
+});
+
+export function dungeonRoomCapacity(cols, rows) {
+  const { max, minimumGrid, minimumSide, corridorWidth } = DUNGEON_ROOM_COUNT;
+  if (
+    !Number.isInteger(cols) ||
+    !Number.isInteger(rows) ||
+    cols < minimumGrid ||
+    rows < minimumGrid
+  )
+    return 0;
+  return Math.min(
+    max,
+    Math.max(
+      Math.floor((cols - corridorWidth) / minimumSide) * Math.floor(rows / minimumSide),
+      Math.floor(cols / minimumSide) * Math.floor((rows - corridorWidth) / minimumSide)
+    )
+  );
+}
 
 // CLEANUP NOTE (2025-09-19): Removed unused helper findBiome (no in-repo callers).

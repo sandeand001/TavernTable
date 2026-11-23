@@ -217,12 +217,45 @@ test.each([20, 25])(
   30000
 );
 
+test.each([1, 42, 99])(
+  'a 20-tile castle with seed %i leaves both bastion approaches accessible from the courtyard',
+  (seed) => {
+    const engine = generate('castle', 20, 20, seed);
+    const structures = engine.geometry.getStructures();
+    const gate = structures.find((spec) => spec.kind === 'wall' && spec.opening);
+    const start = buildingLocalToFeet(gate, { x: 0, y: 0, z: -12.5 });
+    const range = buildSurfaceRange({
+      geometry: engine.geometry,
+      start: {
+        gridX: Math.floor(start.x / 5),
+        gridY: Math.floor(start.z / 5),
+        xFeet: start.x,
+        zFeet: start.z,
+        heightFeet: 0,
+      },
+      speedFeet: 300,
+    });
+    const towers = structures.filter((spec) => spec.kind === 'turret');
+    expect(towers).toHaveLength(2);
+    for (const tower of towers) {
+      const approach = buildingLocalToFeet(tower, { x: 0, y: 0, z: tower.diameterFeet / 2 + 5.5 });
+      expectWalkable(engine.geometry, approach.x, approach.z, 0);
+      expect(
+        getSurfaceRoute(range, Math.floor(approach.x / 5), Math.floor(approach.z / 5), {
+          heightFeet: 0,
+        })
+      ).not.toBeNull();
+    }
+  },
+  30000
+);
+
 test.each(['cavern', 'fungalGrove'])(
   '%s uses connected elevation caverns with physically supported, full-clearance floors',
   (key) => {
     const engine = generate(key, 20, 20);
     engine.configureGeometryScale(1.5);
-    expect(engine.cavern).toMatchObject({ version: 5, kind: 'main' });
+    expect(engine.cavern).toMatchObject({ version: 7, kind: 'main' });
     expect(engine.geometry.getStructures()).toEqual([]);
     expect(engine.geometry.save().volumes).toEqual([]);
     const heights = engine.save().heights;

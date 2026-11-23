@@ -37,6 +37,7 @@ class PublishedMaps {
           maps,
           locations: scene?.locations || [],
           connections: scene?.connections || [],
+          logicalPassages: scene?.logicalPassages || [],
         })
       )
       .digest('hex');

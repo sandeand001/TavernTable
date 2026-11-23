@@ -15,10 +15,14 @@ export function mapSolidToCampaign(map, cell) {
       ['x', 'y', 'z'].some((axis) => Math.abs(normal[axis]) > 1 - 1e-10)
     )
   )
-    return bounds;
+    return {
+      ...bounds,
+      ...(cell.layerId ? { layerId: cell.layerId } : {}),
+    };
   const origin = mapFeetToCampaign(map, { x: 0, y: 0, z: 0 });
   return {
     ...bounds,
+    ...(cell.layerId ? { layerId: cell.layerId } : {}),
     planes: cell.planes.map(({ normal, distance }) => {
       const endpoint = mapFeetToCampaign(map, normal);
       const rotated = {
@@ -52,12 +56,17 @@ export function mapGeometryObstacles(map, geometry, cache) {
       const cx = (axes.x[x - 1] + axes.x[x]) / 2;
       const cz = (axes.z[z - 1] + axes.z[z]) / 2;
       for (const span of geometry.getSolidSpansAt(cx, cz))
-        result.push(
-          campaignFeetBounds(map, {
-            min: { x: axes.x[x - 1], y: Math.max(-1000000, span.bottom), z: axes.z[z - 1] },
+        result.push({
+          ...campaignFeetBounds(map, {
+            min: {
+              x: axes.x[x - 1],
+              y: Math.max(-1000000, span.bottom),
+              z: axes.z[z - 1],
+            },
             max: { x: axes.x[x], y: span.top, z: axes.z[z] },
-          })
-        );
+          }),
+          ...(span.layerId ? { layerId: span.layerId } : {}),
+        });
     }
   return result;
 }

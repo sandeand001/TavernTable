@@ -4,7 +4,8 @@ const {
   campaignCharacterRoster,
   campaignRecordCharacterId,
 } = require('../../src/campaigns/CampaignCharacters.js');
-const { decodeScene } = require('../../src/campaigns/CampaignScene.js');
+const { decodeScene, reuseSceneGeometry } = require('../../src/campaigns/CampaignScene.js');
+const { default: CampaignWorld } = require('../../src/campaigns/CampaignWorld.js');
 const path = require('node:path');
 const { createHash, randomUUID, timingSafeEqual } = require('node:crypto');
 const { FieldPath, Timestamp } = require('firebase-admin/firestore');
@@ -19,6 +20,13 @@ const {
 } = require('./immutable-objects.js');
 const { CompleteCloudBackupObjects, isCompleteBackupReference } = require('./backup-objects.js');
 const { acquireLargeFileWork } = require('./large-file-work.js');
+const {
+  appendFreeRoamMove,
+  freeRoamMoves,
+  freeRoamMovesSince,
+  materializeFreeRoamScene,
+  rebaseFreeRoamMove,
+} = require('./free-roam-moves.js');
 const { prepareAssignedCharacterChange } = require('../assigned-character-change.js');
 const { PhysicalDice } = require('../physical-dice.js');
 const { playerRoomVisits } = require('../player-room-visits.js');
@@ -341,6 +349,8 @@ class CloudCampaignStore {
     this.livePresenceInstanceId = randomUUID();
     this.worldUndoSessions = new Map();
     this.worldOperations = new Map();
+    this.movementWriters = new Map();
+    this.movementWorlds = new Map();
   }
 
   _worldUndoProfile(principal, id, sessionId, grant) {
@@ -391,7 +401,7 @@ class CloudCampaignStore {
   async _headMetadata(head, id, uid) {
     if (head?.ownerUid !== uid) throw unavailableCampaign();
     if (
-      head.version !== 1 ||
+      ![1, 2].includes(head.version) ||
       !Number.isSafeInteger(head.generation) ||
       head.generation < 1 ||
       head.campaign?.id !== id ||
@@ -424,6 +434,12 @@ class CloudCampaignStore {
       throw new CloudError(503, 'invalid-campaign-head', 'The canonical change origin is invalid');
     const domain = this._domain({ getCampaign: () => head.campaign });
     await domain.get(id);
+    if (
+      head.version !== 1 ||
+      head.freeRoamMoves !== undefined ||
+      head.sceneCheckpointRevision !== undefined
+    )
+      freeRoamMoves(head);
     return head;
   }
 
@@ -1304,12 +1320,18 @@ class CloudCampaignStore {
 
   _backupSnapshot(head) {
     return {
-      version: 1,
+      version: head.version,
       ownerUid: head.ownerUid,
       generation: head.generation,
       campaign: structuredClone(head.campaign),
       sceneRef: head.sceneRef,
       charactersRef: head.charactersRef,
+      ...(head.freeRoamMoves
+        ? {
+            sceneCheckpointRevision: head.sceneCheckpointRevision,
+            freeRoamMoves: structuredClone(head.freeRoamMoves),
+          }
+        : {}),
     };
   }
 
@@ -1324,6 +1346,17 @@ class CloudCampaignStore {
           campaign,
           scene: head.sceneRef?.sha256 ?? null,
           characters: head.charactersRef?.sha256 ?? null,
+          ...(head.freeRoamMoves
+            ? {
+                movements: head.freeRoamMoves
+                  .filter(({ sceneRevision }) => sceneRevision > head.sceneCheckpointRevision)
+                  .map(({ entry, combatState }) => [
+                    entry.tokenId,
+                    entry.motion.route.at(-1),
+                    combatState ?? null,
+                  ]),
+              }
+            : {}),
         })
       )
       .digest('hex');
@@ -4854,9 +4887,8 @@ class CloudCampaignStore {
   async _participantPresentations(principal, id, command, scope, previous, next, frame) {
     if (!frame || frame.head.generation !== next.generation)
       throw new CloudError(409, 'participant-state-changed', 'The live movement frame changed');
-    frame.presentations ??= this._readLivePresentations(frame.head);
-    const packet = await frame.presentations;
-    if (packet === null || packet.sessionId !== command.sessionId) return [];
+    const updates = await this._livePresentationUpdates(frame, previous, command.sessionId);
+    if (!updates.length) return [];
     const saved = await frame.promise;
     const catalog = await this.resources.catalog(saved.campaign);
     const { participantProjectionSource } = require('./participant-state.js');
@@ -4867,11 +4899,7 @@ class CloudCampaignStore {
       library,
       world,
       view: next.state,
-      updates: packet.entries.map((entry) => ({
-        ...structuredClone(entry),
-        sceneRevision: packet.sceneRevision,
-        charactersRevision: packet.charactersRevision,
-      })),
+      updates,
       state: saved,
       sinceSceneRevision: previous.state.sceneRevision,
       previousView: previous.state,
@@ -4880,7 +4908,22 @@ class CloudCampaignStore {
       generation: next.generation,
       characterIds: next.state.characterIds,
     });
-    return presentations;
+    return presentations.map((entry) => ({ ...entry, sceneRevision: next.state.sceneRevision }));
+  }
+
+  async _livePresentationUpdates(frame, previous, sessionId) {
+    const entryForFrame = (entry, packet) => ({
+      ...structuredClone(entry),
+      sceneRevision: packet.sceneRevision,
+      charactersRevision: packet.charactersRevision,
+    });
+    const moves = freeRoamMovesSince(frame.head, previous, sessionId);
+    if (moves.length) return moves.map((move) => entryForFrame(move.entry, move));
+    frame.presentations ??= this._readLivePresentations(frame.head);
+    const packet = await frame.presentations;
+    return packet?.sessionId === sessionId && packet.sceneRevision > previous.state.sceneRevision
+      ? packet.entries.map((entry) => entryForFrame(entry, packet))
+      : [];
   }
 
   async _verifyParticipantRead(principal, id, sessionId, scope, expected) {
@@ -5025,15 +5068,15 @@ class CloudCampaignStore {
   async _ownerWorldPresentations(principal, id, command, scope, previous, next, frame) {
     if (!frame || frame.head.generation !== next.generation)
       throw new CloudError(409, 'participant-state-changed', 'The owner movement frame changed');
-    frame.presentations ??= this._readLivePresentations(frame.head);
-    const packet = await frame.presentations;
-    if (packet === null || packet.sessionId !== command.sessionId) return [];
+    const updates = await this._livePresentationUpdates(frame, previous, command.sessionId);
+    if (!updates.length) return [];
     await this._verifyOwnerWorldRead(principal, id, command.sessionId, scope, next.generation);
-    if (packet.sceneRevision <= previous.state.sceneRevision) return [];
-    return packet.entries.map((entry) => ({
-      ...structuredClone(entry),
-      sceneRevision: packet.sceneRevision,
-      charactersRevision: packet.charactersRevision,
+    const {
+      coalesceMovementPresentations,
+    } = require('../../src/scene/token-adapter/SavedPlacements.js');
+    return coalesceMovementPresentations(updates).map((entry) => ({
+      ...entry,
+      sceneRevision: next.state.sceneRevision,
     }));
   }
 
@@ -5852,7 +5895,7 @@ class CloudCampaignStore {
       campaign: head.campaign,
       revision: head.campaign.charactersRevision,
       records,
-      scene,
+      scene: materializeFreeRoamScene(head, scene),
       sceneRevision: head.campaign.sceneRevision,
       sceneSavedAt: head.campaign.sceneSavedAt,
     };
@@ -5936,16 +5979,38 @@ class CloudCampaignStore {
     }
   }
 
-  async _prepareWorldChange(state, command, profile, placementGrants = []) {
+  async _prepareWorldChange(
+    state,
+    command,
+    profile,
+    placementGrants = [],
+    ownerMove = false,
+    groundBatch = null
+  ) {
     const characterIds = profile.characterIds;
     if (state.scene === null)
       throw new CloudError(409, 'world-not-ready', 'The campaign owner must save the world first');
-    const catalog = await this.resources.catalog(state.campaign);
     const domain = this._draft(state);
-    const library = new CampaignCharacters({ ...state, catalog, store: domain });
-    const scene = decodeScene(state.scene, { library, ruleset: state.campaign.ruleset });
+    const library =
+      groundBatch?.library ??
+      new CampaignCharacters({
+        ...state,
+        catalog: await this.resources.catalog(state.campaign),
+        store: domain,
+      });
+    const context = { library, ruleset: state.campaign.ruleset };
+    const campaignId = state.campaign.id;
+    const previous = command.kind === 'move' ? this.movementWorlds.get(campaignId) : null;
+    if (previous && !groundBatch?.library) reuseSceneGeometry(previous.library, library);
+    const scene = groundBatch?.world ? JSON.parse(state.scene) : decodeScene(state.scene, context);
     const undo = playerUndoFor(this.worldUndoSessions, profile, state);
     const actor = scene.creatures.find((entry) => entry.id === command.tokenId);
+    if (ownerMove && (scene.version !== 3 || scene.combat.active || actor?.pose.kind !== 'ground'))
+      throw new CloudError(
+        422,
+        'owner-movement-unavailable',
+        'Only grounded Free Roam creatures can use this live movement command'
+      );
     const placementGrant =
       command.kind === 'place'
         ? placementGrants.find(
@@ -5963,7 +6028,9 @@ class CloudCampaignStore {
       );
     if (
       command.kind !== 'place' &&
-      (!actor || command.observerTokenId !== actor.id || !characterIds.includes(actor.characterId))
+      (!actor ||
+        command.observerTokenId !== actor.id ||
+        (!ownerMove && !characterIds.includes(actor.characterId)))
     )
       throw new CloudError(
         403,
@@ -5971,6 +6038,15 @@ class CloudCampaignStore {
         'Choose the active currently assigned real creature'
       );
     this.worldDice ??= new PhysicalDice({ root: path.resolve(__dirname, '..', '..') });
+    let world = groundBatch?.world;
+    if (!world && command.kind === 'move') {
+      world = previous?.world.forkQuery(scene, context) ?? CampaignWorld.fromScene(scene, context);
+      this.movementWorlds.delete(campaignId);
+      if (this.movementWorlds.size >= 4)
+        this.movementWorlds.delete(this.movementWorlds.keys().next().value);
+      this.movementWorlds.set(campaignId, { library, world });
+      if (groundBatch) Object.assign(groundBatch, { library, world });
+    }
     const {
       executePlayerCommand,
       playerCommandReceipt,
@@ -6002,6 +6078,9 @@ class CloudCampaignStore {
           dice: this.worldDice,
           undo,
           placementGrant,
+          world,
+          ownerFreeRoam: ownerMove,
+          groundBatch: groundBatch !== null,
         });
       await library.flush();
       await domain.commitScene(state.campaign.id, {
@@ -6039,12 +6118,11 @@ class CloudCampaignStore {
   }
 
   async commitWorldCommand(principal, id, request, expected) {
-    const uid = principalUid(principal);
     const scope = this._accessExpectation(expected);
-    const startedAt = this.now();
+    principalUid(principal);
     if (!isCloudUUID(id)) throw unavailableCampaign();
-    if (!scope || scope.seatId === null)
-      throw new CloudError(400, 'invalid-access-scope', 'Choose current live player access');
+    if (!scope)
+      throw new CloudError(400, 'invalid-access-scope', 'Choose current live campaign access');
     if (
       !request ||
       typeof request !== 'object' ||
@@ -6068,7 +6146,79 @@ class CloudCampaignStore {
         throw new CloudError(error.status, error.code, error.message);
       throw error;
     }
-    const { sessionId } = request;
+    if (
+      scope.seatId === null &&
+      (command.kind !== 'move' ||
+        command.tokenId !== command.observerTokenId ||
+        command.payload.closest ||
+        command.payload.useSlowFall ||
+        command.payload.target.elevationFeet !== undefined)
+    )
+      throw new CloudError(400, 'invalid-command', 'Choose a supported Free Roam creature move');
+    if (command.kind !== 'move')
+      return this._commitWorldCommand(principal, id, request.sessionId, command, scope);
+    const previous = this.movementWriters.get(id);
+    if ((previous?.count ?? 0) >= 16 || (!previous && this.movementWriters.size >= 4))
+      throw Object.assign(
+        new CloudError(
+          503,
+          'cloud-requests-busy',
+          'Live movement is busy; retry the original move'
+        ),
+        { retryAfter: 1 }
+      );
+    const writer = previous ?? { count: 0, pending: [] };
+    writer.count++;
+    const pending = Promise.withResolvers();
+    writer.pending.push({ principal, sessionId: request.sessionId, command, scope, ...pending });
+    if (!previous) {
+      this.movementWriters.set(id, writer);
+      setTimeout(() => void this._drainMovementWriter(id, writer), 65);
+    }
+    return pending.promise;
+  }
+
+  async _drainMovementWriter(id, writer) {
+    try {
+      while (writer.pending.length) {
+        const batch = writer.pending.splice(0, 10);
+        try {
+          if (batch.length > 1 && (await this._commitFreeRoamBatch(id, batch))) continue;
+          for (const move of batch) {
+            try {
+              for (let attempt = 0; ; attempt++) {
+                try {
+                  move.resolve(
+                    await this._commitWorldCommand(
+                      move.principal,
+                      id,
+                      move.sessionId,
+                      move.command,
+                      move.scope
+                    )
+                  );
+                  break;
+                } catch (error) {
+                  if (error.retryFreeRoam !== true || attempt >= 2) throw error;
+                }
+              }
+            } catch (error) {
+              move.reject(error);
+            }
+          }
+        } catch (error) {
+          for (const move of batch) move.reject(error);
+        } finally {
+          writer.count -= batch.length;
+        }
+      }
+    } finally {
+      this.movementWriters.delete(id);
+    }
+  }
+
+  _worldCommandIntent(principal, id, sessionId, command, scope) {
+    const uid = principalUid(principal);
     const canonical = structuredClone(command);
     delete canonical.view;
     const fingerprint = createHash('sha256')
@@ -6087,22 +6237,213 @@ class CloudCampaignStore {
       .doc(pilotAccountKey(uid))
       .collection('receipts')
       .doc(command.commandId);
-    const intent = { uid, reference, fingerprint, kind: 'world.command', campaignId: id };
-    const captured = await this._transaction(
-      async (transaction) => {
-        await this.access.assertEligibility(uid, transaction);
-        const replay = await this._previousCommand(transaction, intent);
-        if (replay !== null) return { replay };
-        const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
-        if (admitted.participant.access.role !== 'member') throw unavailableCampaign();
-        const { head, seat } = admitted;
-        return {
-          replay: null,
-          head,
-          grant: admitted.participant,
-          placementGrants: seat?.placementGrants || [],
-        };
+    return { uid, reference, fingerprint, kind: 'world.command', campaignId: id };
+  }
+
+  async _captureWorldCommand(transaction, principal, id, sessionId, scope, intent) {
+    await this.access.assertEligibility(intent.uid, transaction);
+    const replay = await this._previousCommand(transaction, intent);
+    if (replay !== null) return { replay };
+    const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
+    if (admitted.participant.access.role !== (scope.seatId === null ? 'owner' : 'member'))
+      throw unavailableCampaign();
+    return {
+      replay: null,
+      head: admitted.head,
+      grant: admitted.participant,
+      placementGrants: admitted.seat?.placementGrants || [],
+    };
+  }
+
+  async _authorizeWorldCommand(transaction, principal, id, sessionId, scope, captured) {
+    const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
+    if (
+      admitted.participant.access.role !== captured.grant.access.role ||
+      stableStringify(admitted.participant.characterIds) !==
+        stableStringify(captured.grant.characterIds)
+    )
+      throw new CloudError(409, 'campaign-access-changed', 'Refresh current assigned world access');
+    if (admitted.head.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
+    return admitted;
+  }
+
+  _worldCommandResult(id, sessionId, command, grant, next, generation, receipt) {
+    return {
+      version: 1,
+      campaignId: id,
+      commandId: command.commandId,
+      access: grant.access,
+      sessionId,
+      kind: command.kind,
+      outcome: 'applied',
+      ...(command.kind === 'door.state' ? { door: receipt.door } : {}),
+      ...(command.kind === 'place' ? { tokenId: receipt.tokenId } : {}),
+      applied: {
+        generation,
+        sceneRevision: next.sceneRevision,
+        charactersRevision: next.revision,
       },
+    };
+  }
+
+  async _commitFreeRoamBatch(id, batch) {
+    if (
+      !this.objects ||
+      !this.resources ||
+      batch.some(
+        ({ command, sessionId }) =>
+          sessionId !== batch[0].sessionId ||
+          command.payload.closest ||
+          command.payload.target.elevationFeet !== undefined
+      )
+    )
+      return false;
+    const startedAt = this.now();
+    const rows = batch.map((move) => ({
+      ...move,
+      intent: this._worldCommandIntent(
+        move.principal,
+        id,
+        move.sessionId,
+        move.command,
+        move.scope
+      ),
+    }));
+    if (new Set(rows.map(({ intent }) => intent.reference.path)).size !== rows.length) return false;
+    const captures = await this._transaction(
+      (transaction) =>
+        Promise.allSettled(
+          rows.map(({ principal, sessionId, scope, intent }) =>
+            this._captureWorldCommand(transaction, principal, id, sessionId, scope, intent)
+          )
+        ),
+      { readOnly: true }
+    );
+    const original = captures.find(
+      (result) => result.status === 'fulfilled' && !result.value.replay
+    )?.value;
+    if (!original || original.head.generation > Number.MAX_SAFE_INTEGER - rows.length) return false;
+    const base = await this._loadSnapshot(original.head);
+    if (!base.scene || JSON.parse(base.scene).combat.active) return false;
+    let head = original.head;
+    let state = base;
+    let checkpointScene = null;
+    let freeMoves;
+    const accepted = [];
+    const settled = [];
+    // Only actor placements and their free-move budgets may change within this draft.
+    const groundBatch = {};
+    for (const [index, row] of rows.entries()) {
+      const read = captures[index];
+      if (read.status === 'rejected') return false;
+      const captured = read.value;
+      if (captured.replay !== null || captured.head.generation !== original.head.generation)
+        return false;
+      const { principal, sessionId, command, scope, intent } = row;
+      if (
+        (command.sceneRevision !== state.sceneRevision ||
+          command.charactersRevision !== state.revision) &&
+        !rebaseFreeRoamMove(head, command, sessionId)
+      )
+        return false;
+      const profile = this._worldUndoProfile(principal, id, sessionId, captured.grant);
+      let prepared;
+      try {
+        prepared = await this._prepareWorldChange(
+          state,
+          command,
+          profile,
+          captured.placementGrants,
+          scope.seatId === null,
+          groundBatch
+        );
+      } catch (error) {
+        // A blocked route is a definitive result only after the preceding moves publish.
+        if (error.code !== 'unreachable') return false;
+        settled.push({ row, error });
+        continue;
+      }
+      const { next, receipt, undo } = prepared;
+      const result = this._worldCommandResult(
+        id,
+        sessionId,
+        command,
+        captured.grant,
+        next,
+        head.generation + 1,
+        receipt
+      );
+      const presented = {
+        sessionId,
+        generation: result.applied.generation,
+        sceneRevision: next.sceneRevision,
+        charactersRevision: next.revision,
+        entries: [
+          {
+            commandId: command.commandId,
+            tokenId: command.tokenId,
+            kind: 'move',
+            motion: receipt.motion,
+            ...(receipt.costFeet === undefined ? {} : { costFeet: receipt.costFeet }),
+            ...(receipt.budget === undefined ? {} : { budget: receipt.budget }),
+          },
+        ],
+      };
+      freeMoves = appendFreeRoamMove(head, state, next, command, presented);
+      if (!freeMoves) return false;
+      checkpointScene = freeMoves.checkpointScene ?? checkpointScene;
+      result.freeRoam = true;
+      const authorize = (transaction) =>
+        this._authorizeWorldCommand(transaction, principal, id, sessionId, scope, captured);
+      accepted.push({ row, intent, result, authorize, receipt, profile, undo });
+      head = {
+        ...head,
+        version: 2,
+        generation: result.applied.generation,
+        campaign: next.campaign,
+        sceneCheckpointRevision: freeMoves.checkpointRevision,
+        freeRoamMoves: freeMoves.moves,
+      };
+      state = next;
+    }
+    if (!accepted.length) return false;
+    decodeScene(state.scene, { library: groundBatch.library, ruleset: state.campaign.ruleset });
+    const first = accepted[0];
+    try {
+      await this._publishCanonical(first.row.principal, id, first.intent, original, {
+        state: base,
+        next: state,
+        result: first.result,
+        authorize: first.authorize,
+        startedAt,
+        presented: null,
+        freeMoves: { ...freeMoves, checkpointScene },
+        batch: accepted,
+        canonicalKind: 'scene.commit',
+        changesScene: true,
+        writesCharacters: false,
+        meaningful: sceneActivityState(base.scene) !== sceneActivityState(state.scene),
+      });
+    } catch (error) {
+      if ([401, 403, 404, 409].includes(error.status)) return false;
+      throw error;
+    }
+    for (const move of accepted) {
+      rememberPlayerUndo(this.worldUndoSessions, move.profile, move.undo);
+      move.row.resolve({ ...move.result, presentation: move.receipt });
+    }
+    for (const { row, error } of settled) row.reject(error);
+    return true;
+  }
+
+  async _commitWorldCommand(principal, id, sessionId, command, scope) {
+    const uid = principalUid(principal);
+    const role = scope.seatId === null ? 'owner' : 'member';
+    const startedAt = this.now();
+    const intent = this._worldCommandIntent(principal, id, sessionId, command, scope);
+    const captured = await this._transaction(
+      (transaction) =>
+        this._captureWorldCommand(transaction, principal, id, sessionId, scope, intent),
       { readOnly: true }
     );
     if (captured.replay !== null)
@@ -6121,10 +6462,10 @@ class CloudCampaignStore {
     operation.count++;
     try {
       const state = await this._loadSnapshot(captured.head);
-      if (
+      const stale =
         command.sceneRevision !== state.sceneRevision ||
-        command.charactersRevision !== state.revision
-      )
+        command.charactersRevision !== state.revision;
+      if (stale && !rebaseFreeRoamMove(captured.head, command, sessionId))
         throw Object.assign(
           new CloudError(
             409,
@@ -6140,39 +6481,20 @@ class CloudCampaignStore {
         state,
         command,
         profile,
-        captured.placementGrants
+        captured.placementGrants,
+        role === 'owner'
       );
-      const authorize = async (transaction) => {
-        const admitted = await this._liveContext(transaction, principal, id, sessionId, scope);
-        if (
-          admitted.participant.access.role !== 'member' ||
-          stableStringify(admitted.participant.characterIds) !==
-            stableStringify(captured.grant.characterIds)
-        )
-          throw new CloudError(
-            409,
-            'campaign-access-changed',
-            'Refresh current assigned world access'
-          );
-        if (admitted.head.ownerUid !== captured.head.ownerUid) throw unavailableCampaign();
-        return admitted;
-      };
-      const result = {
-        version: 1,
-        campaignId: id,
-        commandId: command.commandId,
-        access: captured.grant.access,
+      const authorize = (transaction) =>
+        this._authorizeWorldCommand(transaction, principal, id, sessionId, scope, captured);
+      const result = this._worldCommandResult(
+        id,
         sessionId,
-        kind: command.kind,
-        outcome: 'applied',
-        ...(command.kind === 'door.state' ? { door: receipt.door } : {}),
-        ...(command.kind === 'place' ? { tokenId: receipt.tokenId } : {}),
-        applied: {
-          generation: captured.head.generation + 1,
-          sceneRevision: next.sceneRevision,
-          charactersRevision: next.revision,
-        },
-      };
+        command,
+        captured.grant,
+        next,
+        captured.head.generation + 1,
+        receipt
+      );
       let entry = null;
       if (receipt.motion)
         entry = {
@@ -6211,6 +6533,20 @@ class CloudCampaignStore {
               charactersRevision: next.revision,
               entries: [entry],
             };
+      const freeMoves = appendFreeRoamMove(captured.head, state, next, command, presented);
+      if (stale && !freeMoves)
+        throw new CloudError(
+          409,
+          'stale-revision',
+          'Refresh current world state before another command'
+        );
+      if (role === 'owner' && !freeMoves)
+        throw new CloudError(
+          422,
+          'owner-movement-unavailable',
+          'This route requires the full owner movement controls'
+        );
+      if (freeMoves) result.freeRoam = true;
       const published = await this._publishCanonical(principal, id, intent, captured, {
         state,
         next,
@@ -6218,6 +6554,7 @@ class CloudCampaignStore {
         authorize,
         startedAt,
         presented,
+        freeMoves,
         canonicalKind: 'scene.commit',
         writesCharacters: next.revision !== state.revision,
         changesScene: true,
@@ -6488,7 +6825,6 @@ class CloudCampaignStore {
 
   async _publishCanonical(principal, id, intent, captured, plan) {
     const uid = principalUid(principal);
-    const { reference, fingerprint, kind } = intent;
     const {
       state,
       next,
@@ -6500,12 +6836,18 @@ class CloudCampaignStore {
       canonicalKind,
       startedAt,
       presented,
+      freeMoves = null,
+      batch = null,
     } = plan;
+    const commits = batch ?? [{ intent, result, authorize }];
+    const last = commits.at(-1).intent;
     const ownerUid = captured.head.ownerUid;
     const headReference = this.firestore.collection('campaigns').doc(id);
+    const stagedScene = freeMoves ? freeMoves.checkpointScene : changesScene ? next.scene : null;
     const candidates = [];
-    if (presented !== null) candidates.push(snapshotCandidate(id, 'presentations', presented));
-    if (changesScene) candidates.push(snapshotCandidate(id, 'scene', next.scene));
+    if (presented !== null && !freeMoves)
+      candidates.push(snapshotCandidate(id, 'presentations', presented));
+    if (stagedScene !== null) candidates.push(snapshotCandidate(id, 'scene', stagedScene));
     if (writesCharacters) {
       candidates.push(snapshotCandidate(id, 'characters', next.records));
       if (this.assets !== null)
@@ -6515,9 +6857,10 @@ class CloudCampaignStore {
             bytes: Buffer.byteLength(image.data, 'base64'),
           });
     }
-    await this.usage.reserveOwnerStorage(ownerUid, id, candidates, this.objects.bucket, {
-      authorize,
-    });
+    if (candidates.length)
+      await this.usage.reserveOwnerStorage(ownerUid, id, candidates, this.objects.bucket, {
+        authorize,
+      });
     if (writesCharacters)
       await this._finalizeCharacterAssets(ownerUid, id, next.records, authorize);
     const removedCharacters = new Set();
@@ -6540,8 +6883,8 @@ class CloudCampaignStore {
       }
     }
     const [sceneRef, charactersRef, presentationRef] = await Promise.all([
-      changesScene
-        ? this.objects.stage(id, 'scene', next.scene, (candidate) =>
+      stagedScene !== null
+        ? this.objects.stage(id, 'scene', stagedScene, (candidate) =>
             this.usage.renewOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
               authorize,
             })
@@ -6554,7 +6897,7 @@ class CloudCampaignStore {
             })
           )
         : captured.head.charactersRef,
-      presented === null
+      presented === null || freeMoves
         ? null
         : this.objects.stage(id, 'presentations', presented, (candidate) =>
             this.usage.renewOwnerStorage(ownerUid, id, candidate, this.objects.bucket, {
@@ -6564,10 +6907,27 @@ class CloudCampaignStore {
     ]);
     const { FieldValue } = require('firebase-admin/firestore');
     return this._transaction(async (transaction) => {
-      await this.access.assertEligibility(uid, transaction);
-      const replay = await this._previousCommand(transaction, intent);
-      if (replay !== null) return { result: replay, duplicate: true };
-      const admission = authorize === null ? null : await authorize(transaction);
+      let admission;
+      if (batch) {
+        const gates = await Promise.all(
+          commits.map(async (commit) => {
+            await this.access.assertEligibility(commit.intent.uid, transaction);
+            if ((await this._previousCommand(transaction, commit.intent)) !== null)
+              throw new CloudError(
+                409,
+                'command-already-committed',
+                'Read the original movement receipt'
+              );
+            return commit.authorize(transaction);
+          })
+        );
+        admission = gates[0];
+      } else {
+        await this.access.assertEligibility(uid, transaction);
+        const replay = await this._previousCommand(transaction, intent);
+        if (replay !== null) return { result: replay, duplicate: true };
+        admission = authorize === null ? null : await authorize(transaction);
+      }
       const current =
         admission?.head ?? (await this._metadata(await transaction.get(headReference), ownerUid));
       if (
@@ -6582,6 +6942,7 @@ class CloudCampaignStore {
             'Campaign data changed while saving; reopen before publishing another change'
           ),
           {
+            retryFreeRoam: freeMoves !== null,
             current: {
               sceneRevision: current.campaign.sceneRevision,
               charactersRevision: current.campaign.charactersRevision,
@@ -6641,17 +7002,31 @@ class CloudCampaignStore {
         meaningful && evaluated.state === 'live' && now > Date.parse(evaluated.lastMeaningfulAt)
           ? { ...evaluated, lastMeaningfulAt: new Date(now).toISOString() }
           : evaluated;
-      const generation = current.generation + 1;
+      const generation = current.generation + commits.length;
       const publishedHead = {
         ...current,
         campaign: next.campaign,
         sceneRef,
         charactersRef,
         generation,
-        lastCommand: { uid, commandId: reference.id, kind, generation },
+        lastCommand: {
+          uid: last.uid,
+          commandId: last.reference.id,
+          kind: last.kind,
+          generation,
+        },
       };
       if (presentationRef === null) delete publishedHead.presentationRef;
       else publishedHead.presentationRef = presentationRef;
+      if (freeMoves) {
+        publishedHead.version = 2;
+        publishedHead.freeRoamMoves = freeMoves.moves;
+        publishedHead.sceneCheckpointRevision = freeMoves.checkpointRevision;
+      } else if (changesScene && publishedHead.freeRoamMoves) {
+        publishedHead.version = 1;
+        delete publishedHead.freeRoamMoves;
+        delete publishedHead.sceneCheckpointRevision;
+      }
       if (live.state === 'live' && nextLive.state === 'paused')
         await this._queueFinalBackup(transaction, id, nextLive, publishedHead);
       if (nextLive !== live) transaction.set(this._liveSessionReference(id), nextLive);
@@ -6674,22 +7049,26 @@ class CloudCampaignStore {
           });
       }
       transaction.set(headReference, publishedHead);
-      transaction.create(reference, {
-        version: 1,
-        uid,
-        kind,
-        fingerprint,
-        campaignId: id,
-        result,
-      });
-      transaction.create(headReference.collection('changes').doc(String(generation)), {
-        version: 1,
-        generation,
-        kind: canonicalKind,
-        sceneRevision: next.sceneRevision,
-        charactersRevision: next.revision,
-        committedAt: FieldValue.serverTimestamp(),
-      });
+      for (const [index, commit] of commits.entries()) {
+        const { reference, uid: author, kind, fingerprint } = commit.intent;
+        const appliedGeneration = current.generation + index + 1;
+        transaction.create(reference, {
+          version: 1,
+          uid: author,
+          kind,
+          fingerprint,
+          campaignId: id,
+          result: commit.result,
+        });
+        transaction.create(headReference.collection('changes').doc(String(appliedGeneration)), {
+          version: 1,
+          generation: appliedGeneration,
+          kind: canonicalKind,
+          sceneRevision: batch ? commit.result.applied.sceneRevision : next.sceneRevision,
+          charactersRevision: next.revision,
+          committedAt: FieldValue.serverTimestamp(),
+        });
+      }
       return { result, duplicate: false };
     });
   }

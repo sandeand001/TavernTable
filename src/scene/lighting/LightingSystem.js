@@ -1,6 +1,15 @@
 // LightingSystem.js — Sun cycle, color math, time-of-day profiles, terrain/placeable lighting.
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
+import { BIOME_GROUPS } from '../../config/biome/BiomeConstants.js';
+import {
+  refreshLocalLighting,
+  startUndergroundLighting,
+  stopUndergroundLighting,
+} from './UndergroundLighting.js';
+
+const UNDERGROUND_BIOMES = new Set(BIOME_GROUPS.Underground.map(({ key }) => key));
+
 // ── Time Normalization ─────────────────────────────────────────────
 
 function _normalizeMinutes(mins) {
@@ -35,7 +44,7 @@ function _applySunElevationForTime(minutes, options = {}) {
   const targetY = minElev + span * daylight;
   if (Number.isFinite(targetY)) {
     this._sunOffset.y = targetY;
-    if (!options.deferSunCoverage) {
+    if (!options.deferSunCoverage && !this._undergroundLighting) {
       this._updateSunCoverage();
     }
   }
@@ -107,10 +116,40 @@ function _applySunAzimuth() {
     this._sunOffset.x = x;
     this._sunOffset.z = z;
   }
-  this._updateSunCoverage();
+  if (!this._undergroundLighting) this._updateSunCoverage();
 }
 
 // ── Public Sun API ────────────────────────────────────────────────
+
+function setSceneLightingBiome(biomeKey) {
+  if (biomeKey !== null && (typeof biomeKey !== 'string' || !biomeKey))
+    throw new TypeError('Scene lighting requires a biome key or null');
+  this._sceneLightingBiome = biomeKey;
+  this._undergroundLighting = UNDERGROUND_BIOMES.has(biomeKey);
+  if (this._sunLight) this._sunLight.visible = !this._undergroundLighting;
+  if (this._undergroundLighting) startUndergroundLighting(this);
+  else {
+    stopUndergroundLighting(this);
+    this._applySunAzimuth();
+  }
+  this._applyTimeOfDayProfile(this.getTimeOfDayProfile(this.getSunTimeMinutes()), { force: true });
+}
+
+function getSceneLightingProfile() {
+  return this._timeOfDayProfile || this.getTimeOfDayProfile(this.getSunTimeMinutes());
+}
+
+function undergroundLightingProfile() {
+  const profile = this.getTimeOfDayProfile(720);
+  profile.phase = 'underground';
+  profile.lighting.sunIntensity = 0;
+  profile.lighting.ambientColor = this._hexToLinearRGB(0xe4e1df);
+  profile.lighting.ambientIntensity = 0.85;
+  profile.lighting.hemisphereSkyColor = this._hexToLinearRGB(0xb6bed0);
+  profile.lighting.hemisphereGroundColor = this._hexToLinearRGB(0x514b47);
+  profile.lighting.hemisphereIntensity = 0.3;
+  return profile;
+}
 
 function setSunAzimuthDegrees(degrees, options = {}) {
   if (!Number.isFinite(degrees)) return;
@@ -195,8 +234,12 @@ function _normalizeDegrees(deg) {
   return d;
 }
 
-function _applyTimeOfDayProfile(profile) {
+function _applyTimeOfDayProfile(profile, { force = false } = {}) {
   if (!profile || typeof profile !== 'object') return;
+  if (this._undergroundLighting) {
+    if (!force && this._timeOfDayProfile?.phase === 'underground') return;
+    profile = undergroundLightingProfile.call(this);
+  }
   this._timeOfDayProfile = profile;
   try {
     this._applyTerrainColorProfile(profile.terrain);
@@ -553,6 +596,7 @@ function registerTerrainGeometryBasis(geometry) {
 
 function registerPlaceablePool(pool) {
   this._placeablePool = pool || null;
+  this._localLightingState = null;
   if (!pool || typeof pool.applyLightingProfile !== 'function') return;
   try {
     const profile = this._timeOfDayProfile || this.getTimeOfDayProfile(this._sunTimeMinutes ?? 720);
@@ -722,6 +766,12 @@ export function installLightingMethods(prototype) {
   prototype._applyStoredSunTime = _applyStoredSunTime;
   prototype._ensureSunAnimator = _ensureSunAnimator;
   prototype._applySunAzimuth = _applySunAzimuth;
+  prototype.setSceneLightingBiome = setSceneLightingBiome;
+  prototype.getSceneLightingProfile = getSceneLightingProfile;
+  prototype.refreshLocalLighting = refreshLocalLighting;
+  prototype.disposeLocalLighting = function () {
+    stopUndergroundLighting(this);
+  };
   prototype.setSunAzimuthDegrees = setSunAzimuthDegrees;
   prototype.getSunAzimuthDegrees = getSunAzimuthDegrees;
   prototype.setSunTimeMinutes = setSunTimeMinutes;

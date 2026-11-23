@@ -12,13 +12,20 @@ import { testIndexedDB } from '../helpers/indexedDB.js';
 import { fetchBundledResource } from '../helpers/bundledResources.js';
 import { sceneState } from '../helpers/sceneState.js';
 import { TerrainGeometry } from '../../src/terrain/TerrainGeometry.js';
+import { TerrainEngine } from '../../src/terrain/TerrainEngine.js';
+import { createDungeonLayout } from '../../src/terrain/generation/DungeonLayouts.js';
 import CampaignWorld from '../../src/campaigns/CampaignWorld.js';
+import {
+  buildingJoinConnections,
+  reconcileBuildingScene,
+} from '../../src/campaigns/BuildingAssembly.js';
 import { DatabaseSync } from 'node:sqlite';
 import {
   validatePlayerState,
   validatePlayerCommandResult,
 } from '../../src/campaigns/PlayerPublicProtocol.js';
 import { facingAngleFromDirection } from '../../src/entities/creatures/TokenMovement.js';
+import { validateAuthoritativeRoll } from '../../src/systems/dice/AuthoritativeDiceReplay.js';
 
 const root = path.resolve(__dirname, '..', '..');
 globalThis.TextDecoder ??= TextDecoder;
@@ -30,7 +37,7 @@ function request(url, body = null, headers = {}) {
   return new Promise((resolve, reject) => {
     const outgoing = http.request(
       url,
-      { method: body === null ? 'GET' : 'POST', headers },
+      { method: body === null ? 'GET' : 'POST', headers, agent: false },
       (response) => {
         const chunks = [];
         response.on('data', (chunk) => chunks.push(chunk));
@@ -296,6 +303,25 @@ async function table(
   };
 }
 
+async function settleFallCommand(player, campaignId, initialCommand) {
+  let command = initialCommand;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const response = await player.request('playerCommand', [campaignId, command]);
+    if (response.status !== 200 || !response.body.result.receipt.rerollRequired) return response;
+    const current = await player.request('playerState', [
+      { observerTokenId: command.observerTokenId },
+    ]);
+    expect(current.status).toBe(200);
+    command = {
+      ...command,
+      commandId: randomUUID(),
+      sceneRevision: current.body.result.sceneRevision,
+      charactersRevision: current.body.result.revision,
+    };
+  }
+  throw new Error('Falling dice remained cocked after twelve attempts');
+}
+
 test('an assigned active-turn player move is acknowledged with canonical cost and retrievable committed pose', async () => {
   const { campaignId, player } = await table();
   const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
@@ -328,6 +354,7 @@ test('an assigned active-turn player move is acknowledged with canonical cost an
       },
     },
   });
+
   const saved = await host.request('readScene', [campaignId]);
   const canonical = JSON.parse(saved.body.result.scene);
   expect(canonical.creatures.find((actor) => actor.id === 'token-1')).toMatchObject({
@@ -340,6 +367,189 @@ test('an assigned active-turn player move is acknowledged with canonical cost an
   );
   expect(moved.body.result.applied.sceneRevision).toBe(before.body.result.sceneRevision + 1);
 }, 30000);
+
+test.each([
+  'source-cave-stalagmite',
+  'source-cave-column',
+  'mushroom-glow',
+  'mushroom-giant-cap',
+  'pure-poly-grass-01',
+  'pure-poly-pebbles-01',
+])('a player can move through decorative %s scenery', async (modelKey) => {
+  const { campaignId, player } = await table('2024', {
+    sceneTransform: (scene) => {
+      scene.terrain.placeables.push({
+        type: 'plant',
+        placeableId: modelKey,
+        variantKey: modelKey,
+        modelKey,
+        gridX: 2,
+        gridY: 1,
+        biomeKey: modelKey.startsWith('mushroom-')
+          ? 'fungalGrove'
+          : modelKey.startsWith('pure-poly-grass-')
+            ? 'grassland'
+            : 'cavern',
+        persistedScale: { x: 1, y: 1, z: 1 },
+      });
+      scene.terrain.sightBounds = [];
+      return scene;
+    },
+  });
+  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(before.body.error).toBeUndefined();
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  expect(moved.body.result.receipt.placement).toMatchObject({
+    mapId: 'map-main',
+    gridX: 2,
+    gridY: 1,
+  });
+});
+
+test.each([
+  ['source-cave-stalagmite', 'source-cave-stalagmite', 200],
+  ['mushroom-giant-cap', 'mushroom-giant-cap', 200],
+  ['pure-poly-grass-01', 'pure-poly-grass-01', 200],
+  ['pure-poly-pebbles-01', 'pure-poly-pebbles-01', 200],
+  ['tree-green-deciduous', 'common-broadleaf-1', 422],
+])('flying movement respects the solidity of %s', async (placeableId, modelKey, status) => {
+  const { campaignId, player } = await table('2024', {
+    flightHeightFeet: 5,
+    characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
+    sceneTransform: (scene) => {
+      scene.terrain.placeables.push({
+        type: 'plant',
+        placeableId,
+        variantKey: placeableId,
+        modelKey,
+        gridX: 2,
+        gridY: 1,
+        persistedScale: { x: 1, y: 1, z: 1 },
+      });
+      scene.terrain.sightBounds = [];
+      return scene;
+    },
+  });
+  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(before.body.error).toBeUndefined();
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(status);
+  if (status === 200) expect(moved.body.result.receipt.placement.gridX).toBe(2);
+});
+
+test('ordinary tree placeables still block ground movement', async () => {
+  const { campaignId, player } = await table('2024', {
+    sceneTransform: (scene) => {
+      scene.terrain.placeables.push({
+        type: 'plant',
+        placeableId: 'tree-green-deciduous',
+        modelKey: 'common-broadleaf-1',
+        gridX: 2,
+        gridY: 1,
+        persistedScale: { x: 1, y: 1, z: 1 },
+      });
+      scene.terrain.sightBounds = [];
+      return scene;
+    },
+  });
+  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(before.body.error).toBeUndefined();
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'move',
+      payload: { target: { mapId: 'map-main', gridX: 2, gridY: 1 } },
+    },
+  ]);
+  expect(moved.status).toBe(422);
+});
+
+test.each([2, 42])(
+  'an authorized player can walk through a generated Dungeon doorway for seed %i',
+  async (seed) => {
+    const cols = 18;
+    const rows = 18;
+    const layout = createDungeonLayout({ cols, rows, seed, roomCount: 6 });
+    const doorway = layout.structures.find(
+      (structure) => structure.opening && structure.name.endsWith('Room Doorway')
+    );
+    const normal = { x: -Math.sin(doorway.angleRadians), z: Math.cos(doorway.angleRadians) };
+    const cell = (direction) => ({
+      gridX: Math.floor((doorway.xFeet + direction * normal.x * 2.5) / 5),
+      gridY: Math.floor((doorway.zFeet + direction * normal.z * 2.5) / 5),
+    });
+    const start = cell(-1);
+    const target = cell(1);
+    const npcPosition = [start, target].some(({ gridX, gridY }) => gridX === 0 && gridY === 0)
+      ? { gridX: cols - 1, gridY: rows - 1 }
+      : { gridX: 0, gridY: 0 };
+    const engine = new TerrainEngine(cols, rows);
+    engine.generateBiomeElevation('dungeon', { seed, dungeonRoomCount: 6 });
+    const { campaignId, player } = await table('2024', {
+      gridSize: cols,
+      heroPosition: start,
+      npcPosition,
+      sceneTransform: (scene) => {
+        scene.version = 2;
+        scene.terrain.biome = 'dungeon';
+        scene.terrain.geometry = engine.geometry.save();
+        return scene;
+      },
+    });
+    const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+    const moved = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.body.result.sceneRevision,
+        charactersRevision: before.body.result.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'move',
+        payload: { target: { mapId: 'map-main', ...target } },
+      },
+    ]);
+    expect(moved.status).toBe(200);
+    expect(moved.body.result.receipt).toMatchObject({
+      kind: 'move',
+      costFeet: 5,
+      placement: target,
+    });
+  },
+  30000
+);
 
 test('an approved player route faces each segment in the direction of travel', async () => {
   const { campaignId, player } = await table('2024', {
@@ -1255,25 +1465,40 @@ test('a legal visible unarmed target uses host physical attack roll and canonica
     gridSize: 25,
     npcPosition: { gridX: 2, gridY: 1 },
   });
-  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
-  const used = await player.request('playerCommand', [
-    campaignId,
-    {
-      version: 1,
-      commandId: randomUUID(),
-      sceneRevision: before.body.result.sceneRevision,
-      charactersRevision: before.body.result.revision,
-      observerTokenId: 'token-1',
-      tokenId: 'token-1',
-      kind: 'action.use',
-      payload: {
-        actionId: 'attack:unarmed',
-        choice: {},
-        targeting: { targets: [{ tokenId: 'token-2', count: 1 }] },
+  const initialScene = JSON.parse(
+    (await host.request('readScene', [campaignId])).body.result.scene
+  );
+  let used;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+    used = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.body.result.sceneRevision,
+        charactersRevision: before.body.result.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'action.use',
+        payload: {
+          actionId: 'attack:unarmed',
+          choice: {},
+          targeting: { targets: [{ tokenId: 'token-2', count: 1 }] },
+        },
       },
-    },
-  ]);
-  expect(used.status).toBe(200);
+    ]);
+    expect(used.status).toBe(200);
+    if (!used.body.result.receipt.rerollRequired) break;
+    expect(used.body.result.receipt.roll.physics.at(-1)).toMatchObject({
+      type: 'physical-d20',
+      cocked: true,
+      value: null,
+    });
+    const cancelled = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
+    expect(cancelled.combat.states[0].budget).toEqual(initialScene.combat.states[0].budget);
+  }
+  expect(used.body.result.receipt.rerollRequired).not.toBe(true);
   expect(used.body.result.receipt).toMatchObject({
     kind: 'action.use',
     tokenId: 'token-1',
@@ -1476,21 +1701,39 @@ test('voluntary flight drop computes authoritative fall damage/prone from physic
     flightHeightFeet: 20,
     characterUpdates: { fallTraits: { flySpeed: 60, hover: true } },
   });
-  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
-  const dropped = await player.request('playerCommand', [
-    campaignId,
-    {
-      version: 1,
-      commandId: randomUUID(),
-      sceneRevision: before.body.result.sceneRevision,
-      charactersRevision: before.body.result.revision,
-      observerTokenId: 'token-1',
-      tokenId: 'token-1',
-      kind: 'flight.drop',
-      payload: { useSlowFall: false },
-    },
-  ]);
+  let before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  let dropped;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    dropped = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.body.result.sceneRevision,
+        charactersRevision: before.body.result.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'flight.drop',
+        payload: { useSlowFall: false },
+      },
+    ]);
+    expect(dropped.body.error).toBeUndefined();
+    expect(dropped.status).toBe(200);
+    if (!dropped.body.result.receipt.rerollRequired) break;
+    before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  }
   expect(dropped.status).toBe(200);
+  const roll = dropped.body.result.receipt.roll;
+  expect(validateAuthoritativeRoll(roll)).toBe(roll);
+  expect(roll).toMatchObject({ expression: '2d6', mapId: 'map-main', physical: true });
+  expect(roll.physics).toHaveLength(2);
+  expect(
+    roll.physics.every(
+      (die) =>
+        die.type === 'physical-die' && die.sides === 6 && die.color === 'ocean' && !die.cocked
+    )
+  ).toBe(true);
+  expect(roll.values).toEqual(roll.physics.map((die) => die.value));
   const after = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
   const own = JSON.parse(
     after.body.result.records.find((row) => row.key.startsWith('taverntable.character.v1.')).value
@@ -1499,6 +1742,7 @@ test('voluntary flight drop computes authoritative fall damage/prone from physic
   expect(own.lastFall).toMatchObject({ distanceFeet: 20, dice: 2, prone: true });
   expect(own.lastFall.damage).toBeGreaterThanOrEqual(2);
   expect(own.lastFall.damage).toBeLessThanOrEqual(12);
+  expect(own.lastFall.rawDamage).toBe(roll.total);
   const canonical = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
   expect(canonical.creatures.find((actor) => actor.id === 'token-1').pose).toMatchObject({
     kind: 'ground',
@@ -1578,6 +1822,312 @@ test('an owned doorway traversal keeps canonical IDs and charges existing physic
   expect(after.body.result.observerTokenId).toBe('token-1');
   expect(after.body.result.view.id).toBe('inside');
   expect(after.body.result.gameplay.ownedTokens[0].movement.spentFeet).toBe(5);
+}, 30000);
+
+test.each([
+  [25, 42],
+  [50, 7],
+])(
+  'an authenticated player crosses a generated %i-square Castle join and returns without losing character state',
+  async (size, seed) => {
+    const engine = new TerrainEngine(size, size);
+    const plan = engine.planBiomeGeneration('castle', { seed });
+    engine.generateBiomeElevation('castle', { seed });
+    let opening;
+    const { campaignId, player, characterId } = await table('2024', {
+      gridSize: size,
+      characterUpdates: { hp: { max: 30, current: 23 } },
+      sceneTransform: (scene, library) => {
+        scene.version = 2;
+        scene.terrain.geometry = engine.geometry.save();
+        scene.terrain.heights = engine.save().heights;
+        scene.terrain.biome = 'castle';
+        const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library }).save();
+        const joined = reconcileBuildingScene(world, { ruleset: '2024', library });
+        joined.connections.push(...buildingJoinConnections(joined, joined.maps[0].id, plan.joins));
+        opening = joined.connections.find((connection) => connection.kind === 'opening');
+        if (!opening) throw new Error('The generated Castle has no joined interior passage');
+        const source = joined.maps.find((map) => map.id === opening.ends[0].mapId);
+        const point = opening.ends[0].positionFeet;
+        const scale = source.grid.tileWorldSize / 5;
+        const position = { x: point.x * scale, y: point.y * scale, z: point.z * scale };
+        Object.assign(joined.creatures[0], {
+          mapId: source.id,
+          gridX: Math.floor(position.x),
+          gridY: Math.floor(position.z),
+          pose: { kind: 'ground', world: position },
+        });
+        joined.view.mapId = source.id;
+        joined.view.camera.target = position;
+        return joined;
+      },
+    });
+
+    const before = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body
+      .result;
+    const traverse = (state, commandId) =>
+      player.request('playerCommand', [
+        campaignId,
+        {
+          version: 1,
+          commandId,
+          sceneRevision: state.sceneRevision,
+          charactersRevision: state.revision,
+          observerTokenId: 'token-1',
+          tokenId: 'token-1',
+          kind: 'traverse',
+          payload: { connectionId: opening.id },
+        },
+      ]);
+    const commandId = randomUUID();
+    const outbound = await traverse(before, commandId);
+    expect(outbound.status).toBe(200);
+    expect(outbound.body.result.receipt).toMatchObject({
+      tokenId: 'token-1',
+      kind: 'traverse',
+      costFeet: 5,
+      placement: { mapId: opening.ends[1].mapId },
+    });
+    expect((await traverse(before, commandId)).body.result.receipt).toEqual(
+      outbound.body.result.receipt
+    );
+    const inside = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body
+      .result;
+    expect(inside.view.id).toBe(opening.ends[1].mapId);
+    expect(inside.gameplay.ownedTokens[0].movement.spentFeet).toBe(5);
+
+    const inbound = await traverse(inside, randomUUID());
+    expect(inbound.status).toBe(200);
+    expect(inbound.body.result.receipt).toMatchObject({
+      tokenId: 'token-1',
+      costFeet: 5,
+      placement: { mapId: opening.ends[0].mapId },
+    });
+    const canonical = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
+    const actor = canonical.creatures.find(({ id }) => id === 'token-1');
+    expect(actor).toMatchObject({ characterId, mapId: opening.ends[0].mapId });
+    expect(canonical.creatures.filter(({ id }) => id === actor.id)).toHaveLength(1);
+    expect(canonical.combat.states.find(({ tokenId }) => tokenId === actor.id).movementSpent).toBe(
+      10
+    );
+    const after = (await player.request('playerState', [{ observerTokenId: 'token-1' }])).body
+      .result;
+    expect(after.view.id).toBe(opening.ends[0].mapId);
+    const character = JSON.parse(
+      after.records.find((row) => row.key.startsWith('taverntable.character.v1.')).value
+    );
+    expect(character).toMatchObject({ id: characterId, hp: { max: 30, current: 23 } });
+  },
+  60000
+);
+
+test.each([1, 42])(
+  'an authorized player can walk through a dense Castle gate with seed %i',
+  async (seed) => {
+    const engine = new TerrainEngine(50, 50);
+    const plan = engine.planBiomeGeneration('castle', {
+      seed,
+      densityMultiplier: 1.65,
+      structures: true,
+    });
+    const gate = plan.geometry.structures.find(
+      (structure) => structure.kind === 'wall' && structure.name.endsWith('Royal Gate')
+    );
+    expect(gate).toBeDefined();
+    const normal = { x: -Math.sin(gate.angleRadians), z: Math.cos(gate.angleRadians) };
+    const side = (direction) => ({
+      gridX: Math.floor((gate.xFeet + direction * normal.x * (gate.widthFeet / 2 + 5)) / 5),
+      gridY: Math.floor((gate.zFeet + direction * normal.z * (gate.widthFeet / 2 + 5)) / 5),
+    });
+    const start = side(-1);
+    const target = side(1);
+    const { campaignId, player } = await table('2024', {
+      gridSize: 50,
+      heroPosition: start,
+      npcPosition: { gridX: 0, gridY: 0 },
+      sceneTransform: (scene) => {
+        scene.version = 2;
+        scene.terrain.geometry = plan.geometry;
+        scene.terrain.heights = plan.heights;
+        scene.terrain.biome = 'castle';
+        scene.terrain.placeables = plan.placements.map((placement) => ({
+          ...placement,
+          persistedScale: { x: 1, y: 1, z: 1 },
+        }));
+        scene.terrain.sightBounds = [];
+        return scene;
+      },
+    });
+    const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+    expect(before.body).toHaveProperty('result');
+    expect(before.status).toBe(200);
+    const moved = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.body.result.sceneRevision,
+        charactersRevision: before.body.result.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'move',
+        payload: { target: { mapId: 'map-main', ...target } },
+      },
+    ]);
+    expect(moved.status).toBe(200);
+    expect(moved.body.result.receipt).toMatchObject({
+      kind: 'move',
+      placement: target,
+    });
+    expect(moved.body.result.receipt.costFeet).toBeLessThanOrEqual(30);
+  },
+  60000
+);
+
+test('an authorized player crosses a logical cavern passage without revealing the destination first', async () => {
+  const { campaignId, player } = await table('2024', {
+    heroPosition: { gridX: 4, gridY: 2 },
+    sceneTransform: (scene, library) => {
+      const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library });
+      world.addLocation({
+        id: 'hidden-location',
+        name: 'SECRET LOCATION',
+        map: {
+          ...world.getMap('map-main'),
+          id: 'hidden-chamber',
+          name: 'SECRET CHAMBER',
+          terrain: {
+            ...scene.terrain,
+            heights: Array.from({ length: 5 }, () => Array(5).fill(0)),
+          },
+        },
+      });
+      world.addLogicalPassage({
+        version: 1,
+        id: 'cavern-passage',
+        kind: 'chamber',
+        ends: [
+          { mapId: 'map-main', side: 'east' },
+          { mapId: 'hidden-chamber', side: 'west' },
+        ],
+      });
+      return world.save();
+    },
+  });
+  const before = await player.request('playerState', [
+    { observerTokenId: 'token-1', presentationVersion: 1 },
+  ]);
+  expect(before.status).toBe(200);
+  expect(before.body.result.publicScene.assets.logicalPassages).toEqual([
+    { id: 'cavern-passage', mapId: 'map-main', side: 'east' },
+  ]);
+  expect(JSON.stringify(before.body.result)).not.toContain('SECRET');
+  expect(JSON.stringify(before.body.result)).not.toContain('hidden-chamber');
+  const moved = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'traverse',
+      payload: { connectionId: 'cavern-passage' },
+      view: { mapId: 'map-main', assetKey: before.body.result.publicScene.assetKey },
+    },
+  ]);
+  expect(moved.status).toBe(200);
+  expect(moved.body.result.receipt).toMatchObject({
+    kind: 'traverse',
+    tokenId: 'token-1',
+    costFeet: 5,
+  });
+  const after = await player.request('playerState', [
+    { observerTokenId: 'token-1', presentationVersion: 1 },
+  ]);
+  expect(after.body.result.publicScene.assets.maps.map((map) => map.id)).toEqual([
+    'hidden-chamber',
+  ]);
+  expect(after.body.result.observerTokenId).toBe('token-1');
+  expect(after.body.result.gameplay.ownedTokens[0].movement.spentFeet).toBe(5);
+  expect(JSON.stringify(after.body.result)).not.toContain('map-main');
+  const returned = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: after.body.result.sceneRevision,
+      charactersRevision: after.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'traverse',
+      payload: { connectionId: 'cavern-passage' },
+      view: { mapId: 'hidden-chamber', assetKey: after.body.result.publicScene.assetKey },
+    },
+  ]);
+  expect(returned.status).toBe(200);
+  expect(returned.body.result.receipt.costFeet).toBe(5);
+  const back = await player.request('playerState', [
+    { observerTokenId: 'token-1', presentationVersion: 1 },
+  ]);
+  expect(back.body.result.publicScene.assets.maps.map((map) => map.id)).toEqual(['map-main']);
+  expect(back.body.result.gameplay.ownedTokens[0].movement.spentFeet).toBe(10);
+}, 30000);
+
+test('an occupied logical-passage landing rejects player travel without spending movement', async () => {
+  const { campaignId, player } = await table('2024', {
+    heroPosition: { gridX: 4, gridY: 2 },
+    sceneTransform: (scene, library) => {
+      const world = CampaignWorld.fromScene(scene, { ruleset: '2024', library });
+      world.addLocation({
+        id: 'hidden-location',
+        name: 'Hidden chamber',
+        map: { ...world.getMap('map-main'), id: 'hidden-chamber', name: 'Hidden chamber' },
+      });
+      world.addLogicalPassage({
+        version: 1,
+        id: 'cavern-passage',
+        kind: 'chamber',
+        ends: [
+          { mapId: 'map-main', side: 'east' },
+          { mapId: 'hidden-chamber', side: 'west' },
+        ],
+      });
+      const result = world.save();
+      Object.assign(
+        result.creatures.find((actor) => actor.id === 'token-2'),
+        {
+          mapId: 'hidden-chamber',
+          gridX: 0,
+          gridY: 2,
+          pose: { kind: 'ground', world: { x: 0.5, y: 0, z: 2.5 } },
+        }
+      );
+      return result;
+    },
+  });
+  const before = await player.request('playerState', [
+    { observerTokenId: 'token-1', presentationVersion: 1 },
+  ]);
+  const result = await player.request('playerCommand', [
+    campaignId,
+    {
+      version: 1,
+      commandId: randomUUID(),
+      sceneRevision: before.body.result.sceneRevision,
+      charactersRevision: before.body.result.revision,
+      observerTokenId: 'token-1',
+      tokenId: 'token-1',
+      kind: 'traverse',
+      payload: { connectionId: 'cavern-passage' },
+      view: { mapId: 'map-main', assetKey: before.body.result.publicScene.assetKey },
+    },
+  ]);
+  expect(result.status).toBe(422);
+  const after = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  expect(after.body.result.gameplay.ownedTokens[0].movement.spentFeet).toBe(0);
+  expect(after.body.result.view.id).toBe('map-main');
 }, 30000);
 
 test('owned walking cannot pass through a foreign same-location wall and an explicit refusal leaves the turn unchanged', async () => {
@@ -1688,19 +2238,16 @@ test('running off a physical ledge stops at the first landing with fall damage a
     },
   });
   const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
-  const moved = await player.request('playerCommand', [
-    campaignId,
-    {
-      version: 1,
-      commandId: randomUUID(),
-      sceneRevision: before.body.result.sceneRevision,
-      charactersRevision: before.body.result.revision,
-      observerTokenId: 'token-1',
-      tokenId: 'token-1',
-      kind: 'move',
-      payload: { target: { mapId: 'map-main', gridX: 3, gridY: 1 } },
-    },
-  ]);
+  const moved = await settleFallCommand(player, campaignId, {
+    version: 1,
+    commandId: randomUUID(),
+    sceneRevision: before.body.result.sceneRevision,
+    charactersRevision: before.body.result.revision,
+    observerTokenId: 'token-1',
+    tokenId: 'token-1',
+    kind: 'move',
+    payload: { target: { mapId: 'map-main', gridX: 3, gridY: 1 } },
+  });
   expect(moved.status).toBe(200);
   expect(moved.body.result.receipt).toMatchObject({
     kind: 'move',
@@ -1754,13 +2301,10 @@ test('an eligible ledge fall requires an explicit Slow Fall choice and pays only
   expect(pending.status).toBe(422);
   expect(pending.body.code).toBe('confirmation-required');
   expect((await host.request('readScene', [campaignId])).body.result).toEqual(saved);
-  const moved = await player.request('playerCommand', [
-    campaignId,
-    {
-      ...command,
-      payload: { ...command.payload, useSlowFall: true },
-    },
-  ]);
+  const moved = await settleFallCommand(player, campaignId, {
+    ...command,
+    payload: { ...command.payload, useSlowFall: true },
+  });
   expect(moved.status).toBe(200);
   expect(moved.body.result.receipt.fall).toMatchObject({ damage: 0, prone: false, reduction: 20 });
   const after = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
@@ -2523,20 +3067,30 @@ test('a physical drop lands on the highest foreign floor in the same location, r
       return world.save();
     },
   });
-  const before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
-  const dropped = await player.request('playerCommand', [
-    campaignId,
-    {
-      version: 1,
-      commandId: randomUUID(),
-      sceneRevision: before.body.result.sceneRevision,
-      charactersRevision: before.body.result.revision,
-      observerTokenId: 'token-1',
-      tokenId: 'token-1',
-      kind: 'flight.drop',
-      payload: { useSlowFall: false },
-    },
-  ]);
+  let before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  let dropped;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    dropped = await player.request('playerCommand', [
+      campaignId,
+      {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.body.result.sceneRevision,
+        charactersRevision: before.body.result.revision,
+        observerTokenId: 'token-1',
+        tokenId: 'token-1',
+        kind: 'flight.drop',
+        payload: { useSlowFall: false, diceColor: 'amethyst' },
+      },
+    ]);
+    expect(dropped.body.error).toBeUndefined();
+    expect(dropped.status).toBe(200);
+    if (!dropped.body.result.receipt.rerollRequired) break;
+    expect(dropped.body.result.receipt.roll).toBeUndefined();
+    const unchanged = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);
+    expect(unchanged.creatures[0]).toMatchObject({ mapId: 'map-main', pose: { kind: 'flight' } });
+    before = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
+  }
   expect(dropped.status).toBe(200);
   expect(dropped.body.result.receipt).toMatchObject({
     distanceFeet: 10,
@@ -2547,6 +3101,17 @@ test('a physical drop lands on the highest foreign floor in the same location, r
       pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
     },
   });
+  const roll = dropped.body.result.receipt.roll;
+  expect(validateAuthoritativeRoll(roll)).toBe(roll);
+  expect(roll).toMatchObject({
+    expression: '1d6',
+    mapId: 'intercept-floor',
+    physical: true,
+    physics: [{ type: 'physical-die', sides: 6, color: 'amethyst', cocked: false }],
+  });
+  expect(roll.values).toEqual(roll.physics.map((die) => die.value));
+  expect(dropped.body.result.receipt.result.rawDamage).toBe(roll.total);
+  expect(roll.physics[0].frames.length).toBeGreaterThan(20);
   const after = await player.request('playerState', [{ observerTokenId: 'token-1' }]);
   expect(after.body.result.view.id).toBe('intercept-floor');
   const canonical = JSON.parse((await host.request('readScene', [campaignId])).body.result.scene);

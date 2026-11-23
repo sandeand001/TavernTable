@@ -1,3 +1,4 @@
+// @ts-check
 import { supportedEditions } from '../rules/editions.js';
 import {
   CHARACTER_IMAGE_TYPES,
@@ -22,6 +23,7 @@ export const CLOUD_LIVE_PRESENCE_COALESCE_MS = 60 * 1000;
 export const CLOUD_LIVE_ACK_COALESCE_MS = 30 * 1000;
 export const CLOUD_LIVE_ACK_INTERVAL_MS = 25000;
 export const CLOUD_LIVE_CONNECTION_HEADER = 'X-TavernTable-Live-Connection';
+export const CLOUD_FREE_ROAM_MOVE_LIMIT = 48;
 
 export const isCloudUUID = (value) =>
   typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
@@ -30,6 +32,19 @@ export const isCloudDigest = (value) => typeof value === 'string' && /^[a-f0-9]{
 export const isCloudAccessGeneration = (value) => Number.isSafeInteger(value) && value >= 0;
 export const CLOUD_ACCESS_SEAT_HEADER = 'X-TavernTable-Seat';
 export const CLOUD_ACCESS_GENERATION_HEADER = 'X-TavernTable-Access-Generation';
+
+export function validCloudMovementDelta(previous, delta, nextState) {
+  const count = delta.generation - delta.baseGeneration;
+  if (!Object.hasOwn(delta, 'movementBatch')) return count === 1;
+  return (
+    delta.movementBatch === true &&
+    count > 1 &&
+    count <= CLOUD_FREE_ROAM_MOVE_LIMIT &&
+    isCloudAccessGeneration(nextState?.sceneRevision) &&
+    nextState.sceneRevision - previous.state.sceneRevision === count &&
+    nextState.revision === previous.state.revision
+  );
+}
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, names) =>
@@ -640,15 +655,17 @@ export function isCloudWorldCommandReceipt(value) {
       'outcome',
       ...(value.kind === 'door.state' ? ['door'] : []),
       ...(value.kind === 'place' ? ['tokenId'] : []),
+      ...(Object.hasOwn(value, 'freeRoam') ? ['freeRoam'] : []),
     ]) &&
     value.version === 1 &&
     isCloudUUID(value.campaignId) &&
     isCloudUUID(value.commandId) &&
     isCloudAccessScope(value.access) &&
-    value.access.role === 'member' &&
+    (value.access.role === 'member' || value.freeRoam === true) &&
     value.access.campaignId === value.campaignId &&
     isCloudUUID(value.sessionId) &&
     (PLAYER_COMMAND_KINDS.includes(value.kind) || value.kind === 'door.state') &&
+    (!Object.hasOwn(value, 'freeRoam') || (value.freeRoam === true && value.kind === 'move')) &&
     (value.kind !== 'place' ||
       (typeof value.tokenId === 'string' &&
         /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,299}$/.test(value.tokenId))) &&

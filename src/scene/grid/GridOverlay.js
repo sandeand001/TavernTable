@@ -2,6 +2,7 @@
 // Extracted from ThreeSceneManager.js (Phase 6). Installed via mixin pattern.
 
 import { GRID_CONFIG } from '../../config/GameConstants.js';
+import { CAVERN_FLOOR_MAX_LEVEL } from '../../terrain/generation/CavernInteriors.js';
 import { TerrainBrushOverlay3D } from '../terrain/TerrainBrushOverlay3D.js';
 
 // ── Grid Rebuild ───────────────────────────────────────────────────
@@ -15,7 +16,11 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
 
   const { cols, rows, tileSize } = data;
   const cavern = this.gameManager?.terrainEngine?.cavern;
-  const key = `${cols}x${rows}x${tileSize}${cavern ? `:cavern:${cavern.seed}` : ''}`;
+  const mapId = this.gameManager?.campaignMapId;
+  const cavernStyle =
+    cavern?.version >= 2 ||
+    (mapId && this.gameManager?.campaignWorld?.getMap(mapId).terrain.renderStyle === 'cavern');
+  const key = `${cols}x${rows}x${tileSize}${cavernStyle ? `:cavern:${cavern?.seed ?? ''}` : ''}`;
   if (!force && this._gridOverlayGroup && this._gridOverlayKey === key) {
     this._gridOverlayGroup.visible = !!this.showBootstrapGrid;
     return;
@@ -56,11 +61,12 @@ function _rebuildGridOverlay(metrics = null, options = {}) {
   const { heights: tileHeights, elevationUnit } = this._computeTileHeights(cols, rows);
   const tileCount = cols * rows;
   const visibleTiles = Array(tileCount).fill(true);
-  if (cavern?.version >= 2 && !this.gameManager.terrainEngine.isActive)
+  if (cavernStyle && !this.gameManager.terrainEngine.isActive)
     for (let gy = 0; gy < rows; gy++)
       for (let gx = 0; gx < cols; gx++) {
         const index = gy * cols + gx;
-        visibleTiles[index] = this.gameManager.terrainEngine.getHeightAt(gx, gy) <= -5;
+        visibleTiles[index] =
+          this.gameManager.terrainEngine.getHeightAt(gx, gy) <= CAVERN_FLOOR_MAX_LEVEL;
       }
   const unitAbs = Math.max(Math.abs(elevationUnit), 0.0001);
   const scaleUnit = Math.max(tileSize, unitAbs);
@@ -307,6 +313,9 @@ function setTerrainMeshOpacity(opacity = 1) {
     if ('depthWrite' in mat) mat.depthWrite = clamped >= 0.999;
     if ('needsUpdate' in mat) mat.needsUpdate = true;
   }
+  const water = mesh.getObjectByName?.('TerrainWater');
+  if (water?.material && Number.isFinite(water.userData?.baseOpacity))
+    water.material.opacity = water.userData.baseOpacity * clamped;
 }
 
 // ── Grid Sync & Helpers ───────────────────────────────────────────

@@ -159,3 +159,180 @@ test('locations and internal-map membership round-trip and reject invalid refere
   ];
   expect(() => encodeScene(cross, context)).toThrow();
 });
+
+test('logical cavern passages join independent maps without merging physical locations', () => {
+  const world = worlds();
+  const passage = {
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'remote-map', side: 'west' },
+    ],
+  };
+  const revision = world.mapRevision;
+  world.addLogicalPassage(passage);
+  expect(world.getLogicalPassages('map-main')).toEqual([passage]);
+  expect(world.getLogicalPassages('remote-map')).toEqual([passage]);
+  expect(world.getConnections()).toEqual([]);
+  expect(world.sharesLocation('map-main', 'remote-map')).toBe(false);
+  expect(world.mapRevision).toBe(revision + 1);
+  const saved = world.save();
+  expect(decodeScene(encodeScene(saved, context), context)).toEqual(saved);
+});
+
+test('logical passages reject missing maps, reused entrances and same-location links atomically', () => {
+  const world = worlds();
+  const passage = {
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'remote-map', side: 'west' },
+    ],
+  };
+  world.addLogicalPassage(passage);
+  const before = world.save();
+  expect(() =>
+    world.addLogicalPassage({
+      ...passage,
+      id: 'passage-2',
+      ends: [
+        { mapId: 'map-main', side: 'north' },
+        { mapId: 'missing', side: 'south' },
+      ],
+    })
+  ).toThrow(/passage/i);
+  expect(() =>
+    world.addLogicalPassage({
+      ...passage,
+      id: 'passage-2',
+      ends: [
+        { mapId: 'map-main', side: 'east' },
+        { mapId: 'remote-map', side: 'north' },
+      ],
+    })
+  ).toThrow(/passage/i);
+  const local = world.getMap('map-main');
+  world.addMap({ ...local, id: 'another-local', name: 'Another local area' });
+  const withLocalMap = world.save();
+  expect(() =>
+    world.addLogicalPassage({
+      ...passage,
+      id: 'passage-2',
+      ends: [
+        { mapId: 'map-main', side: 'north' },
+        { mapId: 'another-local', side: 'south' },
+      ],
+    })
+  ).toThrow(/passage|location/i);
+  expect(world.save()).toEqual(withLocalMap);
+  expect(before.logicalPassages).toEqual([passage]);
+});
+
+test('a logical passage plans paid travel between independent entrance cells', () => {
+  const world = worlds();
+  const scene = world.save();
+  for (const map of scene.maps)
+    map.terrain.heights = map.terrain.heights.map((row) => row.map(() => 0));
+  world.acceptCheckpoint(scene);
+  world.addLogicalPassage({
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'remote-map', side: 'west' },
+    ],
+  });
+  const before = world.save();
+  expect(world.planLogicalPassage('passage-1', 'map-main', { x: 4.5, y: 0, z: 2.5 })).toMatchObject(
+    {
+      targetMapId: 'remote-map',
+      targetWorld: { x: 0.5, y: 0, z: 2.5 },
+      costFeet: 5,
+    }
+  );
+  expect(
+    world.planLogicalPassage('passage-1', 'remote-map', { x: 0.5, y: 0, z: 2.5 })
+  ).toMatchObject({
+    targetMapId: 'map-main',
+    targetWorld: { x: 4.5, y: 0, z: 2.5 },
+    costFeet: 5,
+  });
+  expect(world.planLogicalPassage('passage-1', 'map-main', { x: 3.5, y: 0, z: 2.5 }).costFeet).toBe(
+    10
+  );
+  expect(() => world.planLogicalPassage('passage-1', 'map-main', { x: 2.5, y: 0, z: 2.5 })).toThrow(
+    /within 5 feet/i
+  );
+  expect(world.save()).toEqual(before);
+});
+
+test('a logical passage refuses an occupied or physically blocked landing', () => {
+  const world = worlds();
+  const scene = world.save();
+  for (const map of scene.maps)
+    map.terrain.heights = map.terrain.heights.map((row) => row.map(() => 0));
+  world.acceptCheckpoint(scene);
+  world.addLogicalPassage({
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'remote-map', side: 'west' },
+    ],
+  });
+  const from = { x: 4.5, y: 0, z: 2.5 };
+  expect(() =>
+    world.planLogicalPassage('passage-1', 'map-main', from, {
+      occupants: [{ mapId: 'remote-map', world: { x: 0.5, y: 0, z: 2.5 } }],
+    })
+  ).toThrow(/creature|occupied/i);
+  const blocked = world.save();
+  blocked.maps.find((map) => map.id === 'remote-map').terrain.geometry = {
+    version: 1,
+    volumes: [
+      {
+        id: 'landing-wall',
+        layerId: 'ground',
+        operation: 'add',
+        bounds: { min: { x: 0, y: 0, z: 10 }, max: { x: 5, y: 10, z: 15 } },
+      },
+    ],
+  };
+  world.acceptCheckpoint(blocked);
+  expect(() => world.planLogicalPassage('passage-1', 'map-main', from)).toThrow(
+    /blocked|clear|landing|support/i
+  );
+});
+
+test('flying through a logical passage retains altitude relative to the destination floor', () => {
+  const world = worlds();
+  const scene = world.save();
+  for (const map of scene.maps)
+    map.terrain.heights = map.terrain.heights.map((row) => row.map(() => 0));
+  scene.maps.find((map) => map.id === 'remote-map').terrain.heights[2][0] = 2;
+  world.acceptCheckpoint(scene);
+  world.addLogicalPassage({
+    version: 1,
+    id: 'passage-1',
+    kind: 'chamber',
+    ends: [
+      { mapId: 'map-main', side: 'east' },
+      { mapId: 'remote-map', side: 'west' },
+    ],
+  });
+  const plan = world.planLogicalPassage(
+    'passage-1',
+    'map-main',
+    { x: 4.5, y: 0.6, z: 2.5 },
+    { travelMode: 'fly' }
+  );
+  expect(plan.targetWorld).toEqual({ x: 0.5, y: 1.2, z: 2.5 });
+  expect(plan.targetPose.kind).toBe('flight');
+  expect(plan.costFeet).toBe(5);
+});

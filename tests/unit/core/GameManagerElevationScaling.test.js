@@ -1,5 +1,6 @@
 import GameManager from '../../../src/core/GameManager.js';
 import { TerrainHeightUtils } from '../../../src/utils/terrain/TerrainHeightUtils.js';
+import { preview3DElevationUnit } from '../../../src/core/game-manager/internals/elevation.js';
 
 function buildHybridGM() {
   const gm = new GameManager({ cols: 4, rows: 4 });
@@ -31,6 +32,17 @@ describe('GameManager.sync3DElevationScaling', () => {
     const changed = gm.sync3DElevationScaling({ rebuild: false, hardSet: true });
     expect(changed).toBe(true);
     expect(gm.spatial.elevationUnit).toBeCloseTo(baseline * 1.5 * attenuation, 5);
+  });
+
+  test('predicts a biome scale without changing the live grid', () => {
+    const gm = buildHybridGM();
+    const before = gm.spatial.elevationUnit;
+    const nextPixels = gm._defaultElevationPixelsPerLevel * 1.5;
+    const planned = preview3DElevationUnit(gm, nextPixels);
+    expect(gm.spatial.elevationUnit).toBe(before);
+    jest.spyOn(TerrainHeightUtils, 'getElevationUnit').mockReturnValue(nextPixels);
+    gm.sync3DElevationScaling({ rebuild: false });
+    expect(gm.spatial.elevationUnit).toBeCloseTo(planned, 8);
   });
 
   test('returning the slider to default restores the original tile height', () => {

@@ -1,5 +1,10 @@
 import { TERRAIN_PLACEABLES } from '../../../src/config/terrain/TerrainPlaceables.js';
-import { createTerrainWorld } from '../../helpers/terrainWorld.js';
+import * as assetMatrix from '../../../src/config/assets/BiomeAssetMatrix.js';
+import {
+  autoPopulateBiomeFlora,
+  planBiomePopulation,
+} from '../../../src/terrain/flora/BiomePopulation.js';
+import { createTerrainWorld, floraContext } from '../../helpers/terrainWorld.js';
 
 const BARE_IDS = Object.keys(TERRAIN_PLACEABLES).filter((key) => /bare/i.test(key));
 
@@ -34,6 +39,95 @@ function generateFloraSnapshot(biome, seed, cols = 12, rows = 12, structures = t
 }
 
 describe('Deterministic flora placement', () => {
+  test('a future missing model is reported only when its biome is generated', () => {
+    jest.isolateModules(() => {
+      const {
+        TERRAIN_PLACEABLES: definitions,
+      } = require('../../../src/config/terrain/TerrainPlaceables.js');
+      delete definitions['mushroom-common'];
+      const {
+        logger: isolatedLogger,
+        LOG_CATEGORY: categories,
+      } = require('../../../src/utils/logger/Logger.js');
+      const {
+        TerrainEngine: IsolatedTerrainEngine,
+      } = require('../../../src/terrain/TerrainEngine.js');
+      const warning = jest.spyOn(isolatedLogger, 'warn').mockImplementation(() => {});
+      try {
+        const engine = new IsolatedTerrainEngine(25, 25);
+        engine.planBiomeGeneration('forestTemperate', { seed: 42 });
+        expect(warning).not.toHaveBeenCalledWith(
+          'Biome generation omitted unavailable weighted assets',
+          expect.anything(),
+          expect.anything()
+        );
+        engine.planBiomeGeneration('fungalGrove', { seed: 42 });
+        expect(warning).toHaveBeenCalledWith(
+          'Biome generation omitted unavailable weighted assets',
+          {
+            biomeKey: 'fungalGrove',
+            discarded: expect.arrayContaining([
+              { id: 'mushroom-common', weight: 6, reason: 'missing-placeable' },
+            ]),
+          },
+          categories.RENDERING
+        );
+      } finally {
+        warning.mockRestore();
+      }
+    });
+  });
+
+  test('an invalid planned asset rejects generation before clearing existing scenery', () => {
+    const pool = { addPlaceable: jest.fn(), purgeAll: jest.fn() };
+    const world = createTerrainWorld(25, 25, pool);
+    const suitability = jest.spyOn(assetMatrix, 'isAssetAllowedInBiome').mockReturnValue(false);
+    try {
+      const before = world.engine.save();
+      expect(() => world.engine.generateBiomeElevation('forestTemperate', { seed: 42 })).toThrow(
+        /not allowed/i
+      );
+      expect(world.engine.save()).toEqual(before);
+      expect(pool.purgeAll).not.toHaveBeenCalled();
+      expect(pool.addPlaceable).not.toHaveBeenCalled();
+    } finally {
+      suitability.mockRestore();
+      world.dispose();
+    }
+  });
+
+  test.each(['forestTemperate', 'orchard', 'cavern'])(
+    'plans %s placements without a renderer and applies the same deterministic plan',
+    (biomeKey) => {
+      const pool = { addPlaceable: jest.fn(), purgeAll: jest.fn() };
+      const world = createTerrainWorld(25, 25, pool);
+      try {
+        const before = world.engine.save();
+        const plan = world.engine.planBiomeGeneration(biomeKey, { seed: 42 });
+        expect(plan.placements.length).toBeGreaterThan(0);
+        expect(world.engine.save()).toEqual(before);
+        expect(pool.addPlaceable).not.toHaveBeenCalled();
+
+        world.engine.generateBiomeElevation(biomeKey, { seed: 42 });
+        expect(pool.addPlaceable.mock.calls.map(([placement]) => placement)).toEqual(
+          plan.placements
+        );
+        pool.addPlaceable.mockClear();
+        world.gm.placeableMeshPool = null;
+        const context = floraContext(world.gm);
+        const placements = planBiomePopulation(context, biomeKey, 42);
+        expect(placements).toEqual(plan.placements);
+        expect(pool.addPlaceable).not.toHaveBeenCalled();
+
+        world.gm.placeableMeshPool = pool;
+        autoPopulateBiomeFlora(context, biomeKey, 42);
+        expect(pool.addPlaceable.mock.calls.map(([placement]) => placement)).toEqual(placements);
+      } finally {
+        world.dispose();
+      }
+    }
+  );
+
   test('orchard grid layout repeats with the same seed', () => {
     const first = generateFloraSnapshot('orchard', 777, 16, 12);
     const second = generateFloraSnapshot('orchard', 777, 16, 12);

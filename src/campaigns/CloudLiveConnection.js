@@ -9,6 +9,7 @@ const denied = new Set([
   'invalid-identity',
   'email-verification-required',
   'pilot-access-required',
+  'account-disabled',
   'invalid-account-eligibility',
   'campaign-not-found',
   'campaign-access-changed',
@@ -141,7 +142,8 @@ export default class CloudLiveConnection {
     if (previousGeneration !== undefined && nextGeneration < previousGeneration)
       throw failure('invalid-change-history', 'The live campaign revision moved backwards.');
     const reconcile =
-      !['delta', 'owner-delta'].includes(event.kind) || event.delta.kind === 'replace';
+      !['delta', 'owner-delta'].includes(event.kind) ||
+      (event.delta.kind === 'replace' && !event.delta.presentations?.length);
     if (reconcile) this._status('synchronizing');
     const context = { reconcile };
     if (!reconcile && event.delta.presentations?.length)

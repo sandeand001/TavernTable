@@ -17,6 +17,8 @@ import CampaignStore from '../../../src/campaigns/CampaignStore.js';
 import CampaignCharacters from '../../../src/campaigns/CampaignCharacters.js';
 import CampaignAutosave from '../../../src/campaigns/CampaignAutosave.js';
 import { decodeScene } from '../../../src/campaigns/CampaignScene.js';
+import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
+import { planCampaignBiomeReplacement } from '../../../src/campaigns/CampaignBiomePlan.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { TokenManager } from '../../../src/managers/TokenManager.js';
 import {
@@ -145,6 +147,39 @@ test('Fly scene saves contain temporary grants separately from unlinked creature
       targetTokenIds: [recipient.id],
     });
     expect(() => encodeScene(scene, { ruleset: '2014', library })).not.toThrow();
+  } finally {
+    adapter.disposeMovementRange();
+  }
+});
+
+test('replacement refuses to remove a caster whose flight grant affects another map', async () => {
+  const { gm, library, token, recipient, adapter } = flyWorld();
+  try {
+    const saved = await captureCampaignScene(gm, library);
+    const world = CampaignWorld.fromScene(saved, { ruleset: '2014', library });
+    const remote = world.getMap('map-main');
+    remote.id = 'remote-map';
+    remote.name = 'Remote map';
+    world.addLocation({ id: 'remote-location', name: 'Remote', map: remote });
+    const scene = world.save();
+    scene.creatures.find((entry) => entry.id === recipient.id).mapId = 'remote-map';
+    world.acceptCheckpoint(scene);
+    gm.campaignWorld = world;
+    gm.campaignMapId = 'map-main';
+    gm.campaignView = world.createView({ mapId: 'map-main', focusTokenId: token.id });
+    gm.spatial.gridToWorld = (x, y) => ({ x, y: 0, z: y });
+    token.mapId = 'map-main';
+    recipient.mapId = 'remote-map';
+
+    await expect(
+      planCampaignBiomeReplacement(
+        gm,
+        { biomeKey: 'grassland', seed: 42, densityMultiplier: 0, structures: false },
+        { cols: 5, rows: 5 }
+      )
+    ).rejects.toThrow(/flight.*another map/i);
+    expect(gm.placedTokens).toHaveLength(2);
+    expect(gm.characterServices.combat.effects).toHaveLength(1);
   } finally {
     adapter.disposeMovementRange();
   }

@@ -83,6 +83,16 @@ test('sixteen castle seeds vary real dimensions, heights, wall shapes and buildi
   expect(new Set(keeps.map((spec) => spec.heightFeet)).size).toBeGreaterThanOrEqual(3);
   expect(
     new Set(
+      layouts.map((result) =>
+        result.joins
+          .map(({ sourceIndex, targetIndex }) => `${sourceIndex}:${targetIndex}`)
+          .join('|')
+      )
+    ).size
+  ).toBeGreaterThanOrEqual(3);
+  expect(new Set(layouts.map((result) => result.joins.length))).toEqual(new Set([3, 6, 7]));
+  expect(
+    new Set(
       layouts.map((result) => result.structures.filter((spec) => spec.kind === 'turret').length)
     ).size
   ).toBe(1);
@@ -110,17 +120,55 @@ test('sixteen castle seeds vary real dimensions, heights, wall shapes and buildi
     ).size
   ).toBeGreaterThanOrEqual(3);
   expect(
-    layouts.some((result) =>
-      result.structures.some(
-        (spec) =>
-          spec.kind === 'wall' &&
-          Math.abs(
-            spec.angleRadians / (Math.PI / 2) - Math.round(spec.angleRadians / (Math.PI / 2))
-          ) > 0.01
-      )
+    layouts.every((result) =>
+      result.structures
+        .filter((spec) => spec.kind === 'wall')
+        .every(
+          (spec) =>
+            Math.abs(
+              spec.angleRadians / (Math.PI / 2) - Math.round(spec.angleRadians / (Math.PI / 2))
+            ) <= 0.01
+        )
     )
   ).toBe(true);
   for (const seed of seeds) expect(signature(layout(seed))).toBe(signature(layout(seed)));
+});
+
+test('castle scale uses large maps for a wider curtain and additional outer-ward buildings', () => {
+  const standard = createSettlementLayout({
+      biomeKey: 'castle',
+      seed: 42,
+      width: 250,
+      depth: 250,
+    }),
+    large = createSettlementLayout({
+      biomeKey: 'castle',
+      seed: 42,
+      width: 500,
+      depth: 500,
+    });
+  const wallSpan = (result) =>
+    Math.max(
+      ...result.structures
+        .filter((spec) => spec.name === 'North Curtain' || spec.name === 'Royal Gate')
+        .map((spec) => spec.lengthFeet)
+    );
+  expect(wallSpan(large)).toBeGreaterThan(wallSpan(standard) + 50);
+  expect(large.structures.filter((spec) => spec.name.startsWith('Outer Ward')).length).toBe(4);
+  expect(large.structures.length).toBeGreaterThan(standard.structures.length);
+});
+
+test('reviewed castle options choose the attached topology and outer ward policy', () => {
+  const citadel = createSettlementLayout({
+    biomeKey: 'castle',
+    seed: 42,
+    width: 500,
+    depth: 500,
+    layoutFamily: 'citadel',
+    outerWards: false,
+  });
+  expect(citadel.joins).toHaveLength(3);
+  expect(citadel.structures.filter((spec) => spec.name.startsWith('Outer Ward'))).toHaveLength(0);
 });
 
 test.each([
@@ -194,17 +242,22 @@ test('repeating a locked castle seed and reopening retain geometry, automatic wi
   expect(reopened.save()).toEqual(before);
 });
 
-test.each([3, 4, 13])(
-  'complex castle seed %i has usable connected entrances and every retained staircase',
-  (seed) => {
+test.each([
+  [50, 3],
+  [50, 4],
+  [50, 13],
+  [60, 42],
+])(
+  'complex %i-square castle seed %i has usable connected entrances and every retained staircase',
+  (size, seed) => {
     localStorage.clear();
-    const engine = new TerrainEngine(50, 50);
+    const engine = new TerrainEngine(size, size);
     engine.generateBiomeElevation('castle', { seed });
     const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
     const context = { ruleset: '2014', library },
       scene = sceneState();
     scene.version = 2;
-    scene.grid = { cols: 50, rows: 50, tileWorldSize: 1 };
+    scene.grid = { cols: size, rows: size, tileWorldSize: 1 };
     scene.terrain.heights = engine.save().heights;
     scene.terrain.geometry = engine.geometry.save();
     scene.creatures = [];
@@ -217,12 +270,32 @@ test.each([3, 4, 13])(
       const end = connection.ends[0],
         map = world.getMap(end.mapId),
         scale = map.grid.tileWorldSize / 5;
-      const plan = world.planConnection(connection.id, end.mapId, {
-        x: end.positionFeet.x * scale,
-        y: end.positionFeet.y * scale,
-        z: end.positionFeet.z * scale,
-      });
+      let plan;
+      try {
+        plan = world.planConnection(connection.id, end.mapId, {
+          x: end.positionFeet.x * scale,
+          y: end.positionFeet.y * scale,
+          z: end.positionFeet.z * scale,
+        });
+      } catch (error) {
+        const spec = engine.geometry
+          .getStructures()
+          .find(({ id }) => id === connection.building.structureId);
+        error.message = `${spec?.name ?? connection.building.structureId} ${connection.building.kind}: ${error.message}`;
+        throw error;
+      }
       expect(plan.costFeet).toBe(connection.kind === 'stairs' ? 35 : 5);
+      if (connection.name === 'Stairs to battlement deck') {
+        const destination = connection.ends[1];
+        const destinationMap = world.getMap(destination.mapId);
+        const destinationScale = destinationMap.grid.tileWorldSize / 5;
+        const reverse = world.planConnection(connection.id, destination.mapId, {
+          x: destination.positionFeet.x * destinationScale,
+          y: destination.positionFeet.y * destinationScale,
+          z: destination.positionFeet.z * destinationScale,
+        });
+        expect(reverse.costFeet).toBeGreaterThan(0);
+      }
     }
   },
   60000

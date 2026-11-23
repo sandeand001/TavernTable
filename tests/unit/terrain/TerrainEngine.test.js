@@ -4,6 +4,7 @@
  */
 import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
 import { TERRAIN_CONFIG } from '../../../src/config/terrain/TerrainConstants.js';
+import { TerrainHeightUtils } from '../../../src/utils/terrain/TerrainHeightUtils.js';
 
 describe('TerrainEngine', () => {
   describe('construction', () => {
@@ -139,6 +140,158 @@ describe('TerrainEngine', () => {
       e2.load(snap);
       expect(e2.getHeightAt(1, 1)).toBe(e1.getHeightAt(1, 1));
       expect(e2.getHeightAt(2, 2)).toBe(e1.getHeightAt(2, 2));
+    });
+
+    describe('generation planning', () => {
+      test('plans terrain and structures without changing the map, history or rendering state', () => {
+        const engine = new TerrainEngine(25, 25);
+        engine.setHeightAt(2, 2, 3);
+        const before = engine.save();
+        const beforeUnit = TerrainHeightUtils.getElevationUnit();
+        const changed = jest.fn();
+        engine.onChanged(changed);
+        engine.onBiomeGenerated(changed);
+
+        const options = { seed: 42, densityMultiplier: 0.55 };
+        const plan = engine.planBiomeGeneration('dungeon', options);
+        expect(plan.heights).toHaveLength(25);
+        expect(plan.geometry.structures.length).toBeGreaterThan(0);
+        expect(engine.planBiomeGeneration('dungeon', options)).toEqual(plan);
+        expect(engine.save()).toEqual(before);
+        expect(engine.canUndo).toBe(true);
+        expect(TerrainHeightUtils.getElevationUnit()).toBe(beforeUnit);
+        expect(changed).not.toHaveBeenCalled();
+
+        expect(engine.generateBiomeElevation('dungeon', options)).toBe(true);
+        expect(engine.save().heights).toEqual(plan.heights);
+        expect(engine.geometry.save()).toEqual(plan.geometry);
+        expect(engine.generationRecipe).toEqual(plan.generationRecipe);
+        expect(engine.treeDensityMultiplier).toBe(plan.densityMultiplier);
+        expect(engine.elevationScale).toBe(plan.elevationScale);
+      });
+
+      test('rejects a layout that cannot fit without changing the current map', () => {
+        const engine = new TerrainEngine(5, 5);
+        engine.setHeightAt(1, 1, 2);
+        const before = engine.save();
+        expect(() => engine.planBiomeGeneration('dungeon', { seed: 42 })).toThrow(/12 by 12/i);
+        expect(engine.save()).toEqual(before);
+        expect(engine.canUndo).toBe(true);
+      });
+
+      test('plans a cleared replacement at new dimensions without altering the existing map', () => {
+        const engine = new TerrainEngine(25, 25);
+        engine.placeStructure({
+          id: 'authored-wall',
+          kind: 'wall',
+          xFeet: 50,
+          zFeet: 50,
+          lengthFeet: 20,
+          widthFeet: 2,
+          heightFeet: 10,
+        });
+        engine.setHeightAt(1, 1, 3);
+        const before = engine.save();
+        const options = { seed: 42, structures: false };
+        const plan = engine.planBiomeGeneration('grassland', options, {
+          cols: 40,
+          rows: 15,
+          clear: true,
+        });
+        expect(plan.heights).toHaveLength(15);
+        expect(plan.heights.every((row) => row.length === 40)).toBe(true);
+        expect(plan.geometry.volumes).toEqual([]);
+        expect(plan.placements.length).toBeGreaterThan(0);
+        expect(
+          plan.placements.every(
+            ({ gridX, gridY }) => gridX >= 0 && gridX < 40 && gridY >= 0 && gridY < 15
+          )
+        ).toBe(true);
+        const clean = new TerrainEngine(40, 15).planBiomeGeneration('grassland', options);
+        expect({
+          heights: plan.heights,
+          geometry: plan.geometry,
+          placements: plan.placements,
+        }).toEqual({
+          heights: clean.heights,
+          geometry: clean.geometry,
+          placements: clean.placements,
+        });
+        expect(engine.save()).toEqual(before);
+        expect([engine.cols, engine.rows]).toEqual([25, 25]);
+        expect(() =>
+          engine.planBiomeGeneration('grassland', options, { cols: 40, rows: 15 })
+        ).toThrow(/clear/i);
+        expect(() =>
+          engine.planBiomeGeneration('dungeon', { seed: 42 }, { cols: 10, rows: 10, clear: true })
+        ).toThrow(/12 by 12/i);
+        expect(engine.save()).toEqual(before);
+      });
+    });
+
+    test('repeated generation with a locked seed is independent of the previous biome scale', () => {
+      const previousUnit = TerrainHeightUtils.getElevationUnit();
+      try {
+        TerrainHeightUtils.setElevationUnit(6);
+        const engine = new TerrainEngine(25, 25);
+        const options = { seed: 42, structures: false };
+        engine.generateBiomeElevation('mountain', options);
+        const first = engine.save().heights;
+        engine.generateBiomeElevation('mountain', options);
+        expect(engine.save().heights).toEqual(first);
+      } finally {
+        TerrainHeightUtils.setElevationUnit(previousUnit);
+      }
+    });
+
+    test('a saved surface choice regenerates the same terrain after switching biomes', () => {
+      const previousUnit = TerrainHeightUtils.getElevationUnit();
+      try {
+        const engine = new TerrainEngine(25, 25);
+        const options = { seed: 7, structures: false, roughness: 1.35 };
+        engine.generateBiomeElevation('grassland', options);
+        const saved = engine.save();
+        engine.generateBiomeElevation('mountain', { seed: 42, structures: false });
+        engine.generateBiomeElevation('grassland', options);
+        expect(engine.save().heights).toEqual(saved.heights);
+        const reopened = new TerrainEngine(1, 1);
+        reopened.load(saved);
+        expect(reopened.save()).toEqual(saved);
+        reopened.generateBiomeElevation('grassland', {
+          ...saved.generationRecipe.values,
+          seed: 7,
+          structures: false,
+        });
+        expect(reopened.save().heights).toEqual(saved.heights);
+      } finally {
+        TerrainHeightUtils.setElevationUnit(previousUnit);
+      }
+    });
+
+    test.each([
+      'coast',
+      'riverLake',
+      'floodplain',
+      'mangrove',
+      'deadForest',
+      'ashWastes',
+      'wasteland',
+      'graveyard',
+    ])('%s terrain survives save/reopen and reproduces with the same seed', (biomeKey) => {
+      const previousUnit = TerrainHeightUtils.getElevationUnit();
+      try {
+        const engine = new TerrainEngine(25, 25);
+        const options = { seed: 42, structures: false, relief: 1, waterBias: 0 };
+        expect(engine.generateBiomeElevation(biomeKey, options)).toBe(true);
+        const saved = engine.save();
+        const reopened = new TerrainEngine(1, 1);
+        reopened.load(saved);
+        expect(reopened.save()).toEqual(saved);
+        expect(reopened.generateBiomeElevation(biomeKey, options)).toBe(true);
+        expect(reopened.save().heights).toEqual(saved.heights);
+      } finally {
+        TerrainHeightUtils.setElevationUnit(previousUnit);
+      }
     });
 
     test('save preserves biome metadata', () => {

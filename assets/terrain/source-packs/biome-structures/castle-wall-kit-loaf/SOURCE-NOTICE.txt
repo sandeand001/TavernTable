@@ -1,0 +1,11 @@
+Castle Wall Kit
+Creator: loafbrr
+Source: https://loafbrr.itch.io/castle-wall-kit
+Acquired: 2026-11-20
+Acquired tier: Free
+License: CC0 1.0 Universal, as listed by the source page
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Included creator notice: contents/README.txt
+
+The creator notice permits personal and commercial project use and states that
+attribution is appreciated but not required.

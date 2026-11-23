@@ -7,6 +7,7 @@ import {
   hasConstructionMaterials,
 } from '../terrain/ConstructionMaterials.js';
 import TerrainSightMask from '../terrain/TerrainSightMask.js';
+import { createWaterSurface } from '../terrain/WaterSurface.js';
 import { doorLeafCells } from '../../campaigns/CampaignDoors.js';
 
 const CONTEXT_RADIUS_FEET = 10;
@@ -60,6 +61,9 @@ export default class MapProjectionTerrain {
     for (const source of this.sources.values()) {
       source.full.dispose();
       source.mesh.geometry.dispose();
+      source.waterFull?.dispose();
+      source.waterMesh?.geometry.dispose();
+      source.waterMaterial?.dispose();
     }
     this.sources.clear();
     for (const mesh of this.wallMeshes.values()) mesh.geometry.dispose();
@@ -140,7 +144,10 @@ export default class MapProjectionTerrain {
       unrestricted: !observer || supportContext || dmInterior,
     });
     const exclusions = interior ? this._interiorExclusions() : [];
-    for (const source of this.sources.values()) source.mesh.visible = false;
+    for (const source of this.sources.values()) {
+      source.mesh.visible = false;
+      if (source.waterMesh) source.waterMesh.visible = false;
+    }
     for (const [mapId, tokens] of groups) {
       const source = this._source(mapId);
       const scale = 5 / source.map.grid.tileWorldSize;
@@ -161,38 +168,37 @@ export default class MapProjectionTerrain {
       const sample = new this.three.Vector3();
       const closest = new this.three.Vector3();
       // A visible creature keeps its actual support even if a window hides the tile center.
+      const acceptFace = (face, water = false) => {
+        if (interior) return true;
+        if (this._covered(face)) return false;
+        if (this.gm.playerVisibleMapIds) return true;
+        const corridor = feet.some((point) => {
+          sample.set(face.center.x, 0, face.center.z);
+          if (point.line.start.distanceToSquared(point.line.end) <= EPSILON ** 2)
+            closest.copy(point.line.end);
+          else point.line.closestPointToPoint(sample, true, closest);
+          return (
+            (water || face.high <= point.y + EPSILON) &&
+            sample.distanceToSquared(closest) <= CONTEXT_RADIUS_FEET ** 2
+          );
+        });
+        return (
+          corridor &&
+          (feet.some(
+            (point) =>
+              point.support !== undefined &&
+              Math.abs(face.high - face.low) <= EPSILON &&
+              Math.abs(face.high - point.support) <= EPSILON &&
+              point.x >= face.minX - EPSILON &&
+              point.x <= face.maxX + EPSILON &&
+              point.z >= face.minZ - EPSILON &&
+              point.z <= face.maxZ + EPSILON
+          ) ||
+            this.world.hasLineOfSight(observerFeet, face.campaign, sightGeometry))
+        );
+      };
       const accepted = new Set(
-        source.faces
-          .filter((face) => {
-            if (interior) return true;
-            if (this._covered(face)) return false;
-            if (this.gm.playerVisibleMapIds) return true;
-            const corridor = feet.some((point) => {
-              sample.set(face.center.x, 0, face.center.z);
-              if (point.line.start.distanceToSquared(point.line.end) <= EPSILON ** 2)
-                closest.copy(point.line.end);
-              else point.line.closestPointToPoint(sample, true, closest);
-              return (
-                face.high <= point.y + EPSILON &&
-                sample.distanceToSquared(closest) <= CONTEXT_RADIUS_FEET ** 2
-              );
-            });
-            return (
-              corridor &&
-              (feet.some(
-                (point) =>
-                  point.support !== undefined &&
-                  Math.abs(face.high - face.low) <= EPSILON &&
-                  Math.abs(face.high - point.support) <= EPSILON &&
-                  point.x >= face.minX - EPSILON &&
-                  point.x <= face.maxX + EPSILON &&
-                  point.z >= face.minZ - EPSILON &&
-                  point.z <= face.maxZ + EPSILON
-              ) ||
-                this.world.hasLineOfSight(observerFeet, face.campaign, sightGeometry))
-            );
-          })
-          .map((face) => face.start)
+        source.faces.filter((face) => acceptFace(face)).map((face) => face.start)
       );
       const faceSize = source.reference.hasCurves ? 3 : 6;
       const geometry = sight.apply(source.full, {
@@ -204,8 +210,24 @@ export default class MapProjectionTerrain {
       source.mesh.geometry.dispose();
       source.mesh.geometry = geometry;
       source.mesh.visible = geometry.getAttribute('position').count > 0;
+      if (source.waterMesh) {
+        const acceptedWater = new Set(
+          source.waterFaces.filter((face) => acceptFace(face, true)).map((face) => face.start)
+        );
+        const waterGeometry = sight.apply(source.waterFull, {
+          toCampaign: source.toCampaign,
+          toView: source.toView,
+          acceptTriangle: (start) => acceptedWater.has(Math.floor(start / 6) * 6),
+          excludeSolids: exclusions,
+        });
+        source.waterMesh.geometry.dispose();
+        source.waterMesh.geometry = waterGeometry;
+        source.waterMesh.visible = waterGeometry.getAttribute('position').count > 0;
+      }
     }
-    this.root.visible = [...this.sources.values()].some((source) => source.mesh.visible);
+    this.root.visible = [...this.sources.values()].some(
+      (source) => source.mesh.visible || source.waterMesh?.visible
+    );
     this.signature = signature;
   }
 
@@ -561,12 +583,17 @@ export default class MapProjectionTerrain {
     const cached = this.sources.get(mapId);
     const map = cached?.reference === reference ? cached.map : this.world.getMap(mapId);
     const partition = this._partition(map, reference);
-    const key = JSON.stringify([this.gm.campaignMapId, partition]);
+    const interior = Number.isFinite(this.gm.terrainEngine.geometry.terrainThicknessFeet);
+    const key = JSON.stringify([this.gm.campaignMapId, partition, interior]);
     if (cached?.reference === reference && cached.key === key) return cached;
     if (cached) {
       cached.full.dispose();
       cached.mesh.geometry.dispose();
       cached.mesh.removeFromParent();
+      cached.waterFull?.dispose();
+      cached.waterMesh?.geometry.dispose();
+      cached.waterMaterial?.dispose();
+      cached.waterMesh?.removeFromParent();
     }
     const full = new TerrainVolumeMeshBuilder().build({
       geometry: {
@@ -587,9 +614,53 @@ export default class MapProjectionTerrain {
       );
     const toView = this._transform(map, this.gm.campaignMapId);
     const toCampaign = this._transform(map);
-    const positions = full.getAttribute('position');
+    const faces = this._projectionFaces(full, reference.hasCurves ? 3 : 6, toView, toCampaign);
+    const mesh = new this.three.Mesh(new this.three.BufferGeometry(), this.material);
+    mesh.name = `MapProjectionTerrain:${mapId}`;
+    this.root.add(mesh);
+    const waterMesh =
+      map.base !== 'floor' && !map.building
+        ? createWaterSurface({
+            biomeKey: map.terrain.biome,
+            cols: map.grid.cols,
+            rows: map.grid.rows,
+            getHeight: (x, z) => map.terrain.heights[z][x],
+            tileWorldSize: 5,
+            three: this.three,
+            mergeCells: interior,
+          })
+        : null;
+    let waterFull = null;
+    let waterFaces = [];
+    if (waterMesh) {
+      waterFull = waterMesh.geometry.toNonIndexed();
+      waterMesh.geometry.dispose();
+      waterMesh.geometry = new this.three.BufferGeometry();
+      waterMesh.name = `MapProjectionWater:${mapId}`;
+      waterFaces = this._projectionFaces(waterFull, 6, toView, toCampaign);
+      this.root.add(waterMesh);
+    }
+    const source = {
+      reference,
+      map,
+      key,
+      full,
+      faces,
+      toView,
+      toCampaign,
+      mesh,
+      waterMesh,
+      waterFull,
+      waterFaces,
+      waterMaterial: waterMesh?.material ?? null,
+    };
+    this.sources.set(mapId, source);
+    return source;
+  }
+
+  _projectionFaces(geometry, faceSize, toView, toCampaign) {
+    const positions = geometry.getAttribute('position');
     const faces = [];
-    const faceSize = reference.hasCurves ? 3 : 6;
     for (let start = 0; start < positions.count; start += faceSize) {
       const center = new this.three.Vector3();
       let low = Infinity;
@@ -628,12 +699,7 @@ export default class MapProjectionTerrain {
         viewHigh: viewY(high),
       });
     }
-    const mesh = new this.three.Mesh(new this.three.BufferGeometry(), this.material);
-    mesh.name = `MapProjectionTerrain:${mapId}`;
-    this.root.add(mesh);
-    const source = { reference, map, key, full, faces, toView, toCampaign, mesh };
-    this.sources.set(mapId, source);
-    return source;
+    return faces;
   }
 
   _covered(face) {

@@ -2,6 +2,7 @@
 import { createHash, webcrypto } from 'node:crypto';
 import CloudPlayerSessionConnection from '../../../src/campaigns/CloudPlayerSessionConnection.js';
 import CloudParticipantCache from '../../../src/campaigns/CloudParticipantCache.js';
+import { applyCloudParticipantDelta } from '../../../src/campaigns/CloudParticipantProtocol.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { testIndexedDB } from '../../helpers/indexedDB.js';
 import { participantStorage } from '../../helpers/participantStorage.js';
@@ -865,6 +866,123 @@ test('an initial join follows a newer observed view instead of admitting or wait
     for (const request of setup.requests) request.resolve();
     await setup.connection.close();
     await opening.catch(() => {});
+  }
+});
+
+test('a same-observer terrain refresh can carry an approved ground route but not a mismatched origin', () => {
+  const first = snapshot();
+  const second = snapshot();
+  const { mapId, gridX, gridY, facingAngle, pose } = first.state.publicScene.actors[0];
+  const from = { mapId, gridX, gridY, facingAngle, pose };
+  const destination = {
+    ...from,
+    gridX: 2,
+    pose: { ...pose, world: { ...pose.world, x: 2.5 } },
+  };
+  second.generation++;
+  second.viewKey = 'b'.repeat(64);
+  second.state.sceneRevision++;
+  second.state.campaign.sceneRevision++;
+  second.state.publicScene.assetKey = 'refreshed-assets';
+  Object.assign(second.state.publicScene.actors[0], destination);
+  const delta = {
+    version: 1,
+    access,
+    sessionId,
+    kind: 'replace',
+    baseGeneration: first.generation,
+    generation: second.generation,
+    viewKey: second.viewKey,
+    checkpoint: second,
+    presentations: [
+      {
+        kind: 'move',
+        tokenId: 'hero-token',
+        commandId: '55555555-5555-4555-8555-555555555555',
+        sceneRevision: 2,
+        charactersRevision: 1,
+        motion: { kind: 'walk', completed: true, from, route: [destination] },
+      },
+    ],
+  };
+  expect(applyCloudParticipantDelta(first, delta)).toEqual(second);
+  const differentOrigin = structuredClone(delta);
+  differentOrigin.presentations[0].motion.from = destination;
+  expect(() => applyCloudParticipantDelta(first, differentOrigin)).toThrow(
+    'The authorized participant checkpoint could not be verified'
+  );
+});
+
+test('a committed Free Roam reply starts the owned route before the observation catches up', async () => {
+  const setup = fixture();
+  const opening = setup.connection.open({ observerTokenId: 'hero-token' });
+  let sending;
+  await setup.observed;
+  try {
+    const before = snapshot();
+    setup.observations[0].publish(before);
+    await new Promise((resolve) => setImmediate(resolve));
+    setup.requests[0].resolve();
+    await opening;
+    const { mapId, gridX, gridY, facingAngle, pose } = before.state.publicScene.actors[0];
+    const from = { mapId, gridX, gridY, facingAngle, pose };
+    const destination = {
+      ...from,
+      gridX: 2,
+      pose: { ...pose, world: { ...pose.world, x: 2.5 } },
+    };
+    const motion = { kind: 'walk', completed: true, from, route: [destination] };
+    const command = {
+      version: 1,
+      commandId: '55555555-5555-4555-8555-555555555555',
+      kind: 'move',
+      tokenId: 'hero-token',
+      observerTokenId: 'hero-token',
+      sceneRevision: 1,
+      charactersRevision: 1,
+      payload: { target: { mapId: 'main', gridX: 2, gridY: 1 } },
+      view: { mapId: 'main', assetKey: before.state.publicScene.assetKey },
+    };
+    setup.store.commitWorldCommand.mockResolvedValue({
+      outcome: 'applied',
+      freeRoam: true,
+      applied: { generation: 2, sceneRevision: 2, charactersRevision: 1 },
+      presentation: {
+        kind: 'move',
+        tokenId: command.tokenId,
+        motion,
+        route: [destination],
+        placement: destination,
+        costFeet: 5,
+        budget: { movementSpentFeet: 0, movementRemainingFeet: 30, movementAllowanceFeet: 30 },
+      },
+    });
+    const listener = jest.fn();
+    setup.connection.subscribe(listener);
+    sending = setup.connection.call('playerCommand', [campaignId, command]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(listener).toHaveBeenCalledWith({
+      type: 'live-presentations',
+      campaignId,
+      confirmed: true,
+      sceneRevision: 2,
+      presentations: [
+        { kind: 'move', tokenId: command.tokenId, commandId: command.commandId, motion },
+      ],
+    });
+    expect(setup.connection.readLiveState().sceneRevision).toBe(1);
+    const next = snapshot();
+    next.generation++;
+    next.state.sceneRevision++;
+    next.state.campaign.sceneRevision++;
+    next.state.publicScene.assets = null;
+    Object.assign(next.state.publicScene.actors[0], destination);
+    setup.observations[0].publish(next, { reconcile: false });
+    expect((await sending).applied.sceneRevision).toBe(2);
+  } finally {
+    for (const request of setup.requests) request.resolve();
+    await setup.connection.close();
+    await Promise.all([opening.catch(() => {}), sending?.catch(() => {})]);
   }
 });
 

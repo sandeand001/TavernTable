@@ -10,6 +10,7 @@ import CampaignWorld from '../../../src/campaigns/CampaignWorld.js';
 import { CharacterLibrary } from '../../../src/entities/characters/CharacterLibrary.js';
 import { sceneState } from '../../helpers/sceneState.js';
 import { openTraversalDoors } from '../../helpers/openTraversalDoors.js';
+import { buildingLocalToFeet } from '../../../src/terrain/BuildingModel.js';
 
 function generate(
   key,
@@ -35,6 +36,18 @@ test('a village has a green, winding lanes, named landmarks and irregular mixed 
   expect(volumes.some((v) => v.layerId === 'garden')).toBe(true);
   expect(volumes.some((v) => v.layerId === 'street' && v.shape?.kind === 'prism')).toBe(true);
   expect(volumes.some((v) => v.layerId === 'garden-fence')).toBe(true);
+});
+
+test('the generated village appearance survives save and reopen without changing topology', () => {
+  const engine = generate('town', undefined, undefined, 91);
+  const buildings = engine.geometry.getStructures().filter((spec) => spec.kind === 'building');
+  expect(buildings.length).toBeGreaterThan(1);
+  expect(
+    buildings.every((spec) => spec.appearance.facadeModelKey === 'source-medieval-wall-door')
+  ).toBe(true);
+  const restored = new TerrainEngine(1, 1);
+  restored.load(engine.save());
+  expect(restored.geometry.save()).toEqual(engine.geometry.save());
 });
 
 test('a city has dense multi-storey districts, a civic skyline, paved streets and an actual six-stall market', () => {
@@ -89,6 +102,42 @@ test('a default-size fortress is a grand layered estate with a tall keep, bastio
   expect(new Set(specs.map((s) => s.appearance.wallColor)).size).toBeGreaterThanOrEqual(3);
 });
 
+test('castle curtain walls meet at square bastion corners and turret entrances face inward', () => {
+  const engine = generate('castle'),
+    specs = engine.geometry.getStructures(),
+    walls = specs.filter((spec) => spec.kind === 'wall' && spec.style === 'battlement'),
+    bastions = specs.filter((spec) => spec.name.endsWith('Bastion'));
+  expect(bastions).toHaveLength(4);
+  const endpoints = walls.flatMap((wall) => {
+    const dx = (Math.cos(wall.angleRadians) * wall.lengthFeet) / 2,
+      dz = (Math.sin(wall.angleRadians) * wall.lengthFeet) / 2;
+    return [
+      { x: wall.xFeet - dx, z: wall.zFeet - dz },
+      { x: wall.xFeet + dx, z: wall.zFeet + dz },
+    ];
+  });
+  for (const side of walls.filter((wall) => /West Curtain|East Curtain/.test(wall.name)))
+    expect(Math.abs(Math.sin(side.angleRadians))).toBeCloseTo(1, 6);
+  for (const bastion of bastions) {
+    expect(
+      Math.min(
+        ...endpoints.map((point) => Math.hypot(point.x - bastion.xFeet, point.z - bastion.zFeet))
+      )
+    ).toBeLessThanOrEqual(
+      bastion.diameterFeet / 2 + Math.max(...walls.map((wall) => wall.widthFeet)) / 2 - 2.5
+    );
+    const doorway = buildingLocalToFeet(bastion, {
+      x: 0,
+      y: 0,
+      z: bastion.diameterFeet / 2,
+    });
+    const inward =
+      (doorway.x - bastion.xFeet) * (engine.cols * 2.5 - bastion.xFeet) +
+      (doorway.z - bastion.zFeet) * (engine.rows * 2.5 - bastion.zFeet);
+    expect(inward).toBeGreaterThan(0);
+  }
+});
+
 test.each(['town', 'city', 'castle', 'ruinedTown', 'ruinedUrban', 'ruinedCastle'])(
   '%s respects its artistic structure, volume and floor budgets and repeats without accumulating site props',
   (key) => {
@@ -128,6 +177,37 @@ test.each(['town', 'city', 'castle'])(
     });
   }
 );
+
+test('a reviewed biome variant and footprint replace the current selection during generation', async () => {
+  const engine = new TerrainEngine(25, 25);
+  engine.setBiome('town', { generateIfFlat: false, seed: 42 });
+  const gm = {
+    terrainEngine: engine,
+    placedTokens: [],
+    spatial: { tileWorldSize: 1, elevationUnit: 0.5 },
+    resizeGrid: jest.fn((cols, rows) => engine.resize(cols, rows)),
+  };
+  await generateCampaignBiome(gm, {
+    biomeKey: 'castle',
+    canvasScale: 1.4,
+    densityMultiplier: 0.55,
+  });
+  expect(engine.biomeKey).toBe('castle');
+  expect(engine.cols).toBe(70);
+  expect(engine.rows).toBe(70);
+  expect(engine.treeDensityMultiplier).toBe(0.55);
+  expect(engine.generationRecipe).toEqual({
+    version: 1,
+    biomeKey: 'castle',
+    values: {
+      canvasScale: 1.4,
+      densityMultiplier: 0.55,
+    },
+  });
+  const restored = new TerrainEngine(1, 1);
+  restored.load(engine.save());
+  expect(restored.generationRecipe).toEqual(engine.generationRecipe);
+});
 
 test.each(['custom', 'occupied', 'manual', 'no-structures'])(
   '%s maps are never automatically resized',

@@ -42,8 +42,8 @@ legacy box-only version 1 retained. The cave/dome/tube/battlement/tower recipes
 are deterministic domain data shared by illustrated manual placement, safe
 parameter resizing and seeded biome features. Editable groups use geometry
 version 3, including arbitrary-angle prism walls. The UI previews only candidate
-shapes, not a second world model; authoritative solids bake on commit. Generation
-preserves manual groups and uses explicit intact/ruined town, city and fortress
+shapes, not a second world model; authoritative solids bake on commit. Direct
+engine generation preserves manual groups and uses explicit intact/ruined town, city and fortress
 profiles with organic village greens/lanes, dense city districts and markets, and
 layered castles with grand keeps, bailey towers and arched gatehouses. Building
 appearance is saved domain data; colour/material provenance survives clipping,
@@ -66,8 +66,27 @@ connected halls keep their ordinary map ownership/alignment. A versioned terrace
 exit on retaining stairs opens the opposite parapet so it joins the upper site.
 The general natural-cave generator and non-to-scale designed interiors remain
 separate later milestones.
-Only untouched default canvases (or their unedited auto-sized successors) may grow
-to the biome's recommended size; populated/custom maps retain their dimensions.
+The confirmed campaign-generation review now chooses an explicit grid size and
+replaces the active map's authored and generated content rather than automatically
+expanding an untouched settlement canvas. It stages terrain, scenery, model
+resources and connected-map reconciliation before committing, retains character
+records and compatible linked areas, and restores the prior scene, camera,
+selection and terrain history if the commit fails. Linked building floors may
+resize around their unchanged physical footprint, but cannot shrink below it;
+incompatible physical connections reject replacement rather than silently
+deleting another map. The older direct-generation
+entry point retains its legacy sizing and manual-group behavior for existing callers.
+Natural cavern generation can also create versioned logical passages to blank,
+independently editable chambers or outside maps in separate locations. Their
+endpoints derive from each map's grid edge and terrain, rather than a shared
+physical coordinate system; markers are render-only. Passage and landing
+validation remains in campaign topology, and player projections expose only
+local entrance identifiers and sides. This adds neither another terrain owner
+nor automatic conversion of older physical cavern connections.
+Underground illumination is likewise presentation state: the renderer applies a
+sun-independent ambient profile and bounded map-local lights derived from actual
+placeables. It does not change terrain ownership, physical sight, saved vision
+rules or the outdoor sun. Generated Dungeon torches are ordinary saved placeables.
 Natural landmarks include intact and broken buildings on dry, gentle sites.
 Bounded cave networks share a floor and union their shells before subtracting
 rooms and passage bores; member edits preserve interleaved CSG slots instead of

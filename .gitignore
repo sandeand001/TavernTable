@@ -10,6 +10,7 @@ build/
 # Test coverage reports
 coverage/
 *.lcov
+test-results/
 
 # Environment files
 .env
@@ -38,3 +39,17 @@ Thumbs.db
 
 # Optional: Exclude archive directory if you don't want to track old development files
 # archive/
+
+# Downloaded third-party source packs are kept locally for evaluation and ingestion.
+# Track provenance/manifest notices, not raw archives or extracted asset files.
+assets/terrain/source-packs/**/*.zip
+assets/terrain/source-packs/**/contents/
+assets/animated-sprites/source-packs/**/*.zip
+assets/animated-sprites/source-packs/**/contents/
+assets/Items/source-packs/**/*.zip
+assets/Items/source-packs/**/contents/
+
+# Earlier representative models have end-product-only redistribution terms.
+# Preserve local copies, but never include them in the public repository.
+assets/terrain/representatives/cave/
+assets/terrain/representatives/chest/

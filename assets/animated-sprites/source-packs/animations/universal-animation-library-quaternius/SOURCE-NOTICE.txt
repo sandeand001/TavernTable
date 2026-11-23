@@ -1,0 +1,12 @@
+Universal Animation Library
+Creator: Quaternius
+Source: https://quaternius.itch.io/universal-animation-library
+Acquired: 2026-11-20
+Acquired tier: Standard
+License: CC0 1.0 Universal
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+Included license: contents/Universal Animation Library[Standard]/License.txt
+
+Standard is a partial free tier. The files are not registered as TavernTable
+animations; each clip first requires Mixamo-style bone mapping, timing, root
+motion, and gameplay contract validation.

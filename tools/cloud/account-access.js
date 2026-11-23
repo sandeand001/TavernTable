@@ -26,11 +26,16 @@ function pilotAccountKey(uid) {
 }
 
 class CloudAccountAccess {
-  constructor({ auth, firestore }) {
-    if (typeof auth?.verifyIdToken !== 'function' || typeof firestore?.collection !== 'function')
+  constructor({ auth, firestore, eligibilityMode = 'pilot' }) {
+    if (
+      typeof auth?.verifyIdToken !== 'function' ||
+      typeof firestore?.collection !== 'function' ||
+      !['pilot', 'public'].includes(eligibilityMode)
+    )
       throw new Error('Cloud account access requires identity and metadata clients');
     this.auth = auth;
     this.firestore = firestore;
+    this.eligibilityMode = eligibilityMode;
   }
 
   async verifyAuthorization(authorization) {
@@ -75,6 +80,9 @@ class CloudAccountAccess {
 
   async assertEligibility(uid, transaction = null) {
     const record = await this._eligibility(uid, transaction);
+    if (record === null && this.eligibilityMode === 'public') return;
+    if (record?.enabled === false && this.eligibilityMode === 'public')
+      throw accessError(403, 'account-disabled', 'This account is disabled for cloud campaigns');
     if (!record?.enabled)
       throw accessError(
         403,
@@ -85,13 +93,15 @@ class CloudAccountAccess {
 
   async assertInvitationEligibility(uid, transaction) {
     const record = await this._eligibility(uid, transaction);
+    if (record?.enabled === false && this.eligibilityMode === 'public')
+      throw accessError(403, 'account-disabled', 'This account is disabled for cloud campaigns');
     if (record !== null && !record.enabled)
       throw accessError(
         403,
         'pilot-access-required',
         'This account is not enabled for the private pilot'
       );
-    return record !== null;
+    return record !== null || this.eligibilityMode === 'public';
   }
 
   async _eligibility(uid, transaction = null) {

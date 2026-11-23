@@ -1,0 +1,30 @@
+{
+  "sourcePack": "assetquest-forest",
+  "sourceDirectory": "assets/terrain/plants/forest",
+  "files": [
+    {
+      "path": "Fly_Agaric_Big.fbx",
+      "source": "Meshes/Fly_Agaric_Big.fbx",
+      "bytes": 27632,
+      "sha256": "0aa39f2bd91651b2242531bb215e38a9743b68d010e6f455177f16dc4cdfc02b"
+    },
+    {
+      "path": "Purple_Mushrooms_Cluster_3.fbx",
+      "source": "Meshes/Purple_Mushrooms_Cluster_3.fbx",
+      "bytes": 30560,
+      "sha256": "134267b28589e0f27fbbb7e218982d244da1ed7cb2eb86f9dc4eaadbf3b27296"
+    },
+    {
+      "path": "Forest_Pack_BaseColor.png",
+      "source": "Textures/Forest_Pack_BaseColor.png",
+      "bytes": 6521,
+      "sha256": "9a49243dce91e2b263e11b2298fe1643d8fe5822015d705d0573cf42a807e289"
+    },
+    {
+      "path": "Forest_Kit_License.txt",
+      "source": "Forest_Kit_License.txt",
+      "bytes": 566,
+      "sha256": "3c7534c6c1ae56285ad704927484e7c6989e3188dfc1e84500aa63e5dfe8ce3a"
+    }
+  ]
+}

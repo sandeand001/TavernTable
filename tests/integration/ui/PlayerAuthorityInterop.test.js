@@ -21,6 +21,7 @@ import { CompendiumCatalog } from '../../../src/entities/characters/CompendiumCa
 import { connectCharacterServices } from '../../../src/ui/characters/characterServices.js';
 import { attachHostSessionUpdates } from '../../../src/ui/sessions/HostSessionUpdates.js';
 import { disposeConnectedTravelBoard } from '../../helpers/connectedTravelBoard.js';
+import { validateAuthoritativeRoll } from '../../../src/systems/dice/AuthoritativeDiceReplay.js';
 
 const WAIT_TIMEOUT_MS = 10000;
 
@@ -1165,6 +1166,10 @@ test('real player dice buttons work between turns and display the server-recorde
       identity: { role: 'player' },
       resources: { catalog: async () => table.catalog, close() {} },
     });
+    const replay = jest.spyOn(app.dice, 'play').mockImplementation(async (roll) => {
+      validateAuthoritativeRoll(roll);
+      return { completed: true };
+    });
     await app.start();
     const token = gm.placedTokens[0];
     await app.input.endTurn(token);
@@ -1172,24 +1177,27 @@ test('real player dice buttons work between turns and display the server-recorde
     const dice = document.querySelector('[data-dice][data-sides="6"]');
     expect(dice.disabled).toBe(false);
     document.querySelector('[data-dice-count]').value = '1';
-    dice.click();
-    await app.commands.idle;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      dice.click();
+      await app.commands.idle;
+      if (!replay.mock.calls.at(-1)?.[0]?.rerollRequired) break;
+    }
     const own = app.state.gameplay.ownedTokens[0];
     expect(own.economy).toEqual(before.economy);
     expect(own.movement).toEqual(before.movement);
     const saved = await table.dm.connection.call('readCharacters', [table.campaign.id]);
     const native = gameplayRuntime(JSON.parse(saved.scene), gm.characterServices.library);
     const history = native.combat.history(native.actors.find((actor) => actor.id === token.id));
-    expect(history).toHaveLength(1);
-    expect(history[0].expression).toBe('1d6');
-    expect(history[0].rollResult.total).toBeGreaterThanOrEqual(1);
-    expect(history[0].rollResult.total).toBeLessThanOrEqual(6);
-    expect(app.controls.diceResult.textContent).toBe(history[0].rollText);
+    const recorded = history.find((entry) => entry.rollResult);
+    expect(recorded.expression).toBe('1d6');
+    expect(recorded.rollResult.total).toBeGreaterThanOrEqual(1);
+    expect(recorded.rollResult.total).toBeLessThanOrEqual(6);
+    expect(app.controls.diceResult.textContent).toBe(recorded.rollText);
     expect(
       table.calls
         .filter((call) => call.operation === 'playerCommand')
         .map((call) => call.args[1].kind)
-    ).toEqual(['turn.end', 'roll']);
+    ).toEqual(['turn.end', ...replay.mock.calls.map(() => 'roll')]);
     expect(gm.characterServices.combat).toBeNull();
   } finally {
     if (app) await app.destroy();

@@ -12,6 +12,7 @@
  *      roughness?: number,     // noise complexity multiplier (0.5..2 typical)
  *      waterBias?: number,     // pushes heights downward (negative) or upward (positive)
  *      orientation?: number,   // degrees for directional features (e.g., dunes)
+ *      elevationUnit?: number, // optional quantization scale
  *    }
  *
  *  - isAllDefaultHeight(heightArray, defaultHeight?) -> boolean
@@ -19,7 +20,10 @@
  */
 
 import { TERRAIN_CONFIG } from '../../config/terrain/TerrainConstants.js';
-import { SETTLEMENT_BIOME_KEYS } from '../../config/biome/BiomeConstants.js';
+import {
+  BLOOD_MARSH_MIN_PLANT_LEVEL,
+  SETTLEMENT_BIOME_KEYS,
+} from '../../config/biome/BiomeConstants.js';
 import { getSettlementProfile } from '../../config/biome/SettlementProfiles.js';
 import { generateCastleSiteHeights } from './CastleSites.js';
 import { TerrainHeightUtils } from '../../utils/terrain/TerrainHeightUtils.js';
@@ -35,6 +39,7 @@ const BIOME_AMPLITUDE_BY_KEY = {
   hills: 7,
   mountain: 10,
   alpine: 10,
+  screeSlope: 8,
   // Deserts
   desertHot: 3,
   sandDunes: 8,
@@ -50,10 +55,10 @@ const BIOME_AMPLITUDE_BY_KEY = {
   mangrove: 3,
   riverLake: 4,
   // Cold
-  tundra: 2,
+  tundra: 3,
   glacier: 6,
   frozenLake: 3,
-  packIce: 3,
+  packIce: 4,
   // Coasts/oceanic
   coast: 5,
   ocean: 5,
@@ -127,6 +132,7 @@ const BIOME_ELEVATION_PROFILES = (() => {
     ridgePower: 1.0,
     jumpPx: 2.5,
   });
+  set(['tundra'], { minAmp: 2 });
   // Dunes: extra smooth
   set(['sandDunes'], {
     minAmp: 4,
@@ -162,6 +168,7 @@ const BIOME_ELEVATION_PROFILES = (() => {
     ridgePower: 1.25,
     jumpPx: 10.0,
   });
+  set(['screeSlope'], { minAmp: 6 });
 
   // Wet/lowland
   set(['wetlands', 'swamp', 'floodplain', 'mangrove', 'riverLake', 'geyserBasin', 'bloodMarsh'], {
@@ -173,6 +180,11 @@ const BIOME_ELEVATION_PROFILES = (() => {
     waterShift: -1,
     jumpPx: 2.5,
   });
+  set(['floodplain', 'mangrove', 'riverLake'], { waterShift: 1 });
+  set(['swamp', 'wetlands'], { waterShift: 0.5 });
+  set(['bloodMarsh'], { waterShift: 1.5 });
+  set(['geyserBasin'], { waterShift: 3 });
+  set(['deadForest', 'ashWastes', 'wasteland'], { waterShift: 2 });
 
   // Aquatic
   set(['ocean'], {
@@ -196,7 +208,7 @@ const BIOME_ELEVATION_PROFILES = (() => {
 
   // Cold
   set(['glacier'], { minAmp: 5, maxAmp: 7, ridgePower: 1.12, jumpPx: 6.0 });
-  set(['packIce'], { minAmp: 4, maxAmp: 6, smoothRadius: 1, smoothIterations: 1, jumpPx: 3.5 });
+  set(['packIce'], { minAmp: 2, maxAmp: 6, smoothRadius: 1, smoothIterations: 1, jumpPx: 3.5 });
 
   // Underground/exotic
   set(['cavern'], {
@@ -293,9 +305,22 @@ export function isAllDefaultHeight(heightArray, defaultHeight = TERRAIN_CONFIG.D
 }
 
 export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) {
+  if (
+    options.saltFlatReliefVersion !== undefined &&
+    (biomeKey !== 'saltFlats' || options.saltFlatReliefVersion !== 1)
+  )
+    throw new TypeError('Choose a supported Salt Flats relief version');
+  if (
+    options.saltFlatReliefVersion === 1 &&
+    ((options.relief !== undefined &&
+      (!Number.isFinite(options.relief) || options.relief < 0.1 || options.relief > 5)) ||
+      (options.waterBias !== undefined &&
+        (!Number.isFinite(options.waterBias) || Math.abs(options.waterBias) > 5)))
+  )
+    throw new TypeError('Choose valid Salt Flats relief and moisture settings');
   if (getSettlementProfile(biomeKey)?.site)
     return generateCastleSiteHeights(biomeKey, rows, cols, options);
-  if (SETTLEMENT_BIOME_KEYS.includes(biomeKey))
+  if (biomeKey === 'dungeon' || SETTLEMENT_BIOME_KEYS.includes(biomeKey))
     return TerrainHeightUtils.createHeightArray(rows, cols, 0);
   const seed = Number.isFinite(options.seed)
     ? options.seed
@@ -307,6 +332,7 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
 
   const recipe = pickRecipe(biomeKey);
   const profile = getProfileForBiome(biomeKey);
+  const saltRelief = options.saltFlatReliefVersion === 1;
 
   // First pass: compute raw heights from the biome recipe (floating)
   const raw = TerrainHeightUtils.createHeightArray(rows, cols, 0);
@@ -318,8 +344,9 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
       const nx = cols > 1 ? x / (cols - 1) : 0.5;
       const ny = rows > 1 ? y / (rows - 1) : 0.5;
       const h = recipe(x, y, nx, ny, seed, {
-        relief: reliefMul,
+        relief: saltRelief ? 1 : reliefMul,
         roughness,
+        surfaceFrequency: roughness ?? 1,
         waterBias,
         orientation,
       });
@@ -339,14 +366,19 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   // Biome-themed amplitude (in levels), only scaled by optional relief; perception affects quantization, not amplitude
   const biomeBase = BIOME_AMPLITUDE_BY_KEY[biomeKey] ?? Math.round(maxAbsLevel * 0.6);
   const reliefFactor = Number.isFinite(reliefMul) ? reliefMul : 1;
-  let targetAmplitude = Math.max(1, Math.min(maxAbsLevel, Math.round(biomeBase * reliefFactor)));
+  let targetAmplitude = Math.max(
+    1,
+    Math.min(maxAbsLevel, Math.round(biomeBase * (saltRelief ? 1 : reliefFactor)))
+  );
   // Clamp by biome profile range if provided
   if (Number.isFinite(profile.minAmp)) targetAmplitude = Math.max(profile.minAmp, targetAmplitude);
   if (Number.isFinite(profile.maxAmp)) targetAmplitude = Math.min(profile.maxAmp, targetAmplitude);
 
   // Determine quantization step by desired visual jump size and current elevation unit
   const baseUnit = TERRAIN_CONFIG.ELEVATION_SHADOW_OFFSET || 8;
-  const currentUnit = TerrainHeightUtils.getElevationUnit();
+  const currentUnit = Number.isFinite(options.elevationUnit)
+    ? options.elevationUnit
+    : TerrainHeightUtils.getElevationUnit();
   const unitPx = currentUnit > 0 ? currentUnit : baseUnit;
   let step = TERRAIN_CONFIG.HEIGHT_STEP || 1;
   if (typeof profile.jumpPx === 'number' && profile.jumpPx > 0 && unitPx > 0) {
@@ -359,6 +391,9 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
   } else if (typeof profile.quantStep === 'number' && profile.quantStep > 0) {
     step = profile.quantStep;
   }
+  // Sub-level quantization preserves subtle salt-pan relief and marsh gradients.
+  if (saltRelief || ['bloodMarsh', 'swamp', 'wetlands'].includes(biomeKey))
+    step = Math.min(step, 0.25);
   if (!(maxAbsRaw > 1e-6)) {
     for (let y = 0; y < rows; y++)
       for (let x = 0; x < cols; x++) raw[y][x] = TERRAIN_CONFIG.DEFAULT_HEIGHT;
@@ -386,6 +421,24 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
     applyRidgePowerInPlace(raw, rows, cols, profile.ridgePower);
   }
 
+  if (saltRelief) {
+    // Scale deviations around the moisture baseline rather than shifting the whole field.
+    let sum = 0;
+    for (const row of raw) for (const height of row) sum += height;
+    const center = sum / (rows * cols);
+    let deviation = 0;
+    for (const row of raw)
+      for (const height of row) deviation = Math.max(deviation, Math.abs(height - center));
+    if (deviation > 1e-9) {
+      const target = Math.min(1.5, Math.max(0.2, 1 + (reliefFactor - 1) * 2.5));
+      const scale = target / deviation;
+      const baseline = Math.max(-2, Math.min(2, (waterBias ?? -0.3) * 3));
+      for (let y = 0; y < rows; y++)
+        for (let x = 0; x < cols; x++) raw[y][x] = baseline + (raw[y][x] - center) * scale;
+      smoothHeightsInPlace(raw, rows, cols, 1, 1);
+    }
+  }
+
   // Optional water shift to bias below or above sea level (0)
   const shift = Number.isFinite(profile.waterShift) ? profile.waterShift : 0;
   for (let y = 0; y < rows; y++) {
@@ -393,6 +446,47 @@ export function generateBiomeElevationField(biomeKey, rows, cols, options = {}) 
       const v = raw[y][x] + shift;
       const quantized = Math.round(v / step) * step;
       raw[y][x] = TerrainHeightUtils.clampHeight(quantized);
+    }
+  }
+
+  // Keep a shallow bank when the entire marsh is too deep for vegetation.
+  if (
+    biomeKey === 'bloodMarsh' &&
+    raw.every((row) => row.every((height) => height < BLOOD_MARSH_MIN_PLANT_LEVEL))
+  ) {
+    const centerX = Math.floor(cols / 2);
+    const centerY = Math.floor(rows / 2);
+    let highest = { x: centerX, y: centerY, height: -Infinity, distance: Infinity };
+    for (let y = rows > 2 ? 1 : 0; y < (rows > 2 ? rows - 1 : rows); y++)
+      for (let x = cols > 2 ? 1 : 0; x < (cols > 2 ? cols - 1 : cols); x++) {
+        const height = raw[y][x];
+        const distance = Math.abs(x - centerX) + Math.abs(y - centerY);
+        if (height > highest.height || (height === highest.height && distance < highest.distance))
+          highest = { x, y, height, distance };
+      }
+    raw[highest.y][highest.x] = BLOOD_MARSH_MIN_PLANT_LEVEL;
+  }
+
+  // Keep a low vent or wet pocket when the entire basin is above the waterline.
+  if (
+    ['geyserBasin', 'swamp', 'wetlands'].includes(biomeKey) &&
+    raw.every((row) => row.every((height) => height >= 0))
+  ) {
+    let lowest = { x: 0, y: 0, height: Infinity };
+    for (let y = rows > 2 ? 1 : 0; y < (rows > 2 ? rows - 1 : rows); y++)
+      for (let x = cols > 2 ? 1 : 0; x < (cols > 2 ? cols - 1 : cols); x++)
+        if (raw[y][x] < lowest.height) lowest = { x, y, height: raw[y][x] };
+    for (const [dx, dy] of [
+      [0, 0],
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ]) {
+      const x = lowest.x + dx;
+      const y = lowest.y + dy;
+      if (x >= 0 && x < cols && y >= 0 && y < rows)
+        raw[y][x] = TerrainHeightUtils.clampHeight(-step);
     }
   }
 

@@ -417,51 +417,54 @@ test('a snap commit revalidates a floor occupied after preview without moving or
   }
 });
 
-test('a normal Castle main building has joined wings reachable through real shared-floor openings', async () => {
-  const { gm, editor } = await fixture(undefined, { gridSize: 50, rooms: false });
-  try {
-    gm.terrainEngine.generateBiomeElevation('castle', { seed: 42 });
-    const world = gm.campaignWorld,
-      scene = world.save(),
-      keep = gm.terrainEngine.geometry
-        .getStructures()
-        .find((spec) => spec.name.endsWith('High Keep')),
-      main = scene.maps.find(
-        (map) => map.building?.structureId === keep.id && map.building.floor === 0
-      ),
-      openings = world.getConnections().filter((connection) => connection.kind === 'opening');
-    expect(
-      openings.some((connection) => connection.ends.some((end) => end.mapId === main.id))
-    ).toBe(true);
-    const reached = new Set([main.id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const connection of openings)
-        if (connection.ends.some((end) => reached.has(end.mapId)))
-          for (const end of connection.ends)
-            if (!reached.has(end.mapId)) {
-              reached.add(end.mapId);
-              changed = true;
-            }
-    }
-    expect(reached.size).toBeGreaterThanOrEqual(3);
-    for (const connection of openings) {
-      const end = connection.ends[0],
-        unit = world.getMap(end.mapId).grid.tileWorldSize / 5;
+test.each([20, 25, 50])(
+  'a %i-square normal Castle has joined wings reachable through real shared-floor openings',
+  async (gridSize) => {
+    const { gm, editor } = await fixture(undefined, { gridSize, rooms: false });
+    try {
+      gm.terrainEngine.generateBiomeElevation('castle', { seed: 42 });
+      const world = gm.campaignWorld,
+        scene = world.save(),
+        keep = gm.terrainEngine.geometry
+          .getStructures()
+          .find((spec) => spec.name.endsWith('High Keep')),
+        main = scene.maps.find(
+          (map) => map.building?.structureId === keep.id && map.building.floor === 0
+        ),
+        openings = world.getConnections().filter((connection) => connection.kind === 'opening');
       expect(
-        world.planConnection(connection.id, end.mapId, {
-          x: end.positionFeet.x * unit,
-          y: end.positionFeet.y * unit,
-          z: end.positionFeet.z * unit,
-        }).costFeet
-      ).toBeGreaterThan(0);
+        openings.some((connection) => connection.ends.some((end) => end.mapId === main.id))
+      ).toBe(true);
+      const reached = new Set([main.id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const connection of openings)
+          if (connection.ends.some((end) => reached.has(end.mapId)))
+            for (const end of connection.ends)
+              if (!reached.has(end.mapId)) {
+                reached.add(end.mapId);
+                changed = true;
+              }
+      }
+      expect(reached.size).toBeGreaterThanOrEqual(3);
+      for (const connection of openings) {
+        const end = connection.ends[0],
+          unit = world.getMap(end.mapId).grid.tileWorldSize / 5;
+        expect(
+          world.planConnection(connection.id, end.mapId, {
+            x: end.positionFeet.x * unit,
+            y: end.positionFeet.y * unit,
+            z: end.positionFeet.z * unit,
+          }).costFeet
+        ).toBeGreaterThan(0);
+      }
+    } finally {
+      editor.detach();
+      disposeConnectedTravelBoard(gm);
     }
-  } finally {
-    editor.detach();
-    disposeConnectedTravelBoard(gm);
   }
-});
+);
 
 test('a grand normal Castle has a connected hall and gatehouse around a supported open-sky courtyard', async () => {
   const { gm, editor } = await fixture(undefined, { gridSize: 50, rooms: false });

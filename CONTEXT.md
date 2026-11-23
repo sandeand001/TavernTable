@@ -101,22 +101,29 @@
   same-account refresh after uncertainty. A confirmed linked provider is distinct
   from pending email re-verification; Firebase may clear that flag when adding
   password sign-in, and campaign eligibility still requires verified email.
-  Initial application participation is invitation/approval controlled.
+  Initial application participation defaults to invitation/approval controlled;
+  an explicitly configured public mode permits verified self-service.
 - **Verified cloud principal (development backend/browser implemented)**: backend-verified
   Firebase UID, verification and application-eligibility outcomes. Campaign
   ownership/member access is resolved separately, never inferred from names,
   email text or a global DM claim.
-  The development account route checks current server-owned pilot eligibility;
-  verified tokens alone do not enable campaigns. Local cookie/key credentials
-  are not accepted as cloud identity. Initial private owner metadata is separate
-  from membership/live-game permissions, not an implied global privilege.
+  The account route checks current server-owned eligibility. Pilot mode requires
+  approval; opt-in public mode permits verified accounts unless explicitly
+  disabled. Local cookie/key credentials are not accepted as cloud identity.
+  Owner metadata is separate from membership/live-game permissions, not an
+  implied global privilege.
 - **Private cloud campaign (development backend/browser implemented)**: canonical
   metadata is owned by a verified UID. Protected create/list/open routes deny
-  unrelated UIDs. Firestore transactions recheck current pilot eligibility;
+  unrelated UIDs. Firestore transactions recheck the configured eligibility;
   creation publishes its initial head and UID-scoped command receipt atomically.
   Private scene/character saves and coordinated reads are implemented in the
   development backend and explicit cloud workspace. The rendered M1 development
   gate is verified; joined gameplay, live games and hosted rollout remain gated.
+- **Protected model**: an optional self-contained GLB encrypted for browser
+  delivery. A current owner or joined member obtains its versioned key from the
+  cloud API after identity, eligibility and access-generation checks. Source
+  models and keyrings remain outside the served checkout. Rendering decrypts
+  locally, so protection deters casual extraction rather than preventing it.
 - **Cloud campaign settings (M2 development slice verified)**: owner-only
   settings reads return a captured head generation with canonical metadata.
   Updates reuse the existing name/source domain rules, preserve edition and
@@ -922,6 +929,22 @@
   budgets stay private. Asset-scope changes apply the authoritative destination
   rather than replaying against replacement or unauthorized terrain. This is
   event-driven route interpolation, not frame-locked live networking.
+- **Managed Free Roam ground move**: the DM and assigned player submit the same
+  canonical move intent against the active live epoch. A bounded per-campaign
+  writer validates against the current board. An intervening placement-only move
+  for another actor is not a conflict; occupied destinations, changed authority,
+  active combat and an already-moved actor still use the applicable rule or
+  revision check. The approved pose, movement-budget state and retry receipt
+  commit atomically without uploading another copy of the map on every move.
+  Complete exports and final backups materialize the checkpoint plus its
+  committed movement records. A bounded rollover keeps recent routes available
+  even after their positions have been folded into the scene checkpoint.
+  The origin can animate the approved route from the direct reply before a
+  scoped observation catches up. Live observers can receive multiple contiguous
+  movement-only changes together; a matching saved endpoint does not stop or
+  replay its animation. True resyncs never replay old routes. The compact head
+  is versioned separately from legacy heads so an older writer fails closed
+  rather than silently dropping saved moves.
 - **Live cloud visual action (M5 development verified; activation gated)**:
   bounded, canonical action/variant IDs and the visible actor's accepted placement
   travel only with contiguous live changes. Player and DM recipients reuse native
@@ -1163,6 +1186,15 @@ builder and actual multiplayer remain further implementation chunks.
   and stairs use explicit Enter / Use stairs interactions, transferring only
   the acting creature. Only views following that creature switch maps;
   unrelated participants keep their current view.
+- **Logical cavern passage**: a versioned, bidirectional link between entrance
+  sides on maps in different campaign locations. Each side can be used once;
+  its endpoint follows that map's current grid edge and terrain height rather
+  than imposing physical alignment. Chambers and outside destinations begin as
+  blank, independently editable maps; multiple entrances may share an outside
+  map at distinct sides. Traversal preserves the creature and spends movement,
+  checking approach, support, obstacles and occupied landings. Players receive
+  only entrance IDs and sides for visible maps, not hidden destinations.
+  Physical cavern connections remain separate and continue to work.
 - **Magical portal (planned)**: a transport-only connection represented by a
   floating circular gate or vortex, not an ordinary doorway/window opening.
   Portals do not transmit sight or targeting to the destination. Implement
@@ -1719,20 +1751,51 @@ as the picking authority. Visibility masks retain construction material attribut
 Eligible natural terrain can contain connected cave/tunnel networks or sparse
 intact/broken building landmarks on dry, gentle sites without changing the biome.
 All five Underground biomes instead generate full-map interiors. Optional
-`terrain.cavern` version-5 recipes save the seed, area kind and entrance sides.
+`terrain.cavern` version-6 recipes save the seed, area kind and entrance sides.
 They sculpt existing heightfield terrain: low floors and high irregular rock
-ridges, using existing biome assets rather than procedural formations.
+ridges. New Caverns place reviewed source-pack stalagmite clusters and rock
+columns, while Crystal Spires uses taller tinted stalagmite clusters.
+Their seeded scale, orientation and fractional tile offsets are persisted and
+their footprint stays within its tile, away from reserved entrances. Higher
+density adds nearby cluster members, with a bounded 800-formation budget at the
+maximum UI setting. Opaque Cavern formations contribute player sight bounds; the
+translucent crystal variants do not. They are scenery rather than solid movement
+geometry. Instance-group bounds are invalidated after changes so visible models
+are not culled using a previous layout. Map restoration synchronizes the terrain
+mesh scale with the authoritative grid and placement scale.
 There are no new cave-wall volumes or floor-mask schema. Version-1 previews and
 version-2 elevation-pillar recipes remain identifiable for explicit regeneration.
 Version-2 authoring baselines are reconstructed before deciding whether an old
 generated room has manual edits. The terrain geometry core remains unchanged.
 
+**Dungeon layout** fills the selected grid with connected rectangular rooms and
+straight, T-shaped or cross corridors. The review chooses 1-16 rooms and rejects
+counts that cannot fit before replacement. The seed determines room partitions,
+passages and torch placements; the selected count is saved in the generation
+recipe. Explicit **Next Dungeon layout** cycling retains that count and the grid
+size, selects a new seed even when locked, and compares merged generated wall
+lines so changed doorways alone do not count as a different room layout. Ordinary
+locked generation stays repeatable. Cycling uses the same atomic active-map
+replacement and safety checks as biome generation. Its warning is enabled by
+default; the opt-out is browser-local, saved only on confirmation and reversible
+from the Biomes toolbar. Physical wall and doorway geometry remains authoritative,
+and existing saved maps are not remodeled on load. Door lintels can obscure their
+openings in overhead views even though the ground-level routes remain traversable.
+
+**Underground visual lighting** is map-local presentation, not a gameplay sight
+or darkness rule. The Dungeon and five natural underground variants use a fixed
+ambient profile and no outdoor sun, regardless of time of day. A reviewed CC0
+torch is a removable terrain placeable and is included in newly generated Dungeon
+rooms; suitable fungi and crystal-like scenery can also provide local light.
+At most eight nearby point lights are active, without shadow maps or wall
+occlusion. They follow live placeable changes and the displayed map, and are
+cleared on map transitions. Returning outdoors restores the stored sun profile.
+
 Procedural stalagmite/stalactite generation and Build tools have been removed.
 Prototype recipe versions 3/4 and their saved construction definitions remain
 readable for save compatibility and explicit removal; they are not offered as
-new construction tools. Regenerating adopts version 5 and removes generated
-formations from the root and eligible automatic chambers, retaining the usual
-authored-content and actor protections.
+new construction tools. Current regeneration uses version 6 and the reviewed
+model placeables rather than generating those old construction volumes.
 Native ground maps and `map.cavern` references identify the root and connected
 side chambers. Cave passage connections retain real supported, paid movement
 and separate visual areas, without copying actors or restoring old resources.

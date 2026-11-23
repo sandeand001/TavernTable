@@ -156,6 +156,137 @@ test('a compact committed command starts own motion without waiting for full pro
   }
 });
 
+test('a fall acknowledgement waits for its full receipt before refreshing the actor', async () => {
+  let notify;
+  const { app, state } = fixture({
+    subscribe: (listener) => {
+      notify = listener;
+      return () => {};
+    },
+  });
+  state.profile.id = 'player-session';
+  await app.start();
+  const actor = state.publicScene.actors[0];
+  const destination = {
+    mapId: actor.mapId,
+    gridX: actor.gridX + 1,
+    gridY: actor.gridY,
+    facingAngle: actor.facingAngle,
+    pose: { kind: 'ground', world: { ...actor.pose.world, x: actor.pose.world.x + 1 } },
+  };
+  const motion = {
+    kind: 'fall',
+    completed: true,
+    from: {
+      mapId: actor.mapId,
+      gridX: actor.gridX,
+      gridY: actor.gridY,
+      facingAngle: actor.facingAngle,
+      pose: copy(actor.pose),
+    },
+    route: [destination],
+  };
+  const commandId = '00000000-0000-4000-8000-0000000000b0';
+  app.commands.pending = true;
+  app.commands.lastRequest = {
+    campaignId: state.campaign.id,
+    command: { commandId, tokenId: actor.id, kind: 'flight.drop' },
+    acceptLive: jest.fn(),
+  };
+  const refresh = jest.spyOn(app, 'refresh').mockResolvedValue({ applied: true });
+  try {
+    notify({
+      type: 'command-accepted',
+      version: 1,
+      campaignId: state.campaign.id,
+      actorId: state.profile.id,
+      commandId,
+      outcome: 'applied',
+      applied: { sceneRevision: state.sceneRevision + 1, charactersRevision: state.revision },
+      receipt: {
+        kind: 'flight.drop',
+        tokenId: actor.id,
+        costFeet: 0,
+        budget: { movementSpentFeet: 0, movementRemainingFeet: 30, movementAllowanceFeet: 30 },
+        route: motion.route,
+        placement: destination,
+        motion,
+        roll: { expression: '1d6' },
+      },
+    });
+    expect(app.commands.lastRequest.awaitingFullReceipt).toBe(true);
+    notify({
+      type: 'campaign',
+      version: 1,
+      campaignId: state.campaign.id,
+      actorId: state.profile.id,
+      kind: 'playerCommand',
+      sceneRevision: state.sceneRevision + 1,
+      charactersRevision: state.revision,
+      hasPresentations: true,
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  } finally {
+    app.commands.pending = false;
+    refresh.mockRestore();
+    await app.destroy();
+  }
+});
+
+test('a confirmed Free Roam run keeps moving through an older snapshot and its saved endpoint', async () => {
+  const { app, state, gameManager } = fixture();
+  const restoreFiles = installHumanoidAssetFiles();
+  delete gameManager.__threeTestDouble;
+  try {
+    await app.start();
+    const actor = state.publicScene.actors[0];
+    const token = gameManager.placedTokens[0];
+    const adapter = gameManager.token3DAdapter;
+    const { mapId, gridX, gridY, facingAngle, pose } = actor;
+    const from = { mapId, gridX, gridY, facingAngle, pose: copy(pose) };
+    const destination = {
+      ...from,
+      gridX: gridX + 1,
+      pose: { ...pose, world: { ...pose.world, x: pose.world.x + 1 } },
+    };
+    await app.receiveLivePresentations({
+      campaignId: state.campaign.id,
+      confirmed: true,
+      sceneRevision: state.sceneRevision + 2,
+      presentations: [
+        {
+          commandId: 'free-roam-own-move',
+          tokenId: actor.id,
+          kind: 'move',
+          motion: { kind: 'walk', completed: true, from, route: [destination] },
+        },
+      ],
+    });
+    await waitFor(() => adapter.isMovementInProgress(token));
+    adapter.advanceApprovedMovement(1 / 12);
+    const between = token.world.x;
+    expect(between).toBeGreaterThan(pose.world.x);
+    expect(between).toBeLessThan(destination.pose.world.x);
+    const peerSave = copy(state);
+    peerSave.sceneRevision++;
+    peerSave.publicScene.assets = null;
+    await app.showState(peerSave);
+    expect(token.world.x).toBe(between);
+    const ownSave = copy(peerSave);
+    ownSave.sceneRevision++;
+    Object.assign(ownSave.publicScene.actors[0], destination);
+    await app.showState(ownSave);
+    expect(token.world.x).toBe(between);
+    for (let frame = 0; frame < 300 && adapter.isMovementInProgress(token); frame++)
+      adapter.advanceApprovedMovement(1 / 60);
+    await Promise.all(app.presentationTasks);
+    expect(token.world.x).toBe(destination.pose.world.x);
+  } finally {
+    await app.destroy();
+    restoreFiles();
+  }
+});
+
 test('a finished live Knight move survives an unrelated saved update until its own checkpoint arrives', async () => {
   const { app, state, gameManager } = fixture();
   const restoreFiles = installHumanoidAssetFiles();
@@ -537,6 +668,7 @@ test('an ended private view recovers only the original account command receipt w
   gameManager.cloudSaveFeedback = feedback;
   try {
     await app.start();
+    gameManager.modelAssetCache = { setProtectedAssetKeyProvider: jest.fn() };
     const actor = state.publicScene.actors.find(({ id }) => id === state.observerTokenId);
     await expect(
       app.commands.move(actor.id, {
@@ -552,6 +684,7 @@ test('an ended private view recovers only the original account command receipt w
       error: { status: 409, code: 'account-changed', message: 'Account changed' },
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(gameManager.modelAssetCache.setProtectedAssetKeyProvider).toHaveBeenCalledWith(null);
     expect(app.controls.root.textContent).not.toContain(state.campaign.name);
     expect(gameManager.placedTokens).toHaveLength(0);
     await expect(app.recoverPendingCommand()).rejects.toMatchObject({ code: 'account-changed' });
@@ -1335,6 +1468,111 @@ test('a rebased authoritative roll still presents its accepted face and log entr
   if (previousSidebar) window.sidebarController = previousSidebar;
   else delete window.sidebarController;
   await app.destroy();
+});
+
+test('a fall replays its physical damage roll after the approved movement finishes', async () => {
+  const { app, state, gameManager } = fixture();
+  await app.start();
+  const next = JSON.parse(JSON.stringify(state));
+  next.sceneRevision++;
+  next.publicScene.assets = null;
+  const motion = {
+    kind: 'fall',
+    completed: true,
+    from: {
+      mapId: state.publicScene.presentation.mapId,
+      gridX: 1,
+      gridY: 1,
+      facingAngle: 0,
+      pose: { kind: 'ground', world: { x: 1.5, y: 0, z: 1.5 } },
+    },
+    route: [
+      {
+        mapId: state.publicScene.presentation.mapId,
+        gridX: 2,
+        gridY: 1,
+        facingAngle: 0,
+        pose: { kind: 'ground', world: { x: 2.5, y: 0, z: 1.5 } },
+      },
+    ],
+  };
+  Object.assign(next.publicScene.actors[0], motion.route[0]);
+  let finishMovement;
+  const movement = jest
+    .spyOn(gameManager.token3DAdapter, 'playApprovedMovement')
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishMovement = resolve;
+        })
+    );
+  const roll = { text: '1d6 = 4', summary: 'd6 4' };
+  const play = jest.spyOn(app.dice, 'play').mockResolvedValue({ completed: true });
+  const previousSidebar = window.sidebarController;
+  const log = jest.fn();
+  window.sidebarController = { addDiceLogEntry: log };
+  try {
+    const receipt = {
+      state: next,
+      applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+      receipt: { kind: 'move', tokenId: state.observerTokenId, motion, roll },
+    };
+    const receiving = app.receiveReceipt(receipt, {
+      animate: true,
+      command: {
+        commandId: '00000000-0000-4000-8000-0000000000ae',
+        kind: 'move',
+        tokenId: state.observerTokenId,
+        observerTokenId: state.observerTokenId,
+        sceneRevision: state.sceneRevision,
+      },
+    });
+    await waitFor(() => finishMovement, 'The fall presentation did not start');
+    expect(movement).toHaveBeenCalledTimes(1);
+    expect(play).not.toHaveBeenCalled();
+    await receiving;
+    finishMovement({ completed: true });
+    await receipt.presentation;
+    expect(play).toHaveBeenCalledWith(
+      roll,
+      expect.objectContaining({ commandId: '00000000-0000-4000-8000-0000000000ae' })
+    );
+    expect(log).toHaveBeenCalledWith('1d6 = 4', 'roll', 'd6 4');
+  } finally {
+    finishMovement?.({ completed: false });
+    if (previousSidebar) window.sidebarController = previousSidebar;
+    else delete window.sidebarController;
+    await app.destroy();
+  }
+});
+
+test('a cocked fall without an authorized replay tells the player to retry', async () => {
+  const { app, state } = fixture();
+  await app.start();
+  try {
+    const next = copy(state);
+    next.sceneRevision++;
+    next.publicScene.assets = null;
+    await app.receiveReceipt(
+      {
+        state: next,
+        applied: { sceneRevision: next.sceneRevision, charactersRevision: next.revision },
+        receipt: { kind: 'flight.drop', tokenId: state.observerTokenId, rerollRequired: true },
+      },
+      {
+        animate: true,
+        command: {
+          commandId: '00000000-0000-4000-8000-0000000000af',
+          kind: 'flight.drop',
+          tokenId: state.observerTokenId,
+          observerTokenId: state.observerTokenId,
+        },
+      }
+    );
+    expect(app.controls.status.textContent).toMatch(/cocked.*try the fall again/i);
+  } finally {
+    await app.destroy();
+  }
 });
 
 test('an own rebased move starts alongside a visible peer movement', async () => {
@@ -2183,6 +2421,44 @@ test('player creature actions are host-gated instead of falling back to local po
   expect(app.input.canOpenRadial(token)).toBe(true);
   expect(availability['character-sheet'].allowed).toBe(true);
   expect(availability['take-flight'].allowed).toBe(false);
+  await app.destroy();
+});
+
+test('opening another assigned sheet switches the active player viewpoint instead of roaming to an unassigned sprite', async () => {
+  const { app, gameManager } = fixture();
+  await app.start();
+  const current = gameManager.placedTokens[0];
+  const second = {
+    ...current,
+    id: 'hero-2',
+    owned: true,
+    characterSheetId: 'hero-character-2',
+    world: { x: 7, y: 0, z: 8 },
+  };
+  gameManager.placedTokens.push(second);
+  app.state.observers.push({
+    id: second.id,
+    name: 'Second hero',
+    characterId: second.characterSheetId,
+    mapId: current.mapId,
+  });
+  gameManager.publicPlayerPresentation.visibleIds.add(second.id);
+  const chooseObserver = jest.spyOn(app, 'chooseObserver').mockResolvedValue(true);
+
+  await app.input.focus(second);
+  expect(chooseObserver).toHaveBeenCalledWith(second.id);
+
+  const unassigned = { ...second, id: 'dragon', owned: false };
+  await expect(app.input.focus(unassigned)).rejects.toThrow(/assigned/i);
+  await app.destroy();
+});
+
+test('a player cannot browse a different authorized map away from the active character', async () => {
+  const { app, state } = fixture();
+  state.maps.push({ id: 'adjacent', name: 'Adjacent chamber' });
+  await app.start();
+
+  await expect(app.chooseArea('adjacent')).rejects.toThrow(/active assigned character/i);
   await app.destroy();
 });
 

@@ -61,6 +61,7 @@ export class Token3DAdapter {
     this._tokenAnimationData = new Map();
     this._movementStates = new Map();
     this._movementRoutes = new Map();
+    this._pendingLocomotionMoves = new Map();
     this._movementRange = null;
     this._movementRangeOverlay = null;
     this._movementRangeDirty = true;
@@ -629,6 +630,7 @@ export class Token3DAdapter {
 
   onTokenRemoved(tokenEntry) {
     if (!tokenEntry) return;
+    this._pendingLocomotionMoves.delete(tokenEntry);
     this.cancelApprovedMovement(tokenEntry);
     this.cancelOpeningCrossing(tokenEntry, new Error('The crossing creature was removed'));
     this._mapProjectionVisible?.delete(tokenEntry);

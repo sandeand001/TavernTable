@@ -105,6 +105,8 @@ export default class TerrainSightMask {
       toCampaign = null,
       toView = null,
       acceptTriangle = null,
+      allowBackfacesFor = null,
+      ignoreObstaclesFor = null,
       excludeSolids = [],
       excludeSolidsForTriangle = null,
     } = {}
@@ -116,6 +118,8 @@ export default class TerrainSightMask {
           toCampaign,
           toView,
           acceptTriangle,
+          allowBackfacesFor,
+          ignoreObstaclesFor,
           excludeSolids,
           excludeSolidsForTriangle,
         });
@@ -157,9 +161,15 @@ export default class TerrainSightMask {
       normal
         .subVectors(polygon[1].point, polygon[0].point)
         .cross(edge.subVectors(polygon[2].point, polygon[0].point));
+      const backfacesAllowed =
+        allowBackfacesFor !== null && geometry.getAttribute(allowBackfacesFor)?.getX(start) === 1;
+      const ignoresObstacles =
+        ignoreObstaclesFor !== null && geometry.getAttribute(ignoreObstaclesFor)?.getX(start) === 1;
       if (
         normal.lengthSq() < EPSILON ** 4 ||
-        (this.eye && normal.dot(towardEye.subVectors(this.eye, polygon[0].point)) <= 0)
+        (!backfacesAllowed &&
+          this.eye &&
+          normal.dot(towardEye.subVectors(this.eye, polygon[0].point)) <= 0)
       )
         continue;
       const faceBounds = {
@@ -180,7 +190,7 @@ export default class TerrainSightMask {
           if (!visible.length) break;
         }
       if (!visible.length) continue;
-      if (this.eye) {
+      if (this.eye && !ignoresObstacles) {
         const bounds = {
           min: { x: this.eye.x, y: this.eye.y, z: this.eye.z },
           max: { x: this.eye.x, y: this.eye.y, z: this.eye.z },

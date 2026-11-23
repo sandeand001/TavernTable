@@ -1,0 +1,574 @@
+{
+  "version": 1,
+  "sourcePack": "pure-poly-mining-cave-blacksmith",
+  "keyId": "pure-poly-v1",
+  "files": [
+    {
+      "assetId": "pure-poly-stalagmite-01",
+      "source": "PP_Stalagmite_01.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-01.ttasset",
+      "bytes": 15012,
+      "sha256": "3e28cb436be0b9baaaf219fd09a45eec45f3308097841f47b2bba857c6a3035f"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-02",
+      "source": "PP_Stalagmite_02.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-02.ttasset",
+      "bytes": 19160,
+      "sha256": "2a627e0ccac1869748cb5b7db601ec09c3fd73c41e700f20feda0d67843206d6"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-03",
+      "source": "PP_Stalagmite_03.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-03.ttasset",
+      "bytes": 17180,
+      "sha256": "a574bf552e9b4941a3131f628f631aabf89afc36a72fece1d6306d01608a8c3f"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-04",
+      "source": "PP_Stalagmite_04.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-04.ttasset",
+      "bytes": 17972,
+      "sha256": "259c91fdc4361a3dfd0a2756f71c2b32ff166d27c84d3706a171fad4e6e73d22"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-05",
+      "source": "PP_Stalagmite_05.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-05.ttasset",
+      "bytes": 22156,
+      "sha256": "1e453bfd7a7a838df6e6f314e367c19b9abd5d87c67150c87327b41ca5af2960"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-06",
+      "source": "PP_Stalagmite_06.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-06.ttasset",
+      "bytes": 20084,
+      "sha256": "7029849242d06fe3e557e9b687fae032b9eea80bc7eb2aca2f3e2a8fdbec363c"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-07",
+      "source": "PP_Stalagmite_07.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-07.ttasset",
+      "bytes": 24048,
+      "sha256": "6678bb8d986f368b2375826006998cf17b67ff5d4f20e3caeb0133cd18ef8f60"
+    },
+    {
+      "assetId": "pure-poly-stalagmite-08",
+      "source": "PP_Stalagmite_08.fbx",
+      "path": "assets/protected/pure-poly-stalagmite-08.ttasset",
+      "bytes": 26192,
+      "sha256": "187c091760306aa8a8582c8be6327fcfa900b6151f51473cc40a07dc628a54f7"
+    },
+    {
+      "assetId": "pure-poly-cave-column-01",
+      "source": "PP_Rock_Column_01.fbx",
+      "path": "assets/protected/pure-poly-cave-column-01.ttasset",
+      "bytes": 54512,
+      "sha256": "54993c11ca96c2bbc4fcf5945e961dc6301f1048d0208ae156e17faafd1884b7"
+    },
+    {
+      "assetId": "pure-poly-cave-column-02",
+      "source": "PP_Rock_Column_02.fbx",
+      "path": "assets/protected/pure-poly-cave-column-02.ttasset",
+      "bytes": 56664,
+      "sha256": "3111e6444955a3103d78bccfb8873979e30c767406bb31ff164586c9cd61eefe"
+    },
+    {
+      "assetId": "pure-poly-cave-column-03",
+      "source": "PP_Rock_Column_03.fbx",
+      "path": "assets/protected/pure-poly-cave-column-03.ttasset",
+      "bytes": 42372,
+      "sha256": "f67eddb3efc4e811f938d6e02271d0463655646a3c0f1abfdbdca5ebc672c746"
+    },
+    {
+      "assetId": "pure-poly-cave-column-04",
+      "source": "PP_Rock_Column_04.fbx",
+      "path": "assets/protected/pure-poly-cave-column-04.ttasset",
+      "bytes": 39284,
+      "sha256": "2601cd1c46af7df4b76eef607dc9405bbff5e200c1a3c338647c37b257309afc"
+    },
+    {
+      "assetId": "pure-poly-cave-column-05",
+      "source": "PP_Rock_Column_05.fbx",
+      "path": "assets/protected/pure-poly-cave-column-05.ttasset",
+      "bytes": 56276,
+      "sha256": "91e9cd2e217cdac0b32cf3b9dd8fb729fa2acc316abf7db33a18465643e3b696"
+    },
+    {
+      "assetId": "pure-poly-rock-01",
+      "source": "PP_Rock_01.fbx",
+      "path": "assets/protected/pure-poly-rock-01.ttasset",
+      "bytes": 26912,
+      "sha256": "05be17fc924afb9df6775bd8cf441a701baed045c5b18dcd5160970a2e44c7ac"
+    },
+    {
+      "assetId": "pure-poly-rock-02",
+      "source": "PP_Rock_02.fbx",
+      "path": "assets/protected/pure-poly-rock-02.ttasset",
+      "bytes": 28500,
+      "sha256": "d735a0fd0376e891a00183752c7f93b1eac14a3a3203d065a3059939a6eae2e8"
+    },
+    {
+      "assetId": "pure-poly-rock-03",
+      "source": "PP_Rock_03.fbx",
+      "path": "assets/protected/pure-poly-rock-03.ttasset",
+      "bytes": 29772,
+      "sha256": "4b169d9d0d6678e21aa06212b80d8764d97bb63be9193cb4428b4e6a9dedf723"
+    },
+    {
+      "assetId": "pure-poly-rock-04",
+      "source": "PP_Rock_04.fbx",
+      "path": "assets/protected/pure-poly-rock-04.ttasset",
+      "bytes": 50356,
+      "sha256": "b6ba8fbf98641b76110e5925a6fcd838b06f4749228b39858477bfe02d8f8cbb"
+    },
+    {
+      "assetId": "pure-poly-rock-05",
+      "source": "PP_Rock_05.fbx",
+      "path": "assets/protected/pure-poly-rock-05.ttasset",
+      "bytes": 45900,
+      "sha256": "82095e6d8854dd6157fa280c0150a109cc61f3b2330f0700ab08eb42bd8a4191"
+    },
+    {
+      "assetId": "pure-poly-rock-06",
+      "source": "PP_Rock_06.fbx",
+      "path": "assets/protected/pure-poly-rock-06.ttasset",
+      "bytes": 32260,
+      "sha256": "0896833c835c87707d84c976e797a76d49788afe99d4d169e59dfb8612f6894e"
+    },
+    {
+      "assetId": "pure-poly-rock-07",
+      "source": "PP_Rock_07.fbx",
+      "path": "assets/protected/pure-poly-rock-07.ttasset",
+      "bytes": 28028,
+      "sha256": "506bfe89939c742c84c59180964a612b7312b8467831daabff8d0a8734481820"
+    },
+    {
+      "assetId": "pure-poly-pebbles-01",
+      "source": "PP_Pebbles_01.fbx",
+      "path": "assets/protected/pure-poly-pebbles-01.ttasset",
+      "bytes": 27648,
+      "sha256": "b4ffef2e263d0888192da386575283f90b25d1702e8c257e64562025872f247e"
+    },
+    {
+      "assetId": "pure-poly-pebbles-02",
+      "source": "PP_Pebbles_02.fbx",
+      "path": "assets/protected/pure-poly-pebbles-02.ttasset",
+      "bytes": 34588,
+      "sha256": "08eefdc6b96d0fed6f37f4aeb584cfb9eb7e57afc568f34ae0fa69d4451ba654"
+    },
+    {
+      "assetId": "pure-poly-pebbles-03",
+      "source": "PP_Pebbles_03.fbx",
+      "path": "assets/protected/pure-poly-pebbles-03.ttasset",
+      "bytes": 43224,
+      "sha256": "70cd97ef975c2fa287f06e12402da6137125170dd233b06f2cd952b784a05265"
+    },
+    {
+      "assetId": "pure-poly-pebbles-04",
+      "source": "PP_Pebbles_04.fbx",
+      "path": "assets/protected/pure-poly-pebbles-04.ttasset",
+      "bytes": 42324,
+      "sha256": "535b20f8eebac47409bf5cb3160eb369d3eba64c9d5fba411f4fa9a4bd5a96af"
+    },
+    {
+      "assetId": "pure-poly-pebbles-05",
+      "source": "PP_Pebbles_05.fbx",
+      "path": "assets/protected/pure-poly-pebbles-05.ttasset",
+      "bytes": 57320,
+      "sha256": "f48d2541dd641b42df7ffc2af55dff6934ae8c72a5ca93e9c967f5df6900e161"
+    },
+    {
+      "assetId": "pure-poly-pebbles-06",
+      "source": "PP_Pebbles_06.fbx",
+      "path": "assets/protected/pure-poly-pebbles-06.ttasset",
+      "bytes": 49160,
+      "sha256": "7c359642be0f9034bd8fec70d3b77b9481a55fab319e2cadeff5b52316701c58"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-01",
+      "source": "PP_Crystal_Cluster_01_Blue.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-01.ttasset",
+      "bytes": 20676,
+      "sha256": "f4558e31e278d9cce30c0cefdaf5d60a3d37b6ddecd3690dc573044cbc34d7fb"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-02",
+      "source": "PP_Crystal_Cluster_02_Blue.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-02.ttasset",
+      "bytes": 27548,
+      "sha256": "2f8b4f3674deade25a458116e72a6cafd9b165eb7753efa235671c510198c9ff"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-03",
+      "source": "PP_Crystal_Cluster_03_Blue.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-03.ttasset",
+      "bytes": 19464,
+      "sha256": "e9e36bd644ff1a893bdc7ade155668c521ed6069ad55ed3854cda6a4fc7a578b"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-05",
+      "source": "PP_Crystal_Cluster_05_Blue.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-05.ttasset",
+      "bytes": 25140,
+      "sha256": "67aaa11d15776f7666c46f5da448bdd490b3e492b3776960d5f343aca1c795ab"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-01-green",
+      "source": "PP_Crystal_Cluster_01_Green.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-01-green.ttasset",
+      "bytes": 20680,
+      "sha256": "7049b47c3169842bd708a00488cad94d8ac6fd8ca0139c8c9ad0c0d5d20fe6da"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-02-green",
+      "source": "PP_Crystal_Cluster_02_Green.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-02-green.ttasset",
+      "bytes": 27548,
+      "sha256": "5ad9394fce83fd24b09d94cd33df3e485827b2013372a5a8006c8c339d13f1c9"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-01-red",
+      "source": "PP_Crystal_Cluster_01_Red.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-01-red.ttasset",
+      "bytes": 20680,
+      "sha256": "bc7b0f8176cc47320fde3df9a69ab8d7de99ec782916a7c6328db21decfad050"
+    },
+    {
+      "assetId": "pure-poly-crystal-cluster-02-red",
+      "source": "PP_Crystal_Cluster_02_Red.fbx",
+      "path": "assets/protected/pure-poly-crystal-cluster-02-red.ttasset",
+      "bytes": 27548,
+      "sha256": "2ab92cded705a3009915ea76574f07b090574f69d88eae31e86f2348a2d54459"
+    },
+    {
+      "assetId": "pure-poly-cactus-01",
+      "source": "PP_Cactus_01.fbx",
+      "path": "assets/protected/pure-poly-cactus-01.ttasset",
+      "bytes": 79052,
+      "sha256": "b524a79f26f732eafd5b1760f24fed3b7f552bfdbdc8c61701dbc2e92a77d685"
+    },
+    {
+      "assetId": "pure-poly-cactus-06",
+      "source": "PP_Cactus_06.fbx",
+      "path": "assets/protected/pure-poly-cactus-06.ttasset",
+      "bytes": 62764,
+      "sha256": "40f7df252b66d2118ffa293b9a8d3619b4c77c5a97ed90d6895188139d40761c"
+    },
+    {
+      "assetId": "pure-poly-cactus-12",
+      "source": "PP_Cactus_12.fbx",
+      "path": "assets/protected/pure-poly-cactus-12.ttasset",
+      "bytes": 50360,
+      "sha256": "cc688b4e971d03ede04c16317a6fba203797691ccd417b74245f234398f02c28"
+    },
+    {
+      "assetId": "pure-poly-cactus-16",
+      "source": "PP_Cactus_16.fbx",
+      "path": "assets/protected/pure-poly-cactus-16.ttasset",
+      "bytes": 53996,
+      "sha256": "9131dabca542a1a3ce323d908e4bf8e47cef7356cbf5f1bbc993b5fb0817c12f"
+    },
+    {
+      "assetId": "pure-poly-mushroom-brown-01",
+      "source": "PP_Mushroom_Dark_Brown_01.fbx",
+      "path": "assets/protected/pure-poly-mushroom-brown-01.ttasset",
+      "bytes": 39988,
+      "sha256": "8b4e6816c84b37e315bd648f1f7e818f86ef3bdbdd18c778ad8195e1db9da0b9"
+    },
+    {
+      "assetId": "pure-poly-mushroom-brown-03",
+      "source": "PP_Mushroom_Dark_Brown_03.fbx",
+      "path": "assets/protected/pure-poly-mushroom-brown-03.ttasset",
+      "bytes": 34704,
+      "sha256": "dadee49b1b61492395c7926b7a998e9821d201546c96969a7fba90fc0066c407"
+    },
+    {
+      "assetId": "pure-poly-mushroom-long-02",
+      "source": "PP_Mushroom_Long_Dark_Brown_02.fbx",
+      "path": "assets/protected/pure-poly-mushroom-long-02.ttasset",
+      "bytes": 34456,
+      "sha256": "6bdb6d9681b9c2d06e65757351238ac661754aa30fd55109e6c04c553d778bf9"
+    },
+    {
+      "assetId": "pure-poly-mushroom-long-03",
+      "source": "PP_Mushroom_Long_Dark_Brown_03.fbx",
+      "path": "assets/protected/pure-poly-mushroom-long-03.ttasset",
+      "bytes": 35456,
+      "sha256": "c9ac8bebed5577c17e62868945fd035a39314f91e5502444cf98e56ec4013f1e"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-01",
+      "source": "PP_Mushrooms_Brown_01.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-01.ttasset",
+      "bytes": 68528,
+      "sha256": "ed3bab3e90913d34824fc64eda4025b977dd8ce19b5eaeb32cfe32d02cee9168"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-02",
+      "source": "PP_Mushrooms_Brown_02.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-02.ttasset",
+      "bytes": 79740,
+      "sha256": "9c0aa9a557a7bbbd01cf44c7d38eb646a8e1ee6d46bbb1d819e3c2628f9551f2"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-03",
+      "source": "PP_Mushrooms_Brown_03.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-03.ttasset",
+      "bytes": 78532,
+      "sha256": "3bce28d94d30a0fbf32d9401ff0475813524b55aa9c8f7bb133eda9d15dad6cf"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-04",
+      "source": "PP_Mushrooms_Brown_04.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-04.ttasset",
+      "bytes": 72348,
+      "sha256": "dfb6a2f582bc821e4d5d531943df639932da161d63568464ad04713c215d36c2"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-05",
+      "source": "PP_Mushrooms_Brown_05.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-05.ttasset",
+      "bytes": 108844,
+      "sha256": "8ff24f527e0f12005d030f0caa3524fb43a6b5dad54e6fb68eef93de7719a2f8"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-06",
+      "source": "PP_Mushrooms_Brown_06.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-06.ttasset",
+      "bytes": 97636,
+      "sha256": "73937473a74038f03fa70f9d0f9dd56f569236811f89a331806f7e03bb5cdd39"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-07",
+      "source": "PP_Mushrooms_Brown_07.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-07.ttasset",
+      "bytes": 104416,
+      "sha256": "80a640d46aaf70ec60a0b8f91bced35f158f2511bf57c90455eca78340ca3083"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-stone-01",
+      "source": "PP_Mushrooms_Stone_Brown_01.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-stone-01.ttasset",
+      "bytes": 71704,
+      "sha256": "b2508073a4a6605b50ffdd9bda6345964d8c7e992afcffd0f654286044b24919"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-stone-02",
+      "source": "PP_Mushrooms_Stone_Brown_02.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-stone-02.ttasset",
+      "bytes": 104416,
+      "sha256": "04ea1ffab58c26bd6ee6538567a81247eed72f86aa906d1b53fb4ae1200eb6c3"
+    },
+    {
+      "assetId": "pure-poly-mushroom-cluster-stone-03",
+      "source": "PP_Mushrooms_Stone_Brown_03.fbx",
+      "path": "assets/protected/pure-poly-mushroom-cluster-stone-03.ttasset",
+      "bytes": 77980,
+      "sha256": "cc0fd6630b72f9da585d7dc497f6ac9d67a7050c2b727eda3aab5e6b3c6f117a"
+    },
+    {
+      "assetId": "pure-poly-grass-01",
+      "source": "PP_Grass_01.fbx",
+      "path": "assets/protected/pure-poly-grass-01.ttasset",
+      "bytes": 37680,
+      "sha256": "b01829e7a1535aeac82c53f60b6241a3712d38c8f879ee73ea79a4dd3dc4d1be"
+    },
+    {
+      "assetId": "pure-poly-grass-02",
+      "source": "PP_Grass_02.fbx",
+      "path": "assets/protected/pure-poly-grass-02.ttasset",
+      "bytes": 43880,
+      "sha256": "ba94c5675ba2333b0cf707d41e206f85188a4e9f05bd33fcffad75dd01783d25"
+    },
+    {
+      "assetId": "pure-poly-grass-03",
+      "source": "PP_Grass_03.fbx",
+      "path": "assets/protected/pure-poly-grass-03.ttasset",
+      "bytes": 37584,
+      "sha256": "491560ebbd970aa7445cc2d389b3442cd3d67fbd5b462840dff1639224e637ee"
+    },
+    {
+      "assetId": "pure-poly-grass-04",
+      "source": "PP_Grass_04.fbx",
+      "path": "assets/protected/pure-poly-grass-04.ttasset",
+      "bytes": 35192,
+      "sha256": "025bbfbc4a87894c51ee1b76064b7339eb1d5cc3658cc30bbe3b605401e56e89"
+    },
+    {
+      "assetId": "pure-poly-grass-05",
+      "source": "PP_Grass_05.fbx",
+      "path": "assets/protected/pure-poly-grass-05.ttasset",
+      "bytes": 44644,
+      "sha256": "e17e0e06e06560d174a115acef40b46974956b74cd09f427885e2c1d70452b16"
+    },
+    {
+      "assetId": "pure-poly-grass-06",
+      "source": "PP_Grass_06.fbx",
+      "path": "assets/protected/pure-poly-grass-06.ttasset",
+      "bytes": 31416,
+      "sha256": "bcca87afb10a9ecc374e047b74182ab08ec99e412ad1e13697e201096dd68c98"
+    },
+    {
+      "assetId": "pure-poly-fir-01",
+      "source": "PP_Fir_Tree_01.fbx",
+      "path": "assets/protected/pure-poly-fir-01.ttasset",
+      "bytes": 71664,
+      "sha256": "4725221e824c60da4abdf9a5b08d0729fa93f6ce4bb7a142ea9e8b88903ff129"
+    },
+    {
+      "assetId": "pure-poly-fir-04",
+      "source": "PP_Fir_Tree_04.fbx",
+      "path": "assets/protected/pure-poly-fir-04.ttasset",
+      "bytes": 63108,
+      "sha256": "4a5fdf38fd36b3076efb83444b857c91181a68037f4e1e25d8055a03c726103b"
+    },
+    {
+      "assetId": "pure-poly-fir-05",
+      "source": "PP_Fir_Tree_05.fbx",
+      "path": "assets/protected/pure-poly-fir-05.ttasset",
+      "bytes": 58040,
+      "sha256": "7539acb03e2ffb755e3a8c81d0753276f67da15f3d2122b1e2cb2d6d2af1be44"
+    },
+    {
+      "assetId": "pure-poly-birch-01",
+      "source": "PP_Fantasy_Birch_Tree_01.fbx",
+      "path": "assets/protected/pure-poly-birch-01.ttasset",
+      "bytes": 81096,
+      "sha256": "d662fa735ffbaabb86ad3aba1da3756f7ca148df20e2eb42b64f93710819d432"
+    },
+    {
+      "assetId": "pure-poly-birch-04",
+      "source": "PP_Fantasy_Birch_Tree_04.fbx",
+      "path": "assets/protected/pure-poly-birch-04.ttasset",
+      "bytes": 125892,
+      "sha256": "90ae616efd999cfd608ef8c34d8566e271eccbf7523778e2f5d2e1d4142dc20b"
+    },
+    {
+      "assetId": "pure-poly-tree-04",
+      "source": "PP_Tree_04.fbx",
+      "path": "assets/protected/pure-poly-tree-04.ttasset",
+      "bytes": 148816,
+      "sha256": "a3db260158bec4d021eca00686d48a7666156347b81390f728d682023f239c47"
+    },
+    {
+      "assetId": "pure-poly-tree-05",
+      "source": "PP_Tree_05.fbx",
+      "path": "assets/protected/pure-poly-tree-05.ttasset",
+      "bytes": 227436,
+      "sha256": "d3fc6d6950586d98a679ff60861d800f18ad790a3ebc844a3842ed7a25b78413"
+    },
+    {
+      "assetId": "pure-poly-leafless-tree-04",
+      "source": "PP_Leafless_Tree_04.fbx",
+      "path": "assets/protected/pure-poly-leafless-tree-04.ttasset",
+      "bytes": 46724,
+      "sha256": "bf8ba2c3ea1fa95619344bf013c2f20143531f45541d47dcee5ea2966bb55343"
+    },
+    {
+      "assetId": "pure-poly-anvil-01",
+      "source": "PP_Anvil_New_01_New_Iron.fbx",
+      "path": "assets/protected/pure-poly-anvil-01.ttasset",
+      "bytes": 16880,
+      "sha256": "a208a6568f271d6ee851b93182ea9a43e787af6b1eafe13b2acb24911de27018"
+    },
+    {
+      "assetId": "pure-poly-barrel-01",
+      "source": "PP_Barrel_01.fbx",
+      "path": "assets/protected/pure-poly-barrel-01.ttasset",
+      "bytes": 28268,
+      "sha256": "2d187a898769b4bc1b3affb4928feec86339545574ef4d5d42cc2491cb0d202c"
+    },
+    {
+      "assetId": "pure-poly-chest-01-iron",
+      "source": "PP_Treasure_Chest_01_Iron.fbx",
+      "path": "assets/protected/pure-poly-chest-01-iron.ttasset",
+      "bytes": 490660,
+      "sha256": "eff9fa17a98b8942773c55115e507455a55d160a0fcebbc370df4f652af3c2a1"
+    },
+    {
+      "assetId": "pure-poly-chest-01-gold",
+      "source": "PP_Treasure_Chest_01_Gold.fbx",
+      "path": "assets/protected/pure-poly-chest-01-gold.ttasset",
+      "bytes": 491040,
+      "sha256": "e9fa621a748197b14d47dea1c5529cafe6e127e5dcaee96fbdbc0eda75d54e45"
+    },
+    {
+      "assetId": "pure-poly-mine-cart-01",
+      "source": "PP_Mine_Cart_01.fbx",
+      "path": "assets/protected/pure-poly-mine-cart-01.ttasset",
+      "bytes": 183824,
+      "sha256": "6175c7938bd7e328851ca3e48358eaa05b05b2c76b30c5afa60c8b3de9f428f9"
+    },
+    {
+      "assetId": "pure-poly-furnace-03",
+      "source": "PP_Furnace_03.fbx",
+      "path": "assets/protected/pure-poly-furnace-03.ttasset",
+      "bytes": 107656,
+      "sha256": "9fb9064fb2c1ee45f7f4d8b290e2e83ff56a8112ed96044ac8dc936893bf04b5"
+    },
+    {
+      "assetId": "pure-poly-quenching-trough-01",
+      "source": "PP_Quenching_Trough_01.fbx",
+      "path": "assets/protected/pure-poly-quenching-trough-01.ttasset",
+      "bytes": 28988,
+      "sha256": "aa9d286b789db2bd4c2427c13fe2f891f21d3869ea296f7b6a2cd48cab81bfbb"
+    },
+    {
+      "assetId": "pure-poly-grinding-stone-01",
+      "source": "PP_Grinding_Stone_01.fbx",
+      "path": "assets/protected/pure-poly-grinding-stone-01.ttasset",
+      "bytes": 71604,
+      "sha256": "7a9f53f98cb54e340fed17b93654883e0f126c6a862104f2ad610f5bb866c237"
+    },
+    {
+      "assetId": "pure-poly-wooden-crate-01",
+      "source": "PP_Crate_Wooden_01.fbx",
+      "path": "assets/protected/pure-poly-wooden-crate-01.ttasset",
+      "bytes": 28980,
+      "sha256": "e60f5dc28d1d345a14aedb4d44ab4d7c04ff427acc2fe98dbf6e80883671d979"
+    },
+    {
+      "assetId": "pure-poly-wooden-table-01",
+      "source": "PP_Wooden_Table_01.fbx",
+      "path": "assets/protected/pure-poly-wooden-table-01.ttasset",
+      "bytes": 12548,
+      "sha256": "43a2fd4ab4dd05a3f040addd684821980dbbc94c82366af48f62041fe5410374"
+    },
+    {
+      "assetId": "pure-poly-lantern-01-iron",
+      "source": "PP_Lantern_01_Yellow_Gradient_Iron.fbx",
+      "path": "assets/protected/pure-poly-lantern-01-iron.ttasset",
+      "bytes": 54704,
+      "sha256": "d460d870b4a1cdfe79f040fed0f870349b1b645bac70be9aac65dd74b195effb"
+    },
+    {
+      "assetId": "pure-poly-ore-01-blue",
+      "source": "PP_Stone_Veins_01_Blue.fbx",
+      "path": "assets/protected/pure-poly-ore-01-blue.ttasset",
+      "bytes": 15484,
+      "sha256": "1f185871308c1e6052eae990af3f68c644c356dfc4a6f73b373e38dca430cdce"
+    },
+    {
+      "assetId": "pure-poly-ore-01-copper",
+      "source": "PP_Stone_Veins_01_Copper.fbx",
+      "path": "assets/protected/pure-poly-ore-01-copper.ttasset",
+      "bytes": 15488,
+      "sha256": "8627adbb947f1f9ed7b086ca9fe49173d77000b9160ecef469bec3dbcec8dad2"
+    },
+    {
+      "assetId": "pure-poly-ore-01-gold",
+      "source": "PP_Stone_Veins_01_Gold.fbx",
+      "path": "assets/protected/pure-poly-ore-01-gold.ttasset",
+      "bytes": 15484,
+      "sha256": "1422bd1fcaf94b8ec90e5a17be91b6f2cfb1486b18dbcd0b441c605689f61041"
+    },
+    {
+      "assetId": "pure-poly-ore-01-iron",
+      "source": "PP_Stone_Veins_01_Iron.fbx",
+      "path": "assets/protected/pure-poly-ore-01-iron.ttasset",
+      "bytes": 15484,
+      "sha256": "144c44cb553a2a75b1cfe781ad90e87cde938be1433aa09248cc7ee4b009cc2f"
+    }
+  ]
+}

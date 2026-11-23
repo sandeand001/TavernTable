@@ -1,5 +1,9 @@
 import { isCloudAccessScope, isCloudUUID } from './CloudProtocol.js';
-import { validatePlayerCommandResult, scopePlayerReceipt } from './PlayerPublicProtocol.js';
+import {
+  validateLivePlayerPresentation,
+  validatePlayerCommandResult,
+  scopePlayerReceipt,
+} from './PlayerPublicProtocol.js';
 import CloudParticipantAssets from './CloudParticipantAssets.js';
 import { logger, LOG_LEVEL, LOG_CATEGORY } from '../utils/logger/Logger.js';
 import {
@@ -642,6 +646,39 @@ export default class CloudPlayerSessionConnection {
     return !this.reconciledCommands.has(receipt.commandId);
   }
 
+  _presentConfirmedMove(command, acknowledgement) {
+    if (
+      acknowledgement.freeRoam !== true ||
+      acknowledgement.outcome !== 'applied' ||
+      this.snapshot.generation >= acknowledgement.applied.generation ||
+      this.state.publicScene.assetKey !== command.view?.assetKey ||
+      this.state.observerTokenId !== command.observerTokenId ||
+      command.tokenId !== command.observerTokenId
+    )
+      return false;
+    const actor = this.state.publicScene.actors.find(({ id }) => id === command.tokenId);
+    const receipt = scopePlayerReceipt(acknowledgement.presentation, this.state);
+    if (!actor?.owned || !receipt.motion || !samePlacement(actor, receipt.motion.from))
+      return false;
+    const entry = validateLivePlayerPresentation(
+      {
+        tokenId: command.tokenId,
+        commandId: command.commandId,
+        kind: 'move',
+        motion: receipt.motion,
+      },
+      new Map(this.assets.maps.map((map) => [map.id, map]))
+    );
+    this._emit({
+      type: 'live-presentations',
+      campaignId: this.campaignId,
+      confirmed: true,
+      sceneRevision: acknowledgement.applied.sceneRevision,
+      presentations: [entry],
+    });
+    return true;
+  }
+
   async call(operation, args = []) {
     this._identity();
     if (operation === 'playerState') return this.open(args[0] || {});
@@ -694,6 +731,7 @@ export default class CloudPlayerSessionConnection {
     }
     if (operation === 'playerCommand') {
       const command = copy(args[1]);
+      const version = this.selection;
       if (command.kind === 'door.state')
         throw failure(400, 'invalid-command', 'Use the explicit player door operation.');
       if (!this.commandReady)
@@ -711,11 +749,19 @@ export default class CloudPlayerSessionConnection {
         },
         this.access
       );
+      this._identity();
+      if (version !== this.selection) throw ended();
+      const playedFromReply =
+        this.commandReady && this._presentConfirmedMove(command, acknowledged);
       const current = await this._until(
         (snapshot) => snapshot.generation >= acknowledged.applied.generation
       );
       this._identity();
-      if (current.reconcile || current.snapshot.generation !== acknowledged.applied.generation)
+      if (
+        playedFromReply ||
+        current.reconcile ||
+        current.snapshot.generation !== acknowledged.applied.generation
+      )
         this.reconciledCommands.add(command.commandId);
       while (this.reconciledCommands.size > 512)
         this.reconciledCommands.delete(this.reconciledCommands.values().next().value);

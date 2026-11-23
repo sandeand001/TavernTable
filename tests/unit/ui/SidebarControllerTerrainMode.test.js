@@ -91,4 +91,30 @@ describe('SidebarController terrain mode auto-reset', () => {
     expect(window.gameManager.disableTerrainMode).toHaveBeenCalledTimes(1);
     expect(window.gameManager.terrainEngine.setPlaceableRemovalMode).toHaveBeenCalledWith(false);
   });
+
+  test('protected grasses and cacti are discoverable in the plants section where suitable', async () => {
+    const root = document.createElement('div');
+    root.id = 'terrain-placeables-root';
+    document.getElementById('terrain-panel').appendChild(root);
+    window.gameManager = createGameManagerSpies();
+    window.gameManager.terrainEngine.biomeKey = 'grassland';
+    window.gameManager.modelAssetCache = { hasProtectedAssetKeyProvider: () => true };
+    const controller = new SidebarController();
+    try {
+      controller.switchTab('terrain');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const grass = root.querySelector('[data-placeable="pure-poly-grass-01"]');
+      const cactus = root.querySelector('[data-placeable="pure-poly-cactus-01"]');
+      expect(grass.dataset.placeableBucket).toBe('plants');
+      expect(grass.hidden).toBe(false);
+      expect(cactus.hidden).toBe(true);
+      window.gameManager.terrainEngine.biomeKey = 'desertHot';
+      controller._syncPlaceableSuitability(root);
+      expect(cactus.dataset.placeableBucket).toBe('plants');
+      expect(cactus.hidden).toBe(false);
+      expect(grass.hidden).toBe(true);
+    } finally {
+      controller.dispose();
+    }
+  });
 });

@@ -18,9 +18,10 @@ export const authorityRoot =
 
 function request(url, body = null, headers = {}) {
   return new Promise((resolve, reject) => {
+    // Short-lived test hosts can close pooled sockets between requests.
     const outgoing = http.request(
       url,
-      { method: body === null ? 'GET' : 'POST', headers },
+      { method: body === null ? 'GET' : 'POST', headers, agent: false },
       (response) => {
         const chunks = [];
         response.on('data', (chunk) => chunks.push(chunk));

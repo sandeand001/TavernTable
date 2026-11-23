@@ -1,0 +1,13 @@
+Bestiary - Dungeon Monsters Kit
+Creator: Quaternius
+Source: https://quaternius.itch.io/bestiary-dungeon-monsters-kit
+Acquired: 2026-11-20
+Acquired tier: Standard
+License: Quaternius Asset License (QAL) v1.0
+License URL: https://quaternius.com/license.html
+Included full terms: contents/Bestiary - Dungeon Monsters Kit[Standard]/License_Standard.txt
+
+Commercial incorporation is permitted without attribution. The raw or modified
+asset files may not be resold or redistributed as standalone assets, templates,
+libraries, or packs. Models are not registered until rig, weapon, scale, and
+animation contracts are verified.

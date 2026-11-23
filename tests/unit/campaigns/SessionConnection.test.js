@@ -1,4 +1,7 @@
-import SessionConnection from '../../../src/campaigns/SessionConnection.js';
+import SessionConnection, {
+  createLocalProtectedAssetKeyProvider,
+  getLocalProtectedAssetKey,
+} from '../../../src/campaigns/SessionConnection.js';
 
 class EventSourceFixture {
   constructor(url) {
@@ -32,6 +35,61 @@ test('session commands preserve native fetch compatibility and require a server 
   fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
   await expect(connection.call('playerState', [{}])).rejects.toThrow('receipt');
   connection.close();
+});
+
+test('local protected asset requests use the current session and reject malformed key responses', async () => {
+  const identity = { localProtectedAssets: true, csrf: 'synthetic-csrf' };
+  const key = btoa('x'.repeat(32));
+  const fetch = jest.fn(async () => ({
+    ok: true,
+    json: async () => ({ version: 1, keyId: 'fixture-pack-v1', key }),
+  }));
+  const options = { fetch, baseURL: 'http://127.0.0.1:3000/' };
+  await expect(
+    getLocalProtectedAssetKey(identity, 'campaign', 'fixture-pack-v1', options)
+  ).resolves.toBe(key);
+  expect(fetch.mock.calls[0][0]).toBe('http://127.0.0.1:3000/api/protected-asset-key');
+  expect(fetch.mock.calls[0][1].headers['X-TavernTable-Host']).toBe(identity.csrf);
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+    campaignId: 'campaign',
+    keyId: 'fixture-pack-v1',
+  });
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ version: 1, keyId: 'another-pack', key }),
+  });
+  await expect(
+    getLocalProtectedAssetKey(identity, 'campaign', 'fixture-pack-v1', options)
+  ).rejects.toThrow(/invalid/i);
+  await expect(
+    getLocalProtectedAssetKey({ csrf: 'synthetic' }, 'campaign', 'fixture-pack-v1', options)
+  ).rejects.toThrow(/unavailable/i);
+});
+
+test('concurrent local model loads share a key request without caching later authorization', async () => {
+  const identity = { localProtectedAssets: true, csrf: 'synthetic-csrf' };
+  const key = btoa('x'.repeat(32));
+  let release;
+  const fetch = jest.fn(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({ ok: true, json: async () => ({ version: 1, keyId: 'fixture-pack-v1', key }) });
+      })
+  );
+  const provider = createLocalProtectedAssetKeyProvider(identity, 'campaign', {
+    fetch,
+    baseURL: 'http://127.0.0.1:3000/',
+  });
+  const first = provider('fixture-pack-v1');
+  const second = provider('fixture-pack-v1');
+  expect(fetch).toHaveBeenCalledTimes(1);
+  release();
+  await expect(Promise.all([first, second])).resolves.toEqual([key, key]);
+  const third = provider('fixture-pack-v1');
+  expect(fetch).toHaveBeenCalledTimes(2);
+  release();
+  await expect(third).resolves.toBe(key);
 });
 
 test('live notifications reconnect explicitly and release their authenticated stream when unused', () => {

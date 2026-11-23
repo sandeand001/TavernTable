@@ -10,6 +10,7 @@ import {
   getTokenMovementSettings,
   getTokenTravelMode,
 } from '../entities/creatures/TokenMovement.js';
+import { logicalPassageEndpoint } from './CampaignLogicalPassageTravel.js';
 
 function denied(message, code = 'unavailable', details = {}) {
   const error = new ConnectionUnavailableError(message);
@@ -101,7 +102,7 @@ export function prepareConnectionTravel(gm, token, id, { action = 'cross' } = {}
       ? session.movementAllowance(token, travelMode)
       : session.freeMovementAllowance(token, travelMode);
   }
-  const plan = gm.campaignWorld.planConnection(id, token.mapId, token.world, {
+  const options = {
     mapId: gm.campaignMapId,
     geometry: gm.terrainEngine.geometry,
     coverBounds: gm.placeableMeshPool?.targetingCoverBounds() ?? null,
@@ -111,7 +112,17 @@ export function prepareConnectionTravel(gm, token, id, { action = 'cross' } = {}
     openingHold: token.openingHold?.openingId,
     surfaceGrip: token.surfaceHold,
     allowanceFeet: allowance,
-  });
+  };
+  const logical = gm.campaignWorld
+    .getLogicalPassages?.(token.mapId)
+    ?.some((entry) => entry.id === id);
+  const plan = logical
+    ? gm.campaignWorld.planLogicalPassage(id, token.mapId, token.world, {
+        ...options,
+        getTerrainHeight: (x, y) => gm.terrainEngine.getHeightAt(x, y),
+        elevationUnit: gm.spatial?.elevationUnit,
+      })
+    : gm.campaignWorld.planConnection(id, token.mapId, token.world, options);
   if (
     plan.kind === 'window' &&
     travelMode === 'ground' &&
@@ -151,7 +162,70 @@ function actionLabel(connection, token, mapId, action) {
         : 'Enter';
 }
 
+function logicalPassageOption(gm, token, passage, action) {
+  const mapId = gm.campaignMapId;
+  const source = passage.ends?.find((end) => end.mapId === mapId) || passage;
+  const destination = passage.ends?.find((end) => end.mapId !== mapId);
+  const option = {
+    name: 'passage',
+    kind: 'logical-passage',
+    targetName: destination ? gm.campaignWorld.getMap(destination.mapId).name : 'another area',
+    actionLabel: 'Go through',
+  };
+  if (!token)
+    return { ...option, allowed: false, reason: 'Select a creature before using this entrance.' };
+  try {
+    assertConnectionActor(gm, token, false, passage.id);
+    if (action !== 'cross') denied('This passage supports only crossing');
+    const map = gm.campaignWorld.getMap(mapId);
+    const entry = logicalPassageEndpoint(
+      map,
+      source.side,
+      (x, y) => gm.terrainEngine.getHeightAt(x, y),
+      gm.spatial?.elevationUnit
+    ).world;
+    if (token.flightActive) entry.y = token.world.y;
+    const scale = 5 / map.grid.tileWorldSize;
+    const distance = Math.max(
+      ...['x', 'y', 'z'].map((axis) => Math.abs(token.world[axis] - entry[axis]) * scale)
+    );
+    if (distance > 5 + 1e-6)
+      return {
+        ...option,
+        allowed: false,
+        reason: 'Approach the entrance first.',
+        approach: { point: entry, normal: { x: 0, y: 1, z: 0 } },
+      };
+    if (!gm.playerInput) {
+      const plan = prepareConnectionTravel(gm, token, passage.id, { action });
+      return { ...option, allowed: true, costFeet: plan.costFeet };
+    }
+    const baseCost = 5 + Math.max(0, Math.ceil(distance / 5 - 1e-6) * 5);
+    const costFeet =
+      getTokenTravelMode(token) === 'ground' && getTokenConditions(token).includes('prone')
+        ? baseCost * 2
+        : baseCost;
+    const allowanceFeet = gm.playerInput.movementBudget(token).remainingFeet;
+    if (costFeet > allowanceFeet + 1e-6)
+      denied('Not enough movement.', 'insufficient-movement', { costFeet, allowanceFeet });
+    return { ...option, allowed: true, costFeet };
+  } catch (error) {
+    if (!(error instanceof ConnectionUnavailableError)) throw error;
+    return {
+      ...option,
+      allowed: false,
+      reason: error.message,
+      insufficientMovement: error.code === 'insufficient-movement',
+      ...(Number.isFinite(error.costFeet) ? { costFeet: error.costFeet } : {}),
+    };
+  }
+}
+
 export function getConnectionTravelOption(gm, token, id, { action = 'cross' } = {}) {
+  const passage = gm.campaignWorld
+    .getLogicalPassages?.(gm.campaignMapId)
+    ?.find((entry) => entry.id === id);
+  if (passage) return logicalPassageOption(gm, token, passage, action);
   const connection = gm.campaignWorld.getConnections().find((entry) => entry.id === id);
   if (!connection) throw new Error('The map connection no longer exists');
   const source = connection.ends.find((end) => end.mapId === gm.campaignMapId);

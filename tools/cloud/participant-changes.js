@@ -2,6 +2,8 @@ const stableStringify = require('fast-json-stable-stringify');
 const { CloudError } = require('./cloud-error.js');
 const { participantDelta, reuseParticipantGeometry } = require('./participant-state.js');
 const { cloudOwnerDelta } = require('../../src/campaigns/CloudOwnerProtocol.js');
+const { continuesVisibleGroundMove } = require('../../src/campaigns/CloudParticipantProtocol.js');
+const { freeRoamMovesSince } = require('./free-roam-moves.js');
 const { isCloudUUID, isCloudParticipantRequest } = require('../../src/campaigns/CloudProtocol.js');
 
 const accessDenials = new Set([
@@ -10,6 +12,7 @@ const accessDenials = new Set([
   'live-session-paused',
   'live-session-changed',
   'pilot-access-required',
+  'account-disabled',
   'invalid-account-eligibility',
 ]);
 const unavailable = () =>
@@ -349,28 +352,35 @@ class ParticipantChanges {
         viewer.dirty = true;
         continue;
       }
+      const gap = viewer.previous && next.generation > viewer.previous.generation + 1;
+      const freeMoves =
+        viewer.previous && !history?.resync
+          ? freeRoamMovesSince(frame.head, viewer.previous, viewer.command.sessionId)
+          : [];
+      const movementBatch = gap && freeMoves.length > 1;
       if (viewer.ownerWorld) {
         let event;
         if (!viewer.previous) event = { kind: 'owner-checkpoint', checkpoint: next };
         else if (next.generation === viewer.previous.generation) continue;
-        else if (history?.resync || next.generation !== viewer.previous.generation + 1)
+        else if (history?.resync || (gap && !movementBatch))
           event = { kind: 'owner-resync', checkpoint: next };
         else {
           try {
-            const presentations = frame.head.presentationRef
-              ? await this.store._ownerWorldPresentations(
-                  viewer.principal,
-                  group.id,
-                  viewer.command,
-                  viewer.scope,
-                  viewer.previous,
-                  next,
-                  frame
-                )
-              : [];
+            const presentations =
+              frame.head.presentationRef || frame.head.freeRoamMoves
+                ? await this.store._ownerWorldPresentations(
+                    viewer.principal,
+                    group.id,
+                    viewer.command,
+                    viewer.scope,
+                    viewer.previous,
+                    next,
+                    frame
+                  )
+                : [];
             event = {
               kind: 'owner-delta',
-              delta: cloudOwnerDelta(viewer.previous, next, presentations),
+              delta: cloudOwnerDelta(viewer.previous, next, presentations, { movementBatch }),
             };
           } catch (error) {
             if (error.code === 'participant-state-changed') {
@@ -404,13 +414,14 @@ class ParticipantChanges {
             : next,
         };
       } else if (next.generation === viewer.previous.generation) continue;
-      else if (history?.resync || next.generation !== viewer.previous.generation + 1)
+      else if (history?.resync || (gap && !movementBatch))
         event = { kind: 'resync', checkpoint: next };
       else {
         const delta = participantDelta(viewer.previous, next, {
           cachedAssets: viewer.cachedAssets,
+          movementBatch,
         });
-        if (delta.kind === 'update' && frame.head.presentationRef) {
+        if (freeMoves.length || (delta.kind === 'update' && frame.head.presentationRef)) {
           try {
             const presentations = await this.store._participantPresentations(
               viewer.principal,
@@ -421,7 +432,13 @@ class ParticipantChanges {
               next,
               frame
             );
-            if (presentations.length) delta.presentations = presentations;
+            const visible =
+              delta.kind === 'replace'
+                ? presentations.filter((entry) =>
+                    continuesVisibleGroundMove(viewer.previous.state, next.state, entry)
+                  )
+                : presentations;
+            if (visible.length) delta.presentations = visible;
           } catch (error) {
             if (error.code === 'participant-state-changed') {
               viewer.dirty = true;

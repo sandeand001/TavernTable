@@ -70,7 +70,7 @@ function addBoundary(world, x, z, rotation, material) {
   );
 }
 
-export function createD20Simulation({
+export function createDieSimulation({
   geometry,
   scale,
   metrics,
@@ -83,7 +83,7 @@ export function createD20Simulation({
   const depth = metrics.rows * tileSize;
   const radius = geometry.radius * scale;
   if (!(scale > 0) || !(tileSize > 0) || width <= radius * 2 || depth <= radius * 2) {
-    throw new Error('The board is too small for the large d20');
+    throw new Error('The board is too small for the physical die');
   }
   if (
     groundHeights.length !== metrics.rows ||
@@ -197,12 +197,13 @@ export function createD20Simulation({
   world.addBody(body);
 
   const transformedNormal = new Vec3();
+  const faceDirection = geometry.resultFaceDirection === 'down' ? -1 : 1;
   const hasClearFace = () => {
     let highest = -1;
     let runnerUp = -1;
     for (const normal of shape.faceNormals) {
       body.quaternion.vmult(normal, transformedNormal);
-      const alignment = transformedNormal.y;
+      const alignment = transformedNormal.y * faceDirection;
       if (alignment > highest) {
         runnerUp = highest;
         highest = alignment;
@@ -261,3 +262,5 @@ export function createD20Simulation({
   };
   return simulation;
 }
+
+export const createD20Simulation = createDieSimulation;

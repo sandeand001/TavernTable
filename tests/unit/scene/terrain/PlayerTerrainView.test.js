@@ -1,6 +1,7 @@
 import * as three from 'three';
 import CampaignWorld from '../../../../src/campaigns/CampaignWorld.js';
 import { CharacterLibrary } from '../../../../src/entities/characters/CharacterLibrary.js';
+import { TerrainEngine } from '../../../../src/terrain/TerrainEngine.js';
 import { TerrainGeometry } from '../../../../src/terrain/TerrainGeometry.js';
 import { buildPlayerTerrainView } from '../../../../src/scene/terrain/PlayerTerrainView.js';
 import {
@@ -8,6 +9,7 @@ import {
   physicalSightObstacles,
 } from '../../../../src/campaigns/CreatureVisibility.js';
 import MapProjectionTerrain from '../../../../src/scene/token-adapter/MapProjectionTerrain.js';
+import { TerrainVolumeMeshBuilder } from '../../../../src/scene/terrain/TerrainVolumeMeshBuilder.js';
 import { GRID_CONFIG } from '../../../../src/config/GameConstants.js';
 import { CAVERN_BIOME_KEYS } from '../../../../src/config/biome/BiomeConstants.js';
 import { getMapTerrainAppearance } from '../../../../src/scene/terrain/TerrainMaterialFactory.js';
@@ -16,6 +18,17 @@ import {
   getCavernSurfaceColor,
 } from '../../../../src/terrain/generation/CavernInteriors.js';
 import { sceneState } from '../../../helpers/sceneState.js';
+
+test('Dungeon terrain uses constructed paving without changing authored material styles', () => {
+  const map = {
+    id: 'dungeon',
+    grid: { tileWorldSize: 1 },
+    terrain: { biome: 'dungeon', worldElevationUnit: 0.3 },
+  };
+  const appearance = getMapTerrainAppearance({ getMap: () => map }, map);
+  expect(appearance.getStyle(0, 0, 0, { id: 'terrain' })).toBe(7);
+  expect(appearance.getStyle(0, 0, 0, { id: 'authored-wall', materialStyle: 'timber' })).toBe(3);
+});
 
 test.each(CAVERN_BIOME_KEYS)(
   'shared terrain appearance preserves %s cavern coloring and authored materials',
@@ -39,7 +52,7 @@ test.each(CAVERN_BIOME_KEYS)(
   }
 );
 
-function fixture() {
+function fixture({ roof = false } = {}) {
   localStorage.clear();
   const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
   const base = sceneState();
@@ -58,6 +71,14 @@ function fixture() {
     id: 'door',
     bounds: { min: { x: 23.5, y: 0, z: 10 }, max: { x: 26.5, y: 8, z: 15 } },
   });
+  if (roof)
+    outside.addSolid({
+      id: 'castle-roof',
+      layerId: 'roof',
+      materialStyle: 'slate',
+      materialColor: 0xaa4455,
+      bounds: { min: { x: 24, y: 10, z: 4 }, max: { x: 32, y: 12, z: 12 } },
+    });
   const room = new TerrainGeometry({
     widthFeet: 25,
     depthFeet: 25,
@@ -171,6 +192,27 @@ function hasColor(geometry, hex) {
   return false;
 }
 
+function hasRoofSurface(geometry, roof) {
+  const positions = geometry.getAttribute('position');
+  const { min, max } = roof.bounds;
+  for (let index = 0; index < positions.count; index++) {
+    const point = {
+      x: positions.getX(index) * 5,
+      y: positions.getY(index) * 5,
+      z: positions.getZ(index) * 5,
+    };
+    if (
+      point.x >= min.x - 1e-4 &&
+      point.x <= max.x + 1e-4 &&
+      point.z >= min.z - 1e-4 &&
+      point.z <= max.z + 1e-4 &&
+      point.y >= max.y - 0.2
+    )
+      return true;
+  }
+  return false;
+}
+
 test('a closed door omits unknown-room floors, walls and stairs from the player geometry itself', () => {
   const board = fixture();
   const closed = visible(board);
@@ -203,6 +245,96 @@ test('a closed door omits unknown-room floors, walls and stairs from the player 
     closedAgain.dispose();
   }
 });
+
+test('an exterior player view retains a visible castle roof', () => {
+  const roof = visible(fixture({ roof: true }));
+  try {
+    expect(hasColor(roof, 0xaa4455)).toBe(true);
+  } finally {
+    roof.dispose();
+  }
+});
+
+test('a generated castle retains its gabled roof in the exterior player projection', () => {
+  localStorage.clear();
+  const library = new CharacterLibrary({ ruleset: '2014', catalog: [], storage: localStorage });
+  const engine = new TerrainEngine(60, 60);
+  engine.configureGeometryScale(1.5);
+  engine.generateBiomeElevation('cliffsideCastle', { seed: 42 });
+  const saved = engine.save();
+  const roofs = engine.geometry
+    .getSolidCells()
+    .filter(
+      (cell) =>
+        cell.layerId === 'roof' &&
+        cell.materialColor !== undefined &&
+        cell.bounds.max.y - cell.bounds.min.y > 0.1
+    );
+  const roof = roofs[0];
+  expect(roof).toBeDefined();
+  const x = 227.5;
+  const z = 37.5;
+  const cellX = Math.floor(x / 5);
+  const cellZ = Math.floor(z / 5);
+  const support = engine.geometry.findSupport(x, z, { belowFeet: 1000, clearanceFeet: 5 });
+  expect(support).toBeDefined();
+  const base = sceneState();
+  const observer = {
+    ...base.creatures[0],
+    mapId: 'map-main',
+    gridX: cellX,
+    gridY: cellZ,
+    pose: { kind: 'ground', world: { x: x / 5, y: support.heightFeet / 5, z: z / 5 } },
+  };
+  const map = {
+    id: 'map-main',
+    name: 'Generated cliffside castle',
+    base: 'ground',
+    grid: { cols: 60, rows: 60, tileWorldSize: 1 },
+    originFeet: { x: 0, y: 0, z: 0 },
+    quarterTurns: 0,
+    terrain: {
+      ...base.terrain,
+      heights: saved.heights,
+      geometry: saved.geometry,
+      biome: 'cliffsideCastle',
+      seed: 42,
+    },
+  };
+  const scene = {
+    version: 3,
+    ruleset: '2014',
+    maps: [map],
+    creatures: [observer],
+    tokenCounters: base.tokenCounters,
+    combat: base.combat,
+    rollLog: [],
+    view: { mapId: map.id, focusTokenId: observer.id, camera: base.camera },
+    connections: [],
+  };
+  const world = CampaignWorld.fromScene(scene, { ruleset: '2014', library });
+  const authored = new TerrainVolumeMeshBuilder().build({
+    geometry: world.getMapGeometry(map.id),
+    three,
+    worldUnitsPerFoot: map.grid.tileWorldSize / 5,
+    ...getMapTerrainAppearance(world, world.getMap(map.id)),
+  });
+  expect(hasRoofSurface(authored, roof)).toBe(true);
+  authored.dispose();
+  const geometry = buildPlayerTerrainView({
+    world,
+    map: world.getMap(map.id),
+    observer,
+    visibleMapIds: new Set([map.id]),
+    obstacles: physicalSightObstacles(world, observer.mapId),
+    three,
+  });
+  try {
+    expect(hasRoofSurface(geometry, roof)).toBe(true);
+  } finally {
+    geometry.dispose();
+  }
+}, 60000);
 
 test('the DM can browse unseen room geometry without opening its door or moving a creature', () => {
   const { world, map } = fixture();

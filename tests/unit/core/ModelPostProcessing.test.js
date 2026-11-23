@@ -10,11 +10,12 @@ import {
 } from 'three';
 
 import { autoScaleModel, postProcessModel } from '../../../src/core/ModelPostProcessing.js';
+import ModelAssetCache from '../../../src/core/ModelAssetCache.js';
 
 const three = { Box3, DoubleSide, SRGBColorSpace, Vector3 };
 const textureBase = 'assets/terrain/3d Assets/Textures';
 
-function processMaterial(key, material, descriptor = {}) {
+function processMaterial(key, material, descriptor = {}, nodeName = '') {
   const cache = {
     _textureLoader: {
       load: jest.fn((path) => {
@@ -26,6 +27,7 @@ function processMaterial(key, material, descriptor = {}) {
     _textureCache: new Map(),
   };
   const root = new Mesh(new BoxGeometry(1, 1, 1), material);
+  root.name = nodeName;
   postProcessModel(cache, three, root, key, 'fixture.obj', 'OBJ', descriptor);
   return cache;
 }
@@ -79,6 +81,59 @@ describe('Authored plant material textures', () => {
       expect(material.side).toBe(DoubleSide);
     }
   );
+});
+
+test('model readiness waits for required post-processed textures and reports load failures', async () => {
+  const cache = new ModelAssetCache();
+  let rejectTexture;
+  cache._textureLoader = {
+    load: jest.fn((_url, _onLoad, _onProgress, onError) => {
+      rejectTexture = onError;
+      return new Texture();
+    }),
+  };
+  const root = new Mesh(
+    new BoxGeometry(1, 1, 1),
+    new MeshStandardMaterial({ name: 'Leaves_TallThick' })
+  );
+  postProcessModel(cache, three, root, 'tall-thick-1', 'fixture.obj', 'OBJ', {});
+  cache._cache.set('tall-thick-1', root);
+  let settled = false;
+  const ready = cache.whenModelReady('tall-thick-1').finally(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  rejectTexture(new Error('Texture unavailable'));
+  await expect(ready).rejects.toThrow(/texture/i);
+});
+
+test('the Dungeon wall import corrects invisible source materials without changing other models', () => {
+  const dungeon = new MeshStandardMaterial({ opacity: 0, transparent: true });
+  const other = new MeshStandardMaterial({ opacity: 0, transparent: true });
+  const descriptor = new ModelAssetCache()._loadRegistryEntry('source-dungeon-wall');
+
+  processMaterial('source-dungeon-wall', dungeon, descriptor);
+  processMaterial('other-model', other);
+
+  expect(dungeon.opacity).toBe(1);
+  expect(dungeon.transparent).toBe(false);
+  expect(dungeon.depthWrite).toBe(true);
+  expect(other.opacity).toBe(0);
+  expect(other.transparent).toBe(true);
+});
+
+test.each([
+  ['source-cave-stalagmite', 'Cave Limestone Warm Grey', 'Closed_Limestone_Bedrock_Mesh001'],
+  ['source-cave-column', 'Cave Stone Warm', 'Continuous_Fractured_Column_Mesh'],
+])('%s keeps its authored untextured stone materials', (key, name, nodeName) => {
+  const descriptor = new ModelAssetCache()._loadRegistryEntry(key);
+  const material = new MeshStandardMaterial({ name, color: 0x4c463f });
+  const cache = processMaterial(key, material, descriptor, nodeName);
+  expect(material.map).toBeNull();
+  expect(material.color.getHex()).toBe(0x4c463f);
+  expect(material.userData.__foliageCandidate).toBe(false);
+  expect(cache._textureLoader.load).not.toHaveBeenCalled();
 });
 
 describe('Authored model scale', () => {

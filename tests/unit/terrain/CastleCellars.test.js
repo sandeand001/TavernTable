@@ -172,7 +172,10 @@ test.each([
 test.each([
   ['castle', 50, 42],
   ['castle', 60, 4],
+  ['ruinedCastle', 25, 1],
+  ['ruinedCastle', 40, 7],
   ['ruinedCastle', 50, 42],
+  ['ruinedCastle', 60, 1],
   ['cliffsideCastle', 20, 42],
   ['mountainCastle', 20, 42],
 ])(

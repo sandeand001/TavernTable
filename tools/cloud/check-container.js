@@ -64,6 +64,12 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/assigned-characters');
   assert.equal(assignedSheets.status, 401);
   assert.equal((await assignedSheets.json()).code, 'authentication-required');
+  const protectedKey = await fetch('http://127.0.0.1:' + port +
+    '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/protected-asset-key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+  assert.equal(protectedKey.status, 401);
+  assert.equal((await protectedKey.json()).code, 'authentication-required');
   const anonymousEvents = await fetch('http://127.0.0.1:' + port +
     '/api/cloud/campaigns/11111111-1111-4111-8111-111111111111/events', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -198,6 +204,20 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   assert.notDeepEqual(nativeD20.frames[0].position, nativeD20.frames.at(-1).position);
   assert.equal(nativeD20.geometryKey, createHash('sha256')
     .update(fs.readFileSync('assets/Items/d20-gold.glb')).digest('hex'));
+  seed = 13;
+  const nativeD6 = await dice.playerDie({
+    sides: 6,
+    color: 'ocean',
+    metrics: { cols: 25, rows: 25, tileSize: 1 },
+    groundHeights: Array.from({ length: 25 }, () => Array(25).fill(0)), obstacles: [],
+  });
+  assert.equal(nativeD6.type, 'physical-die');
+  assert.equal(nativeD6.cocked, false);
+  assert.ok(Number.isInteger(nativeD6.value) && nativeD6.value >= 1 && nativeD6.value <= 6);
+  assert.ok(nativeD6.frames.length > 20);
+  assert.equal(nativeD6.geometryKey, createHash('sha256')
+    .update(fs.readFileSync('assets/Items/player-dice-set/player-dice-set.glb')).digest('hex'));
+  assert.ok(fs.readFileSync('assets/Items/player-dice-set/NOTICE.txt', 'utf8').trim());
   const image = await sharp({ create: {
     width: 4000, height: 4000, channels: 4, background: '#112233',
   } }).png().toBuffer();
@@ -212,12 +232,13 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
   const runtimeHashes = {};
   for (const file of [
     'tools/cloud/admin-runtime.js', 'tools/cloud/production-runtime.js', 'tools/cloud/production-host.js',
+    'tools/cloud/protected-assets.js', 'src/core/ProtectedAsset.js',
     'tools/cloud/campaign-store.js', 'tools/cloud/cloud-http.js', 'tools/cloud/usage-limits.js',
     'tools/cloud/account-access.js', 'tools/player-undo-sessions.js',
     'tools/player-room-visits.js',
     'tools/assigned-character-change.js',
     'tools/published-maps.js', 'tools/cloud/participant-state.js',
-    'tools/cloud/participant-changes.js',
+    'tools/cloud/participant-changes.js', 'tools/cloud/free-roam-moves.js',
     'tools/cloud/event-stream.js',
     'src/campaigns/CloudParticipantProtocol.js',
     'src/campaigns/CloudProtocol.js',
@@ -228,10 +249,12 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     'src/campaigns/CampaignDoors.js', 'src/campaigns/CreatureVisibility.js',
     'src/campaigns/ServerTargeting.js',
     'src/campaigns/CampaignScene.js',
-    'src/terrain/TerrainGeometry.js',
+    'src/terrain/TerrainGeometry.js', 'src/terrain/PlaceableCollision.js',
+    'src/terrain/TerrainSupport.js',
     'src/campaigns/PlayerCommandProtocol.js', 'src/entities/creatures/TokenMovement.js',
     'src/campaigns/CampaignCover.js', 'src/config/token-adapter/CoverMetrics.js',
-    'assets/Items/d20-gold.glb', 'package.json', 'package-lock.json',
+    'assets/Items/d20-gold.glb', 'assets/Items/player-dice-set/player-dice-set.glb',
+    'assets/Items/player-dice-set/NOTICE.txt', 'package.json', 'package-lock.json',
   ]) {
     runtimeHashes[file] = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }
@@ -241,7 +264,8 @@ const { PrivateCampaignAssets } = require('./tools/cloud/campaign-assets.js');
     anonymousAssignedSheets: 401,
     anonymousEvents: 401, forgedEvents: 401,
     anonymousOwnerWorld: 401, anonymousWorldCommands: 401,
-    nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value, nativeCoverRulesets,
+    nativeD20Frames: nativeD20.frames.length, nativeD20Value: nativeD20.value,
+    nativeD6Frames: nativeD6.frames.length, nativeD6Value: nativeD6.value, nativeCoverRulesets,
     nativeFlightRulesets,
     forgedIdentity: 401, privateFiles: 404,
     resourcePacks: manifest.packs.length, resourceBytes, validatedImagePixels: 16000000,
