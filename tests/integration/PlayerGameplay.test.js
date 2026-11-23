@@ -375,6 +375,8 @@ test.each([
   'mushroom-giant-cap',
   'pure-poly-grass-01',
   'pure-poly-pebbles-01',
+  'pure-poly-money-bag-gems-red',
+  'pure-poly-ingot-gold',
 ])('a player can move through decorative %s scenery', async (modelKey) => {
   const { campaignId, player } = await table('2024', {
     sceneTransform: (scene) => {
@@ -424,6 +426,7 @@ test.each([
   ['mushroom-giant-cap', 'mushroom-giant-cap', 200],
   ['pure-poly-grass-01', 'pure-poly-grass-01', 200],
   ['pure-poly-pebbles-01', 'pure-poly-pebbles-01', 200],
+  ['pure-poly-money-bag-gems-red', 'pure-poly-money-bag-gems-red', 200],
   ['tree-green-deciduous', 'common-broadleaf-1', 422],
 ])('flying movement respects the solidity of %s', async (placeableId, modelKey, status) => {
   const { campaignId, player } = await table('2024', {

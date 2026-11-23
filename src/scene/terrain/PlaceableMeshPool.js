@@ -406,7 +406,7 @@ export class PlaceableMeshPool {
       !placeable.persistedScale &&
       (placeable.generatedBiome === true || fitManualTree) &&
       (/^tree-/.test(placeable.placeableId || '') ||
-        ['cactus', 'rock', 'prop', 'ore', 'light', 'tree'].includes(
+        ['cactus', 'rock', 'prop', 'ore', 'treasure', 'light', 'tree'].includes(
           getPurePolyAsset(placeable.placeableId)?.kind
         ))
     ) {
@@ -433,7 +433,7 @@ export class PlaceableMeshPool {
         if (fitManualTree && !placeable.generatedBiome) {
           const error = Object.assign(
             new Error(
-              ['cactus', 'rock', 'prop', 'ore', 'light'].includes(
+              ['cactus', 'rock', 'prop', 'ore', 'treasure', 'light'].includes(
                 getPurePolyAsset(placeable.placeableId)?.kind
               )
                 ? 'This scenery needs more supported, level ground'

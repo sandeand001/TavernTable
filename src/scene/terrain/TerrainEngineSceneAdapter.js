@@ -160,7 +160,9 @@ export class TerrainEngineSceneAdapter {
     return (
       /^tree-/.test(id || '') ||
       TERRAIN_PLACEABLES[id]?.type === 'plant-family' ||
-      ['cactus', 'rock', 'prop', 'ore', 'light', 'tree'].includes(getPurePolyAsset(id)?.kind)
+      ['cactus', 'rock', 'prop', 'ore', 'treasure', 'light', 'tree'].includes(
+        getPurePolyAsset(id)?.kind
+      )
     );
   }
 

@@ -139,7 +139,7 @@ The repository catalog currently identifies these representative paths:
 | Kenney Retro Fantasy   | Low-poly fallback/testing kit, equipment and props            |
 
 These entries are pack planning assignments. Nine previously reviewed representatives
-and 180 selected Pure Poly derivatives are runtime placeables; whole packs remain
+and 197 selected Pure Poly derivatives are runtime placeables; whole packs remain
 source-only. Town generation uses
 four other Village wall, roof, gable and balcony models. The Village door-wall
 ID is a generation marker and manual placeable, not the door leaf used in a
@@ -274,8 +274,8 @@ These are filename-based planning categories, not gameplay assignments. In
 particular, human-made mining props and light fixtures are candidates for
 deliberate occupied sites, **not** automatic scenery in a natural cavern.
 Entrances, tunnel shells and water still require independent physical and
-gameplay validation. One hundred and eighty selected formations, rocks, pebbles, crystal
-clusters, trees, grass, cacti, fungi, ore and deliberate-site props have encrypted
+gameplay validation. One hundred and ninety-seven selected formations, rocks, pebbles, crystal
+clusters, trees, grass, cacti, fungi, ore, treasure and deliberate-site props have encrypted
 derivatives registered as manual placeables. One hundred and six natural models are also available
 through the **Pure Poly scenery** generation choice for appropriate biomes.
 When the current account can obtain a working key and decrypt a selected model,
@@ -283,7 +283,7 @@ new supported biome choices default to Pure Poly; built-in scenery remains
 selectable. Saved generation choices remain unchanged, and failed key checks are
 shown before offering built-in scenery. Access is checked again before replacing
 a map; a failed check leaves it unchanged. Existing maps are not regenerated.
-Ore, mine, forge, storage, furnishing and lighting props are manual-only,
+Ore, treasure, mine, forge, storage, furnishing and lighting props are manual-only,
 not randomly scattered in natural caves.
 The protected Scree Slope profile uses stone ground cover rather than woodland trees.
 Gray rock outcrops generate in Cavern; brown rocks suit dry biomes and mountains,
@@ -294,7 +294,7 @@ New Dead Forests use leafless legacy trees with a small chance of green survivor
 The protected profile also mixes in six reviewed leafless Pure Poly shapes.
 The previously dominant legacy “bare” model has a crimson canopy and is no longer
 generated in Dead or Petrified Forests. Existing placements are unchanged.
-The other 2,417 variants remain source-only candidates. Production distribution
+The other 2,400 variants remain source-only candidates. Production distribution
 and user visual acceptance remain open.
 
 | Selected family | Models | Remaining review |
@@ -305,6 +305,7 @@ and user visual acceptance remain open.
 | Grass | 6 | Small ground cover is passable and does not obstruct sight. |
 | Pebble clusters | 8 | Small ground cover is passable and does not obstruct sight. |
 | Mine, forge, storage and furnishing props | 28 | Chests are decorative; rails and equipment need interaction review. |
+| Small treasure decorations | 17 | Bags and ingots are passable; they are not inventory or loot. |
 | Ore stones | 21 | Three shapes and seven colors are manual-only; mined states need gameplay review. |
 | Lantern | 1 | Additional fixtures are for deliberate built sites only. |
 
@@ -329,6 +330,9 @@ All 28 chest variants were compared. Twenty are available only as deliberately
 placed decorations, including lower-polygon alternatives and seven trim colors;
 they do not implement opening, storage or loot. Similar higher-cost alternatives
 remain source-only.
+The loose-treasure review compared seven ingot colors, 16 bags and 25 representative
+gold coins. Ten bags and seven ingots are manual-only, passable decorations;
+individual coins remain candidates for item displays or grouped placement.
 
 Generated cavern routes and scenery intersections are checked against rendered
 model bounds. Movement still uses the existing grid-cell obstacle policy for

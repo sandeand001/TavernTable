@@ -411,12 +411,12 @@ grid/reset work also underpins independent chamber generation.
       existing saves and the approved Village visuals. Package selected
       restricted models through encrypted delivery, keeping originals and keys
       private, and verify local/cloud behavior and release packaging.
-      Progress: 2,597 individual FBX variants are cataloged. One hundred and eighty
+      Progress: 2,597 individual FBX variants are cataloged. One hundred and ninety-seven
       selected formations, rocks, pebbles, crystal clusters, trees, grass, cacti, fungi, ore and
       deliberate-site props are encrypted. The natural models default for new
       supported biome choices only after key access is verified; built-in scenery
       remains selectable and saved choices are preserved. Ore and built-site props are
-      manual-only. The other 2,417 remain source-only, not discarded or approved for runtime
+      manual-only. The other 2,400 remain source-only, not discarded or approved for runtime
       placement. Further mining, forge, construction, equipment and other categories
       remain to be reviewed and integrated; visual acceptance remains open.
       Small Pure Poly grass and pebble clusters are passable ground cover in suitable biomes.
@@ -438,6 +438,8 @@ grid/reset work also underpins independent chamber generation.
       walkable-surface behavior.
       Twenty chest variants are manual decorative obstacles only; opening,
       storage and loot interactions remain unimplemented.
+      Ten money bags and seven ingots are manual, passable decorations rather
+      than usable inventory; individual coin models await item or grouping support.
       Remove Placeables now removes registered manual props as well as scenery,
       including placements still loading, without deleting constructed walls.
       New trees, cacti and rocks retain the existing grid-cell movement policy;

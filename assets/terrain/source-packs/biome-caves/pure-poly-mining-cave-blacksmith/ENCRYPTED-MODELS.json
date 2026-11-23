@@ -1110,6 +1110,125 @@
       "sha256": "43a2fd4ab4dd05a3f040addd684821980dbbc94c82366af48f62041fe5410374"
     },
     {
+      "assetId": "pure-poly-money-bag-closed",
+      "source": "PP_Money_Bag_Corded_01.fbx",
+      "path": "assets/protected/pure-poly-money-bag-closed.ttasset",
+      "bytes": 33364,
+      "sha256": "db53fe9080b22b2be947d8b52f0a521f446cefb632495c7fde2891f8ecc0c673"
+    },
+    {
+      "assetId": "pure-poly-money-bag-jeweled",
+      "source": "PP_Money_Bag_Corded_03.fbx",
+      "path": "assets/protected/pure-poly-money-bag-jeweled.ttasset",
+      "bytes": 39680,
+      "sha256": "d649ae2f33d7f2fb57c8be09befc403c304daa7f43f60a1c8411e4122e3de87e"
+    },
+    {
+      "assetId": "pure-poly-money-bag-empty",
+      "source": "PP_Money_Bag_Empty_03.fbx",
+      "path": "assets/protected/pure-poly-money-bag-empty.ttasset",
+      "bytes": 48420,
+      "sha256": "de342011688c31eaa8aeccdb60d73f5d2648dee889aca912b8d99185c8da23dd"
+    },
+    {
+      "assetId": "pure-poly-money-bag-gems-blue",
+      "source": "PP_Money_Bag_05_Blue.fbx",
+      "path": "assets/protected/pure-poly-money-bag-gems-blue.ttasset",
+      "bytes": 70732,
+      "sha256": "f4be2e4c9a733cbb6e406984aa42b48c0a875c9c45c7a231b894686f3d543773"
+    },
+    {
+      "assetId": "pure-poly-money-bag-gems-green",
+      "source": "PP_Money_Bag_05_Green.fbx",
+      "path": "assets/protected/pure-poly-money-bag-gems-green.ttasset",
+      "bytes": 70672,
+      "sha256": "4fd693139a0aa69e24adf2a642007a47247be380dab593ad1e6ba588ab5785f7"
+    },
+    {
+      "assetId": "pure-poly-money-bag-gems-red",
+      "source": "PP_Money_Bag_05_Red.fbx",
+      "path": "assets/protected/pure-poly-money-bag-gems-red.ttasset",
+      "bytes": 70640,
+      "sha256": "784b20227bf4902fdf6cc2a9c3d15272809994458c12ece38ff6958361543169"
+    },
+    {
+      "assetId": "pure-poly-money-bag-coins-copper",
+      "source": "PP_Money_Bag_06_Copper.fbx",
+      "path": "assets/protected/pure-poly-money-bag-coins-copper.ttasset",
+      "bytes": 63660,
+      "sha256": "4b9dc32b8e07636c541230a105d03a63218bf00c9f37236989b12af47acdbdcd"
+    },
+    {
+      "assetId": "pure-poly-money-bag-coins-gold",
+      "source": "PP_Money_Bag_06_Gold.fbx",
+      "path": "assets/protected/pure-poly-money-bag-coins-gold.ttasset",
+      "bytes": 62920,
+      "sha256": "0b419c882631a914db41c16f0339e3f97e2e0d529e6cb8a89e861b002db6c9aa"
+    },
+    {
+      "assetId": "pure-poly-money-bag-coins-iron",
+      "source": "PP_Money_Bag_06_Iron.fbx",
+      "path": "assets/protected/pure-poly-money-bag-coins-iron.ttasset",
+      "bytes": 63688,
+      "sha256": "c6e853176b949458a697e439e2ec26f8595ef43dc637b45dc54aae8ca4e0a3de"
+    },
+    {
+      "assetId": "pure-poly-money-bag-coins-silver",
+      "source": "PP_Money_Bag_06_Silver.fbx",
+      "path": "assets/protected/pure-poly-money-bag-coins-silver.ttasset",
+      "bytes": 63656,
+      "sha256": "1def26f9f58ae8d8a6328a8ecfe8b9969bcf79b6acd14434251059d8af248d84"
+    },
+    {
+      "assetId": "pure-poly-ingot-blue",
+      "source": "PP_Bar_Blue_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-blue.ttasset",
+      "bytes": 9196,
+      "sha256": "afef252faad1c344d2be10f8c1fcf877d6bd43259c968fba523e94be1157a541"
+    },
+    {
+      "assetId": "pure-poly-ingot-copper",
+      "source": "PP_Bar_Copper_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-copper.ttasset",
+      "bytes": 9200,
+      "sha256": "9fb1aeb6dcab1a159e481ee9d48c18b30f4554036202c29d7a314ca540a08d7d"
+    },
+    {
+      "assetId": "pure-poly-ingot-gold",
+      "source": "PP_Bar_Gold_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-gold.ttasset",
+      "bytes": 9196,
+      "sha256": "b968125cc211f8ccb77227e5fb56f316561c172325861ef6948457218d7b4ade"
+    },
+    {
+      "assetId": "pure-poly-ingot-green",
+      "source": "PP_Bar_Green_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-green.ttasset",
+      "bytes": 9196,
+      "sha256": "ad7e6685332a587f8a9059143637e4654805c6e7187e511aaff98dbc1b9f44ab"
+    },
+    {
+      "assetId": "pure-poly-ingot-iron",
+      "source": "PP_Bar_Iron_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-iron.ttasset",
+      "bytes": 9196,
+      "sha256": "4a912f1d0d0c0726a0d2de79b3b78784ce58e4f7ef39f26d86fafa94f8d4e682"
+    },
+    {
+      "assetId": "pure-poly-ingot-red",
+      "source": "PP_Bar_Red_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-red.ttasset",
+      "bytes": 9196,
+      "sha256": "7c568ee5b7dbbc549f43a7d1f251b192961cdf0516bd58942ebfaf4677152458"
+    },
+    {
+      "assetId": "pure-poly-ingot-silver",
+      "source": "PP_Bar_Silver_01.fbx",
+      "path": "assets/protected/pure-poly-ingot-silver.ttasset",
+      "bytes": 9200,
+      "sha256": "b61da2675eade3e1c40df933a492adaeb7592de3501e73a688b43f5b9c8e6ae3"
+    },
+    {
       "assetId": "pure-poly-lantern-01-iron",
       "source": "PP_Lantern_01_Yellow_Gradient_Iron.fbx",
       "path": "assets/protected/pure-poly-lantern-01-iron.ttasset",

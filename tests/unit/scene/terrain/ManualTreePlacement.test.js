@@ -240,6 +240,26 @@ test('an unsupported manual tree is rejected with a user-facing explanation', as
   }
 });
 
+test('small treasure rejects unsupported ground with a truthful preview', async () => {
+  const { engine, scene, pool, dispose } = fixture(1.8, (x, y) => (x === 2 && y === 2 ? 3 : 0));
+  const report = jest.spyOn(GameErrors, 'input').mockImplementation(() => {});
+  try {
+    const treasure = 'pure-poly-money-bag-closed';
+    engine.setSelectedPlaceable(treasure);
+    engine.moveBrushTo(2, 2);
+    await waitFor(() => scene.setTerrainBrushPreview.mock.calls.length > 0);
+    const [cells] = scene.setTerrainBrushPreview.mock.calls.at(-1);
+    expect(cells[0].color).toBe(0xef4444);
+    engine.emitPlaceableChanged(2, 2, treasure);
+    await expect(pool.whenSettled()).rejects.toThrow(/supported, level ground/i);
+    await waitFor(() => report.mock.calls.length > 0);
+    expect(pool.getStats().instances).toBe(0);
+  } finally {
+    report.mockRestore();
+    dispose();
+  }
+});
+
 test('a tree preview rejects a hole in a connected building floor', async () => {
   const { engine, scene, gameManager, dispose } = fixture(0.6, () => 0);
   engine.configureGeometryBase(0.5);

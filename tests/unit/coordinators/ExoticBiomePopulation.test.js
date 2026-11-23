@@ -15,6 +15,7 @@ import { isAssetAllowedInBiome } from '../../../src/config/assets/BiomeAssetMatr
 import { getPurePolyAsset } from '../../../src/config/assets/PurePolyAssets.js';
 import { TERRAIN_PLACEABLES } from '../../../src/config/terrain/TerrainPlaceables.js';
 import { blocksCreatureMovement } from '../../../src/terrain/PlaceableCollision.js';
+import { isSightPlaceable } from '../../../src/campaigns/CreatureVisibility.js';
 import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
 
@@ -189,6 +190,40 @@ describe('Biome-appropriate exotic populations', () => {
     expect(plan.placements.some(({ modelKey }) => modelKey.startsWith('pure-poly-chest-'))).toBe(
       false
     );
+  });
+
+  test('small treasure decorations are manual, passable and do not block sight', () => {
+    const engine = new TerrainEngine(10, 10);
+    engine.setBiome('cavern', { generateIfFlat: false });
+    const edits = [];
+    engine.onPlaceableChanged((edit) => edits.push(edit));
+    const ids = [
+      'pure-poly-money-bag-closed',
+      'pure-poly-money-bag-jeweled',
+      'pure-poly-money-bag-empty',
+      ...['blue', 'green', 'red'].map((color) => `pure-poly-money-bag-gems-${color}`),
+      ...['copper', 'gold', 'iron', 'silver'].map((color) => `pure-poly-money-bag-coins-${color}`),
+      ...['blue', 'copper', 'gold', 'green', 'iron', 'red', 'silver'].map(
+        (color) => `pure-poly-ingot-${color}`
+      ),
+    ];
+    for (const [index, id] of ids.entries()) {
+      expect(engine.setSelectedPlaceable(id)).toBe(true);
+      engine.emitPlaceableChanged(index % 10, Math.floor(index / 10), id);
+      expect(edits.at(-1).placeableId).toBe(id);
+      const { type, label } = TERRAIN_PLACEABLES[id];
+      expect(label).toMatch(/decorative/i);
+      expect(blocksCreatureMovement({ type, modelKey: id })).toBe(false);
+      expect(isSightPlaceable({ type, modelKey: id, biomeKey: 'cavern' })).toBe(false);
+    }
+    const plan = engine.planBiomeGeneration('cavern', {
+      seed: 42,
+      densityMultiplier: 1.65,
+      assetPack: 'pure-poly',
+    });
+    expect(
+      plan.placements.some(({ modelKey }) => getPurePolyAsset(modelKey)?.kind === 'treasure')
+    ).toBe(false);
   });
 
   test.each([

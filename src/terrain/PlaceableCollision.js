@@ -13,7 +13,7 @@ export function blocksCreatureMovement(placeable) {
   if (type !== 'plant') return false;
   const model = placeable.modelKey ?? placeable.placeableId ?? placeable.variantKey;
   if (
-    ['formation', 'crystal', 'fungus', 'ore', 'light', 'grass', 'pebble'].includes(
+    ['formation', 'crystal', 'fungus', 'ore', 'treasure', 'light', 'grass', 'pebble'].includes(
       getPurePolyAsset(model)?.kind
     )
   )

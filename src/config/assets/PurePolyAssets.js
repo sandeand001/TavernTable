@@ -930,6 +930,115 @@ export const PURE_POLY_ASSETS = Object.freeze([
     ]
   ),
   ...pack(
+    'treasure',
+    'prop',
+    [
+      'cavern',
+      'dungeon',
+      'hills',
+      'mountain',
+      'town',
+      'city',
+      'castle',
+      'ruinedTown',
+      'ruinedUrban',
+      'ruinedCastle',
+    ],
+    [],
+    0.35,
+    [
+      [
+        'pure-poly-money-bag-closed',
+        'PP_Money_Bag_Corded_01',
+        'assets/protected/pure-poly-money-bag-closed.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-jeweled',
+        'PP_Money_Bag_Corded_03',
+        'assets/protected/pure-poly-money-bag-jeweled.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-empty',
+        'PP_Money_Bag_Empty_03',
+        'assets/protected/pure-poly-money-bag-empty.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-gems-blue',
+        'PP_Money_Bag_05_Blue',
+        'assets/protected/pure-poly-money-bag-gems-blue.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-gems-green',
+        'PP_Money_Bag_05_Green',
+        'assets/protected/pure-poly-money-bag-gems-green.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-gems-red',
+        'PP_Money_Bag_05_Red',
+        'assets/protected/pure-poly-money-bag-gems-red.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-coins-copper',
+        'PP_Money_Bag_06_Copper',
+        'assets/protected/pure-poly-money-bag-coins-copper.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-coins-gold',
+        'PP_Money_Bag_06_Gold',
+        'assets/protected/pure-poly-money-bag-coins-gold.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-coins-iron',
+        'PP_Money_Bag_06_Iron',
+        'assets/protected/pure-poly-money-bag-coins-iron.ttasset',
+      ],
+      [
+        'pure-poly-money-bag-coins-silver',
+        'PP_Money_Bag_06_Silver',
+        'assets/protected/pure-poly-money-bag-coins-silver.ttasset',
+      ],
+    ]
+  ),
+  ...pack(
+    'treasure',
+    'prop',
+    [
+      'cavern',
+      'dungeon',
+      'hills',
+      'mountain',
+      'town',
+      'city',
+      'castle',
+      'ruinedTown',
+      'ruinedUrban',
+      'ruinedCastle',
+    ],
+    [],
+    0.08,
+    [
+      ['pure-poly-ingot-blue', 'PP_Bar_Blue_01', 'assets/protected/pure-poly-ingot-blue.ttasset'],
+      [
+        'pure-poly-ingot-copper',
+        'PP_Bar_Copper_01',
+        'assets/protected/pure-poly-ingot-copper.ttasset',
+      ],
+      ['pure-poly-ingot-gold', 'PP_Bar_Gold_01', 'assets/protected/pure-poly-ingot-gold.ttasset'],
+      [
+        'pure-poly-ingot-green',
+        'PP_Bar_Green_01',
+        'assets/protected/pure-poly-ingot-green.ttasset',
+      ],
+      ['pure-poly-ingot-iron', 'PP_Bar_Iron_01', 'assets/protected/pure-poly-ingot-iron.ttasset'],
+      ['pure-poly-ingot-red', 'PP_Bar_Red_01', 'assets/protected/pure-poly-ingot-red.ttasset'],
+      [
+        'pure-poly-ingot-silver',
+        'PP_Bar_Silver_01',
+        'assets/protected/pure-poly-ingot-silver.ttasset',
+      ],
+    ]
+  ),
+  ...pack(
     'light',
     'prop',
     [

@@ -1197,7 +1197,7 @@ for (const asset of PURE_POLY_ASSETS) {
     label:
       asset.kind === 'light'
         ? `${label} (visual light)`
-        : ['prop', 'ore'].includes(asset.kind)
+        : ['prop', 'ore', 'treasure'].includes(asset.kind)
           ? `${label} (decorative)`
           : label,
     img: null,
