@@ -13,6 +13,7 @@ import {
 } from '../../../src/terrain/generation/CavernInteriors.js';
 import { isAssetAllowedInBiome } from '../../../src/config/assets/BiomeAssetMatrix.js';
 import { getPurePolyAsset } from '../../../src/config/assets/PurePolyAssets.js';
+import { TERRAIN_PLACEABLES } from '../../../src/config/terrain/TerrainPlaceables.js';
 import { blocksCreatureMovement } from '../../../src/terrain/PlaceableCollision.js';
 import { TerrainGeometry } from '../../../src/terrain/TerrainGeometry.js';
 import { buildSurfaceRange, getSurfaceRoute } from '../../../src/terrain/SurfaceNavigation.js';
@@ -154,6 +155,38 @@ describe('Biome-appropriate exotic populations', () => {
       assetPack: 'pure-poly',
     });
     expect(plan.placements.some(({ modelKey }) => getPurePolyAsset(modelKey)?.kind === 'ore')).toBe(
+      false
+    );
+  });
+
+  test('reviewed treasure chests are deliberate decorative obstacles, not random cave scenery', () => {
+    const engine = new TerrainEngine(10, 10);
+    engine.setBiome('cavern', { generateIfFlat: false });
+    const edits = [];
+    engine.onPlaceableChanged((edit) => edits.push(edit));
+    const chests = [
+      ...['copper', 'gold', 'iron', 'silver'].map((color) => `pure-poly-chest-02-${color}`),
+      ...[3, 4].flatMap((shape) =>
+        ['blue', 'copper', 'gold', 'green', 'iron', 'red', 'silver'].map(
+          (color) => `pure-poly-chest-0${shape}-${color}`
+        )
+      ),
+    ];
+    for (const [index, id] of chests.entries()) {
+      expect(engine.setSelectedPlaceable(id)).toBe(true);
+      engine.emitPlaceableChanged(index % 10, Math.floor(index / 10), id);
+      expect(edits.at(-1).placeableId).toBe(id);
+      expect(TERRAIN_PLACEABLES[id].label).toMatch(/decorative/i);
+      expect(blocksCreatureMovement({ type: TERRAIN_PLACEABLES[id].type, modelKey: id })).toBe(
+        true
+      );
+    }
+    const plan = engine.planBiomeGeneration('cavern', {
+      seed: 42,
+      densityMultiplier: 1.65,
+      assetPack: 'pure-poly',
+    });
+    expect(plan.placements.some(({ modelKey }) => modelKey.startsWith('pure-poly-chest-'))).toBe(
       false
     );
   });

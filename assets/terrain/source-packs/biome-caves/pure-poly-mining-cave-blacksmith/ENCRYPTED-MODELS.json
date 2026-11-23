@@ -942,6 +942,132 @@
       "sha256": "e9fa621a748197b14d47dea1c5529cafe6e127e5dcaee96fbdbc0eda75d54e45"
     },
     {
+      "assetId": "pure-poly-chest-02-copper",
+      "source": "PP_Treasure_Chest_02_Copper.fbx",
+      "path": "assets/protected/pure-poly-chest-02-copper.ttasset",
+      "bytes": 171120,
+      "sha256": "b44d62c0182980c1c1a0cd3433cd276c7854a05a98ca05fa984895852d6e4ad5"
+    },
+    {
+      "assetId": "pure-poly-chest-02-gold",
+      "source": "PP_Treasure_Chest_02_Gold.fbx",
+      "path": "assets/protected/pure-poly-chest-02-gold.ttasset",
+      "bytes": 171404,
+      "sha256": "9e43c69961528435217024707e6a710fa565ae142b5f83087591fd870eb9761a"
+    },
+    {
+      "assetId": "pure-poly-chest-02-iron",
+      "source": "PP_Treasure_Chest_02_Iron.fbx",
+      "path": "assets/protected/pure-poly-chest-02-iron.ttasset",
+      "bytes": 171244,
+      "sha256": "7021fb556fa1b9cb0de031921a878bb2191097cc4a9c7b21873ebd4093bff05b"
+    },
+    {
+      "assetId": "pure-poly-chest-02-silver",
+      "source": "PP_Treasure_Chest_02_Silver.fbx",
+      "path": "assets/protected/pure-poly-chest-02-silver.ttasset",
+      "bytes": 171268,
+      "sha256": "d9c9fcfd50a2500e56b4d9be7f2cd2881eee7a514b3e45b74792aad81df31189"
+    },
+    {
+      "assetId": "pure-poly-chest-03-blue",
+      "source": "PP_Treasure_Chest_03_Blue.fbx",
+      "path": "assets/protected/pure-poly-chest-03-blue.ttasset",
+      "bytes": 83024,
+      "sha256": "3e32faf3756bc8bc3dd3a5e1eec5fe45b7eac12a97e53467ae5066b757c3e651"
+    },
+    {
+      "assetId": "pure-poly-chest-03-copper",
+      "source": "PP_Treasure_Chest_03_Copper.fbx",
+      "path": "assets/protected/pure-poly-chest-03-copper.ttasset",
+      "bytes": 82992,
+      "sha256": "8334fe257ad91f9a5b60c99c2843140f52775453f8741ad09692c39b412634ce"
+    },
+    {
+      "assetId": "pure-poly-chest-03-gold",
+      "source": "PP_Treasure_Chest_03_Gold.fbx",
+      "path": "assets/protected/pure-poly-chest-03-gold.ttasset",
+      "bytes": 82992,
+      "sha256": "9246999236ed2b3320980fbb800d33e5811afdcf55f1ce61dca37b5a9107119a"
+    },
+    {
+      "assetId": "pure-poly-chest-03-green",
+      "source": "PP_Treasure_Chest_03_Green.fbx",
+      "path": "assets/protected/pure-poly-chest-03-green.ttasset",
+      "bytes": 83024,
+      "sha256": "091777dbc5e10fb9e7a859a018c72f614996028175c60984ce2aeaee482124fa"
+    },
+    {
+      "assetId": "pure-poly-chest-03-iron",
+      "source": "PP_Treasure_Chest_03_Iron.fbx",
+      "path": "assets/protected/pure-poly-chest-03-iron.ttasset",
+      "bytes": 82960,
+      "sha256": "18c16fb74ae8b17056d3cc1fcc7e8c387c05bc6f61144526d58ba05e5c69f862"
+    },
+    {
+      "assetId": "pure-poly-chest-03-red",
+      "source": "PP_Treasure_Chest_03_Red.fbx",
+      "path": "assets/protected/pure-poly-chest-03-red.ttasset",
+      "bytes": 83020,
+      "sha256": "4a3ee035f545e6539cd30d6b4f185465fdecf2bbe4fbe51a4fb16c0b07acb034"
+    },
+    {
+      "assetId": "pure-poly-chest-03-silver",
+      "source": "PP_Treasure_Chest_03_Silver.fbx",
+      "path": "assets/protected/pure-poly-chest-03-silver.ttasset",
+      "bytes": 83016,
+      "sha256": "868dca3df33237c2ddb5908e128d7abcc48cd50a2356e917b66a54ab4fd8aab6"
+    },
+    {
+      "assetId": "pure-poly-chest-04-blue",
+      "source": "PP_Treasure_Chest_04_Blue.fbx",
+      "path": "assets/protected/pure-poly-chest-04-blue.ttasset",
+      "bytes": 105728,
+      "sha256": "4f4b2fd12935eb5a470d8e71d8a13e2c71a7ef5f3f2607068c63ecc149e55fd0"
+    },
+    {
+      "assetId": "pure-poly-chest-04-copper",
+      "source": "PP_Treasure_Chest_04_Copper.fbx",
+      "path": "assets/protected/pure-poly-chest-04-copper.ttasset",
+      "bytes": 105700,
+      "sha256": "366d1f91dcba7046423df660d8881af0d92b25c852dd6a4014105404ee528d9f"
+    },
+    {
+      "assetId": "pure-poly-chest-04-gold",
+      "source": "PP_Treasure_Chest_04_Gold.fbx",
+      "path": "assets/protected/pure-poly-chest-04-gold.ttasset",
+      "bytes": 105696,
+      "sha256": "fc968c202e214f4e0bc6fb4732ceae426e7bc64019c894ec078eb3e48bf4ec24"
+    },
+    {
+      "assetId": "pure-poly-chest-04-green",
+      "source": "PP_Treasure_Chest_04_Green.fbx",
+      "path": "assets/protected/pure-poly-chest-04-green.ttasset",
+      "bytes": 105664,
+      "sha256": "f8b9865caf7c0c3e1ee78a9c653415699e2f314beba7581243db2a6df9a2c682"
+    },
+    {
+      "assetId": "pure-poly-chest-04-iron",
+      "source": "PP_Treasure_Chest_04_Iron.fbx",
+      "path": "assets/protected/pure-poly-chest-04-iron.ttasset",
+      "bytes": 105696,
+      "sha256": "d3b51cbfff6c192559bdf48720d254f412905206da7411f6096b592548005567"
+    },
+    {
+      "assetId": "pure-poly-chest-04-red",
+      "source": "PP_Treasure_Chest_04_Red.fbx",
+      "path": "assets/protected/pure-poly-chest-04-red.ttasset",
+      "bytes": 105696,
+      "sha256": "7f27fcdd14b3dcc5ba33256215ea29cc56a1e339b68674b43df2e199e370718b"
+    },
+    {
+      "assetId": "pure-poly-chest-04-silver",
+      "source": "PP_Treasure_Chest_04_Silver.fbx",
+      "path": "assets/protected/pure-poly-chest-04-silver.ttasset",
+      "bytes": 105688,
+      "sha256": "0fab95727dfad795d0f7c948003b45ffda99fdefa15693e275738577e043f1ed"
+    },
+    {
       "assetId": "pure-poly-mine-cart-01",
       "source": "PP_Mine_Cart_01.fbx",
       "path": "assets/protected/pure-poly-mine-cart-01.ttasset",
