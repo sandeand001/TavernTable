@@ -3295,6 +3295,92 @@ test(
   }
 );
 
+test(
+  'cloud passage travel preserves an owner follow view without revealing an unvisited chamber',
+  { timeout: 60000 },
+  async (t) => {
+    const f = await fixture(t);
+    const world = CampaignWorld.fromScene(f.scene, f.validation);
+    const source = world.getMap('map-main');
+    world.addLocation({
+      id: 'hidden-location',
+      name: 'SECRET LOCATION',
+      map: { ...source, id: 'hidden-chamber', name: 'SECRET CHAMBER' },
+    });
+    world.addLogicalPassage({
+      version: 1,
+      id: 'cavern-passage',
+      kind: 'chamber',
+      ends: [
+        { mapId: 'map-main', side: 'east' },
+        { mapId: 'hidden-chamber', side: 'west' },
+      ],
+    });
+    const connected = world.save();
+    const actor = connected.creatures.find(({ id }) => id === 'token-1');
+    Object.assign(actor, {
+      gridX: 4,
+      gridY: 2,
+      pose: { kind: 'ground', world: { x: 4.5, y: 0, z: 2.5 } },
+    });
+    connected.view.focusTokenId = actor.id;
+    connected.view.camera.target = { ...actor.pose.world };
+    const existing = await f.owner.client.readCharacters(f.campaign.id);
+    await f.owner.client.commitScene(f.campaign.id, {
+      ruleset: f.library.ruleset,
+      revision: existing.sceneRevision,
+      charactersRevision: existing.revision,
+      scene: encodeScene(connected, f.validation),
+    });
+    const before = await f.member.client.readParticipantSnapshot(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        observerTokenId: actor.id,
+        mapId: 'map-main',
+        assetKey: null,
+      },
+      f.grant.access
+    );
+    assert.ok(!JSON.stringify(before.state).includes('hidden-chamber'));
+    assert.ok(!JSON.stringify(before.state).includes('SECRET'));
+    const moved = await publishPlayer(f, {
+      sessionId: f.live.sessionId,
+      command: {
+        version: 1,
+        commandId: randomUUID(),
+        sceneRevision: before.state.sceneRevision,
+        charactersRevision: before.state.revision,
+        observerTokenId: actor.id,
+        tokenId: actor.id,
+        kind: 'traverse',
+        payload: { connectionId: 'cavern-passage' },
+        view: { mapId: 'map-main', assetKey: before.state.publicScene.assetKey },
+      },
+    });
+    assert.equal(moved.status, 200, JSON.stringify(moved.body));
+    const saved = JSON.parse((await f.owner.client.readCharacters(f.campaign.id)).scene);
+    assert.equal(saved.view.mapId, 'hidden-chamber');
+    assert.equal(saved.view.focusTokenId, actor.id);
+    assert.deepEqual(saved.view.camera.target, saved.creatures[0].pose.world);
+    const after = await f.member.client.readParticipantSnapshot(
+      f.campaign.id,
+      {
+        sessionId: f.live.sessionId,
+        observerTokenId: actor.id,
+        mapId: 'hidden-chamber',
+        assetKey: null,
+      },
+      f.grant.access
+    );
+    assert.deepEqual(
+      after.state.publicScene.assets.maps.map(({ id }) => id),
+      ['hidden-chamber']
+    );
+    assert.ok(!JSON.stringify(after.state).includes('map-main'));
+  }
+);
+
 for (const ruleset of ['2014', '2024']) {
   test(
     `a ${ruleset} off-turn member cannot move but an owner Free Play transition immediately restores native assigned movement`,
