@@ -18,6 +18,7 @@ import { readPlaceablePlacements } from '../SceneSnapshotReaders.js';
 import { isSightPlaceable } from '../../campaigns/CreatureVisibility.js';
 import { hash32 } from '../../utils/SeededRNG.js';
 import { getPurePolyAsset, isCaveFormationModel } from '../../config/assets/PurePolyAssets.js';
+import { TERRAIN_PLACEABLES } from '../../config/terrain/TerrainPlaceables.js';
 import {
   disposePlaceableMaterials,
   preparePlaceableMaterials,
@@ -217,8 +218,8 @@ export class PlaceableMeshPool {
   // ── Public API: Add / Remove ─────────────────────────────────────
 
   /** Public: add a placeable instance; returns handle with group key + index (or null). */
-  addPlaceable(placeable, { strict = false, fitManualTree = false } = {}) {
-    const pending = this._addPlaceable(placeable, { strict, fitManualTree });
+  addPlaceable(placeable, { strict = false, fitManualTree = false, signal = null } = {}) {
+    const pending = this._addPlaceable(placeable, { strict, fitManualTree, signal });
     this._pendingPlacements.add(pending);
     pending.then(
       () => this._pendingPlacements.delete(pending),
@@ -247,7 +248,8 @@ export class PlaceableMeshPool {
       );
   }
 
-  async _addPlaceable(placeable, { strict = false, fitManualTree = false } = {}) {
+  async _addPlaceable(placeable, { strict = false, fitManualTree = false, signal = null } = {}) {
+    if (signal?.aborted) return null;
     const unavailable = (message) => {
       if (strict) throw new Error(message);
       return null;
@@ -271,6 +273,7 @@ export class PlaceableMeshPool {
             biomeSeed,
           });
     const three = await this._ensureThree();
+    if (signal?.aborted) return null;
     if (!three) {
       return unavailable('The terrain placement renderer could not be loaded');
     }
@@ -311,6 +314,7 @@ export class PlaceableMeshPool {
       placeable,
       appearance
     );
+    if (signal?.aborted) return null;
     if (!group)
       return unavailable(
         `Terrain asset "${placeable?.modelKey || modelKey}" could not be prepared`
@@ -599,13 +603,26 @@ export class PlaceableMeshPool {
   }
 
   removePlantsAt(gridX, gridY) {
+    return this._removeAt(gridX, gridY, (source) => source?.type === 'plant');
+  }
+
+  removeTerrainPlaceablesAt(gridX, gridY) {
+    return this._removeAt(gridX, gridY, (source) => {
+      if (source?.type === 'plant') return true;
+      if (source?.type !== 'structure' || source.generatedBiome || source.metricsOnly) return false;
+      const definition = TERRAIN_PLACEABLES[source.placeableId];
+      return definition?.type === 'structure' && definition.modelKey === source.modelKey;
+    });
+  }
+
+  _removeAt(gridX, gridY, matches) {
     if (!Number.isInteger(gridX) || !Number.isInteger(gridY) || gridX < 0 || gridY < 0) {
-      throw new RangeError('Terrain plant removal requires a valid grid position');
+      throw new RangeError('Terrain placeable removal requires a valid grid position');
     }
     let removed = 0;
     for (const [key, metadata] of this._metadata) {
       for (const [index, entry] of [...metadata]) {
-        if (entry.gx === gridX && entry.gy === gridY && entry.source?.type === 'plant') {
+        if (entry.gx === gridX && entry.gy === gridY && matches(entry.source)) {
           this.removePlaceable({ __meshPoolHandle: { key, index } });
           removed++;
         }

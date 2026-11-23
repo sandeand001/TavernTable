@@ -23,6 +23,7 @@ export class TerrainEngineSceneAdapter {
     this._unsubs = [];
     this._treeChoices = new Map();
     this._treeBounds = new Map();
+    this._pendingPlaceables = new Map();
     this._previewRevision = 0;
     this._lastTreePreview = null;
     this._previewRefreshQueued = false;
@@ -85,6 +86,10 @@ export class TerrainEngineSceneAdapter {
     this._lastTreePreview = null;
     this._treeChoices.clear();
     this._treeBounds.clear();
+    for (const pending of this._pendingPlaceables.values()) {
+      for (const controller of pending) controller.abort();
+    }
+    this._pendingPlaceables.clear();
     this.scene.clearTerrainBrushPreview();
   }
 
@@ -259,8 +264,10 @@ export class TerrainEngineSceneAdapter {
   _changePlaceable({ gridX, gridY, placeableId, variant }) {
     const pool = this.gameManager.placeableMeshPool;
     if (!pool) throw new Error('The terrain placement renderer is unavailable');
+    const cell = `${gridX},${gridY}`;
     if (placeableId === null) {
-      pool.removePlantsAt(gridX, gridY);
+      for (const controller of this._pendingPlaceables.get(cell) || []) controller.abort();
+      pool.removeTerrainPlaceablesAt(gridX, gridY);
       return;
     }
     const selected = TERRAIN_PLACEABLES[placeableId];
@@ -277,6 +284,10 @@ export class TerrainEngineSceneAdapter {
     const tree = this._isTreeSelection(concreteId);
     this._treeChoices.delete(this._treeChoiceKey(placeableId, gridX, gridY));
     if (tree) this._refreshTreePreview();
+    const controller = new AbortController();
+    const pending = this._pendingPlaceables.get(cell) || new Set();
+    pending.add(controller);
+    this._pendingPlaceables.set(cell, pending);
     void pool
       .addPlaceable(
         {
@@ -289,10 +300,11 @@ export class TerrainEngineSceneAdapter {
           biomeKey: this.engine.biomeKey,
           biomeSeed: this.engine.biomeSeed,
         },
-        { fitManualTree: tree, strict: true }
+        { fitManualTree: tree, strict: true, signal: controller.signal }
       )
       .then((handle) => {
-        if (!handle) throw new Error(`Terrain placeable "${placeableId}" could not be placed`);
+        if (!handle && !controller.signal.aborted)
+          throw new Error(`Terrain placeable "${placeableId}" could not be placed`);
       })
       .catch((error) => {
         const context = {
@@ -312,6 +324,11 @@ export class TerrainEngineSceneAdapter {
           this._treeSupportNoticeQueued = false;
           GameErrors.input(error, context);
         });
+      })
+      .finally(() => {
+        pending.delete(controller);
+        if (!pending.size && this._pendingPlaceables.get(cell) === pending)
+          this._pendingPlaceables.delete(cell);
       });
   }
 }

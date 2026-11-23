@@ -1,6 +1,7 @@
 import '../../../src/ui/UIController.js';
 import { TerrainCoordinator } from '../../../src/coordinators/TerrainCoordinator.js';
 import { TerrainEngine } from '../../../src/terrain/TerrainEngine.js';
+import { ErrorHandler } from '../../../src/utils/error/ErrorHandler.js';
 
 let coordinator;
 let terrain;
@@ -8,6 +9,8 @@ beforeEach(() => {
   document.body.innerHTML = `
     <button id="terrain-raise-btn">Raise</button><button id="terrain-lower-btn">Lower</button>
     <button id="terrain-wall-btn">Wall</button>
+    <input id="placeable-removal-toggle" type="checkbox">
+    <div id="terrain-placeables-root"></div>
     <div id="terrain-brush-size-controls"><span id="brush-size-display"></span></div>
     <button id="terrain-undo-btn" disabled>Undo</button><button id="terrain-redo-btn" disabled>Redo</button>
     <small id="terrain-history-status"></small><section id="terrain-construction"></section>`;
@@ -88,6 +91,40 @@ test('repeated UI attachment does not duplicate the wall drawing handler', () =>
   document.getElementById('terrain-wall-btn').click();
   expect(choose).toHaveBeenCalledTimes(1);
   expect(document.querySelectorAll('[data-build-kind="wall"]')).toHaveLength(1);
+});
+
+test('the removal toggle clears the selected placeable and follows the editor state', () => {
+  const chest = 'pure-poly-chest-03-blue';
+  const button = document.createElement('button');
+  button.className = 'placeable-btn selected';
+  document.getElementById('terrain-placeables-root').appendChild(button);
+  terrain.setSelectedPlaceable(chest);
+  window.selectedTerrainPlaceable = chest;
+  const setRemoval = jest.spyOn(terrain, 'setPlaceableRemovalMode');
+  document.dispatchEvent(new Event('DOMContentLoaded'));
+  const toggle = document.getElementById('placeable-removal-toggle');
+  toggle.click();
+  expect(setRemoval).toHaveBeenCalledTimes(1);
+  expect(terrain.isPlaceableRemovalMode()).toBe(true);
+  expect(terrain.getSelectedPlaceable()).toBeNull();
+  expect(window.selectedTerrainPlaceable).toBeNull();
+  expect(button.classList.contains('selected')).toBe(false);
+  toggle.click();
+  expect(terrain.isPlaceableRemovalMode()).toBe(false);
+});
+
+test('the removal toggle reports an unavailable editor and resets itself', () => {
+  const report = jest.spyOn(ErrorHandler.prototype, 'handle').mockImplementation(() => {});
+  delete window.gameManager;
+  const toggle = document.getElementById('placeable-removal-toggle');
+  toggle.click();
+  expect(toggle.checked).toBe(false);
+  expect(report).toHaveBeenCalledWith(
+    expect.objectContaining({ message: 'Terrain editing is not ready yet' }),
+    expect.anything(),
+    expect.anything(),
+    expect.objectContaining({ context: 'placeableRemovalMode' })
+  );
 });
 
 test('Undo and Redo remain shared with the real terrain history', () => {

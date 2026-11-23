@@ -1448,6 +1448,116 @@ test('manual tree previews fit real trunks and family placements survive reopeni
   expect(restored).toEqual(expect.arrayContaining([thick, birch]));
 });
 
+test('the removal brush deletes a manual chest without deleting Dungeon walls', async ({
+  page,
+}) => {
+  setBrowserTestTimeout(120000);
+  const campaignName = 'Playwright removable chest';
+  await page.goto(hostURL);
+  const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
+  await login.getByLabel('Host access key').fill(hostKey);
+  await login.getByRole('button', { name: 'Sign in as host' }).click();
+  const picker = page.getByRole('dialog', { name: 'Choose your campaign' });
+  await picker.getByLabel('Campaign name', { exact: true }).fill(campaignName);
+  await picker.getByLabel('Campaign ruleset').selectOption('2014');
+  await picker.getByRole('button', { name: 'Create & open campaign' }).click();
+  await page.waitForFunction(() => window.gameManager?.sceneAutosave?.ready);
+  const structures = await page.evaluate(async () => {
+    const gm = window.gameManager;
+    const { replaceCampaignBiome } = await import('/src/campaigns/CampaignBiomeGeneration.js');
+    await replaceCampaignBiome(
+      gm,
+      { biomeKey: 'dungeon', seed: 42, densityMultiplier: 0 },
+      { cols: 18, rows: 14 }
+    );
+    await gm.sceneAutosave.flush();
+    return gm.terrainEngine.geometry
+      .getStructures()
+      .map(({ id }) => id)
+      .sort();
+  });
+  expect(structures.length).toBeGreaterThan(0);
+  await page.getByRole('tab', { name: /Terrain/ }).click();
+  await page.locator('label:has(#terrain-mode-toggle)').click();
+  await page.getByRole('button', { name: 'Iron Chest (Representative)' }).click();
+  const cell = await page.evaluate(async () => {
+    const gm = window.gameManager;
+    const occupied = new Set(
+      (await gm.placeableMeshPool.snapshotPlacements()).map(
+        ({ gridX, gridY }) => `${gridX}:${gridY}`
+      )
+    );
+    const { camera, canvas, three } = gm.threeSceneManager;
+    const rect = canvas.getBoundingClientRect();
+    const tile = gm.spatial.tileWorldSize;
+    camera.updateMatrixWorld(true);
+    for (let gridY = 2; gridY < gm.rows - 2; gridY++) {
+      for (let gridX = 2; gridX < gm.cols - 2; gridX++) {
+        if (occupied.has(`${gridX}:${gridY}`)) continue;
+        const height = gm.getTerrainHeight(gridX, gridY);
+        const point = new three.Vector3(
+          (gridX + 0.5) * tile,
+          height * gm.spatial.elevationUnit,
+          (gridY + 0.5) * tile
+        ).project(camera);
+        const x = rect.left + ((point.x + 1) * rect.width) / 2;
+        const y = rect.top + ((1 - point.y) * rect.height) / 2;
+        const hit = gm.pickingService.pickGroundSync(x, y, canvas);
+        if (
+          document.elementFromPoint(x, y) === canvas &&
+          hit?.grid?.gx === gridX &&
+          hit.grid.gy === gridY
+        )
+          return { x, y, gridX, gridY };
+      }
+    }
+    throw new Error('No visible Dungeon floor cell is available');
+  });
+  await page.mouse.click(cell.x, cell.y);
+  await page.waitForFunction(
+    ({ gridX, gridY }) =>
+      [...(window.gameManager.placeableMeshPool._metadata.get('source-iron-chest') || [])].some(
+        ([, { source }]) => source.gridX === gridX && source.gridY === gridY
+      ),
+    cell
+  );
+  await page.locator('label:has(#placeable-removal-toggle)').click();
+  await page.mouse.click(cell.x, cell.y);
+  await page.waitForFunction(
+    ({ gridX, gridY }) =>
+      ![...(window.gameManager.placeableMeshPool._metadata.get('source-iron-chest') || [])].some(
+        ([, { source }]) => source.gridX === gridX && source.gridY === gridY
+      ),
+    cell
+  );
+  await page.evaluate(() => window.gameManager.sceneAutosave.flush());
+  expect(
+    await page.evaluate(() =>
+      window.gameManager.terrainEngine.geometry
+        .getStructures()
+        .map(({ id }) => id)
+        .sort()
+    )
+  ).toEqual(structures);
+  await page.reload();
+  await page
+    .getByRole('dialog', { name: 'Choose your campaign' })
+    .locator('article', { hasText: campaignName })
+    .getByRole('button', { name: 'Open', exact: true })
+    .click();
+  await page.waitForFunction(() => window.gameManager?.sceneAutosave?.ready);
+  const restored = await page.evaluate(async () => ({
+    structures: window.gameManager.terrainEngine.geometry
+      .getStructures()
+      .map(({ id }) => id)
+      .sort(),
+    chests: (await window.gameManager.placeableMeshPool.snapshotPlacements()).filter(
+      ({ modelKey }) => modelKey === 'source-iron-chest'
+    ).length,
+  }));
+  expect(restored).toEqual({ structures, chests: 0 });
+});
+
 test('all representative source-pack models load and expose measurable support', async ({
   page,
 }) => {

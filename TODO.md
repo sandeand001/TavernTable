@@ -438,6 +438,8 @@ grid/reset work also underpins independent chamber generation.
       walkable-surface behavior.
       Twenty chest variants are manual decorative obstacles only; opening,
       storage and loot interactions remain unimplemented.
+      Remove Placeables now removes registered manual props as well as scenery,
+      including placements still loading, without deleting constructed walls.
       New trees, cacti and rocks retain the existing grid-cell movement policy;
       physical footprint and cluster collision remain a separate open task.
 - [ ] **Organic natural routes and scenery clearance** - High-density Caverns

@@ -737,6 +737,29 @@ function attachDynamicUIHandlers() {
       terrainToggle.dataset.boundChange = 'true';
     }
 
+    const removalToggle = document.getElementById('placeable-removal-toggle');
+    if (removalToggle && !removalToggle.dataset.boundChange) {
+      removalToggle.addEventListener('change', () => {
+        const engine = window.gameManager?.terrainEngine;
+        try {
+          if (!engine?.setPlaceableRemovalMode) throw new Error('Terrain editing is not ready yet');
+          engine.setPlaceableRemovalMode(removalToggle.checked);
+          if (removalToggle.checked) {
+            window.selectedTerrainPlaceable = null;
+            document
+              .querySelectorAll('#terrain-placeables-root .placeable-btn.selected')
+              .forEach((button) => button.classList.remove('selected'));
+          }
+        } catch (error) {
+          removalToggle.checked = engine?.isPlaceableRemovalMode?.() === true;
+          new ErrorHandler().handle(error, ERROR_SEVERITY.WARNING, ERROR_CATEGORY.INPUT, {
+            context: 'placeableRemovalMode',
+          });
+        }
+      });
+      removalToggle.dataset.boundChange = 'true';
+    }
+
     // Brush size controls
     const dec = document.getElementById('brush-decrease');
     const inc = document.getElementById('brush-increase');

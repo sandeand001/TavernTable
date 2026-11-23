@@ -13,8 +13,8 @@ describe('Placeable removal mode', () => {
     expect(e.setSelectedPlaceable('tree-green-conifer')).toBe(true);
   });
 
-  test('a removal click reaches the 3D plant-removal interface, not a deleted sprite manager', () => {
-    const pool = { removePlantsAt: jest.fn() };
+  test('a removal click reaches the 3D placeable-removal interface', () => {
+    const pool = { removeTerrainPlaceablesAt: jest.fn() };
     const world = createTerrainWorld(5, 5, pool);
     const input = world.gm.terrainCoordinator.input;
     try {
@@ -26,8 +26,8 @@ describe('Placeable removal mode', () => {
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
       });
-      expect(pool.removePlantsAt).toHaveBeenCalledTimes(1);
-      expect(pool.removePlantsAt).toHaveBeenCalledWith(2, 3);
+      expect(pool.removeTerrainPlaceablesAt).toHaveBeenCalledTimes(1);
+      expect(pool.removeTerrainPlaceablesAt).toHaveBeenCalledWith(2, 3);
       expect(
         world.engine
           .save()

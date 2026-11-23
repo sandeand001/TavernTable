@@ -81,6 +81,88 @@ test('a tree preview and its placed model agree on reduced trunk support', async
   }
 });
 
+test('removal clears a purchased decorative chest without deleting other structures', async () => {
+  const { engine, pool, dispose } = fixture(0.5, () => 0);
+  try {
+    const chest = 'pure-poly-chest-03-blue';
+    engine.setSelectedPlaceable(chest);
+    engine.emitPlaceableChanged(2, 2, chest);
+    engine.emitPlaceableChanged(3, 2, chest);
+    engine.setSelectedPlaceable('source-iron-chest');
+    engine.emitPlaceableChanged(2, 2, 'source-iron-chest');
+    await pool.whenSettled();
+    await pool.addPlaceable({
+      type: 'structure',
+      modelKey: 'existing-building-structure',
+      placeableId: 'existing-building-structure',
+      gridX: 2,
+      gridY: 2,
+    });
+    expect((await pool.snapshotPlacements()).some(({ modelKey }) => modelKey === chest)).toBe(true);
+
+    engine.emitPlaceableChanged(2, 2, null);
+
+    const remaining = await pool.snapshotPlacements();
+    expect(remaining.some(({ modelKey, gridX }) => modelKey === chest && gridX === 2)).toBe(false);
+    expect(remaining.some(({ modelKey }) => modelKey === 'source-iron-chest')).toBe(false);
+    expect(remaining.some(({ modelKey, gridX }) => modelKey === chest && gridX === 3)).toBe(true);
+    expect(remaining.some(({ modelKey }) => modelKey === 'existing-building-structure')).toBe(true);
+  } finally {
+    dispose();
+  }
+});
+
+test('removal cancels a decoration that is still loading', async () => {
+  const { engine, pool, gameManager, dispose } = fixture(0.5, () => 0);
+  const model = await gameManager.modelAssetCache.getModel();
+  let release;
+  gameManager.modelAssetCache.getModel.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve(model);
+      })
+  );
+  try {
+    const chest = 'pure-poly-chest-03-blue';
+    engine.setSelectedPlaceable(chest);
+    engine.emitPlaceableChanged(2, 2, chest);
+    await waitFor(() => release);
+    engine.emitPlaceableChanged(2, 2, null);
+    release();
+    await pool.whenSettled();
+    expect(await pool.snapshotPlacements()).toHaveLength(0);
+  } finally {
+    dispose();
+  }
+});
+
+test('removing a pending decoration preserves later and neighboring placements', async () => {
+  const { engine, pool, gameManager, dispose } = fixture(0.5, () => 0);
+  const model = await gameManager.modelAssetCache.getModel();
+  let release;
+  gameManager.modelAssetCache.getModel.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve(model);
+      })
+  );
+  try {
+    const chest = 'pure-poly-chest-03-blue';
+    engine.setSelectedPlaceable(chest);
+    engine.emitPlaceableChanged(2, 2, chest);
+    await waitFor(() => release);
+    engine.emitPlaceableChanged(3, 2, chest);
+    engine.emitPlaceableChanged(2, 2, null);
+    engine.emitPlaceableChanged(2, 2, chest);
+    release();
+    await pool.whenSettled();
+    const placements = await pool.snapshotPlacements();
+    expect(placements.map(({ gridX }) => gridX).sort()).toEqual([2, 3]);
+  } finally {
+    dispose();
+  }
+});
+
 test('a family preview places its chosen concrete tree model', async () => {
   const { engine, scene, pool, dispose } = fixture();
   const random = jest.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValue(0.99);
