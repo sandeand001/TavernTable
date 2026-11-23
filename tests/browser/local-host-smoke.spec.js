@@ -16,6 +16,10 @@ let hostURL;
 let hostKey;
 let stopping;
 
+function setBrowserTestTimeout(timeout) {
+  test.setTimeout(Math.max(timeout, test.info().timeout));
+}
+
 function stopHost() {
   if (stopping) return stopping;
   stopping = (async () => {
@@ -168,7 +172,7 @@ test('protected biome scenery is selected, rendered and reopened for host and pl
   page,
   browser,
 }) => {
-  test.setTimeout(180000);
+  setBrowserTestTimeout(180000);
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'taverntable-protected-biomes-'));
   const key = randomBytes(32);
   const keyring = path.join(directory, 'keys.json');
@@ -303,7 +307,9 @@ test('protected biome scenery is selected, rendered and reopened for host and pl
         [...entries.values()].some(({ source }) => source?.modelKey?.startsWith('pure-poly-'))
       )
     );
-    await expect(player.getByRole('dialog', { name: 'Opening campaign' })).toBeHidden();
+    await expect(player.getByRole('dialog', { name: 'Opening campaign' })).toBeHidden({
+      timeout: process.env.CI ? 60000 : 15000,
+    });
     await player.evaluate(() => window.gameManager.placeableMeshPool.whenSettled());
     const rendered = await player.evaluate(() =>
       [...window.gameManager.placeableMeshPool._groups.values()]
@@ -351,7 +357,7 @@ test('protected biome scenery is selected, rendered and reopened for host and pl
 });
 
 test('unavailable protected scenery cannot replace an existing map', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -789,7 +795,7 @@ for (const { biomeKey, family, hasWater } of [
 test('a staged Dungeon replacement resizes and survives a hosted campaign reopening', async ({
   page,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright replacement';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -1060,7 +1066,7 @@ test('cavern generation creates blank linked maps that a player can traverse', a
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright logical chambers';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -1353,7 +1359,7 @@ test('cavern generation creates blank linked maps that a player can traverse', a
 test('manual tree previews fit real trunks and family placements survive reopening', async ({
   page,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright manual tree support';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -1628,7 +1634,7 @@ test('cavern cutaways follow each viewer and preserve a clickable floor after re
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -1761,7 +1767,7 @@ test('cavern cutaways follow each viewer and preserve a clickable floor after re
 });
 
 test('the DM overview displays a navigable Dungeon floor plan', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -1835,7 +1841,7 @@ test('the DM overview displays a navigable Dungeon floor plan', async ({ page })
 });
 
 test('a foreground Dungeon boundary does not hide the usable floor', async ({ page, browser }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -2062,7 +2068,7 @@ test('Dungeon doorways are readable overhead without changing physical walls', a
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright Dungeon overhead doorway';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -2349,7 +2355,7 @@ test('Dungeon doorways are readable overhead without changing physical walls', a
 });
 
 test('the DM overview labels linked building levels and stairs', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -2407,7 +2413,7 @@ test('the DM overview labels linked building levels and stairs', async ({ page }
 test('dense cavern formations do not intersect boulders and remain clear after reopening', async ({
   page,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -2682,7 +2688,7 @@ test('dense cavern formations do not intersect boulders and remain clear after r
 });
 
 test('a short walk waits for cold locomotion assets instead of sliding', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   let release;
   let requested = false;
   const gate = new Promise((resolve) => (release = resolve));
@@ -2769,7 +2775,7 @@ test('a short walk waits for cold locomotion assets instead of sliding', async (
 });
 
 test('a wet Geyser Basin displays more supported scenery at dense settings', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -2817,7 +2823,7 @@ test('a wet Geyser Basin displays more supported scenery at dense settings', asy
 });
 
 test('Salt Flats relief changes the rendered terrain and survives reopening', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright Salt Flats relief';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -2916,7 +2922,7 @@ for (const [biomeKey, size, structures, seed] of [
   ['graveyard', 12, false, 7],
 ]) {
   test(`${biomeKey} density survives staged generation and reopening`, async ({ page }) => {
-    test.setTimeout(180000);
+    setBrowserTestTimeout(180000);
     const campaignName = `Playwright ${biomeKey} density`;
     await page.goto(hostURL);
     const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3009,7 +3015,7 @@ test('water surfaces render for host and player without changing terrain picking
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright water surface';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3225,7 +3231,7 @@ test('water surfaces render for host and player without changing terrain picking
 });
 
 test('water remains visible in a connected building view', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);
@@ -3319,7 +3325,7 @@ test('water remains visible in a connected building view', async ({ page }) => {
 });
 
 test('wet Blood Marsh retains supported density-controlled scenery', async ({ page }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright Blood Marsh density';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3427,7 +3433,7 @@ test('wet Blood Marsh retains supported density-controlled scenery', async ({ pa
 });
 
 test('Swamp and Wetlands keep wet pockets and grounded scenery', async ({ page, browser }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright wetland scenery';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3584,7 +3590,7 @@ for (const [biomeKey, seed, relief, belowZero] of [
   ['screeSlope', 2, 'gentle', true],
 ]) {
   test(`${biomeKey} density includes supported terrain`, async ({ page }) => {
-    test.setTimeout(120000);
+    setBrowserTestTimeout(120000);
     const campaignName = `Playwright ${biomeKey} level scenery`;
     await page.goto(hostURL);
     const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3685,7 +3691,7 @@ test('Fungal Grove mushrooms render for host and player and survive reopening', 
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright fungal mushroom models';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -3882,7 +3888,7 @@ for (const biomeKey of ['cavern', 'crystalSpires']) {
     page,
     browser,
   }) => {
-    test.setTimeout(120000);
+    setBrowserTestTimeout(120000);
     const campaignName = `Playwright ${biomeKey} formations`;
     await page.goto(hostURL);
     const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -4661,7 +4667,7 @@ test('underground lights stay map-local for the host and player and survive reop
   page,
   browser,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   const campaignName = 'Playwright underground lighting';
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
@@ -4898,7 +4904,7 @@ test('underground lights stay map-local for the host and player and survive reop
 test('repeating Dungeon generation with the same room count can produce different layouts', async ({
   page,
 }) => {
-  test.setTimeout(120000);
+  setBrowserTestTimeout(120000);
   await page.goto(hostURL);
   const login = page.getByRole('dialog', { name: 'Sign in to TavernTable' });
   await login.getByLabel('Host access key').fill(hostKey);

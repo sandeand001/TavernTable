@@ -2,7 +2,8 @@ const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests/browser',
-  timeout: 90000,
+  // Hosted software WebGL is much slower for full scenes and simultaneous views.
+  timeout: process.env.CI ? 360000 : 90000,
   expect: { timeout: 15000 },
   fullyParallel: false,
   workers: 1,
