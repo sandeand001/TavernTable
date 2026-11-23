@@ -117,4 +117,31 @@ describe('SidebarController terrain mode auto-reset', () => {
       controller.dispose();
     }
   });
+
+  test('reviewed crystal colors are selectable only in suitable biomes', async () => {
+    const root = document.createElement('div');
+    root.id = 'terrain-placeables-root';
+    document.getElementById('terrain-panel').appendChild(root);
+    window.gameManager = createGameManagerSpies();
+    window.gameManager.terrainEngine.biomeKey = 'cavern';
+    window.gameManager.terrainEngine.setSelectedPlaceable = jest.fn();
+    window.gameManager.modelAssetCache = { hasProtectedAssetKeyProvider: () => true };
+    const controller = new SidebarController();
+    try {
+      controller.switchTab('terrain');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const crystal = root.querySelector('[data-placeable="pure-poly-crystal-cluster-04-copper"]');
+      expect(crystal.hidden).toBe(false);
+      crystal.click();
+      expect(window.gameManager.terrainEngine.setSelectedPlaceable).toHaveBeenCalledWith(
+        'pure-poly-crystal-cluster-04-copper'
+      );
+      window.gameManager.terrainEngine.biomeKey = 'grassland';
+      controller._syncPlaceableSuitability(root);
+      expect(crystal.hidden).toBe(true);
+      expect(crystal.disabled).toBe(true);
+    } finally {
+      controller.dispose();
+    }
+  });
 });

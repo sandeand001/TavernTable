@@ -138,6 +138,57 @@ describe('Biome-appropriate exotic populations', () => {
     );
   });
 
+  test('all reviewed crystal-cluster colors can be placed deliberately in a cavern', () => {
+    const engine = new TerrainEngine(10, 10);
+    engine.setBiome('cavern', { generateIfFlat: false });
+    const edits = [];
+    engine.onPlaceableChanged((edit) => edits.push(edit));
+    const colors = ['blue', 'copper', 'gold', 'green', 'iron', 'red', 'silver'];
+    for (let shape = 1; shape <= 6; shape++) {
+      for (const [row, color] of colors.entries()) {
+        const suffix = color === 'blue' ? '' : `-${color}`;
+        const id = `pure-poly-crystal-cluster-0${shape}${suffix}`;
+        expect(engine.setSelectedPlaceable(id)).toBe(true);
+        engine.emitPlaceableChanged(shape - 1, row, id);
+        expect(edits.at(-1)).toMatchObject({
+          gridX: shape - 1,
+          gridY: row,
+          placeableId: id,
+        });
+        expect(blocksCreatureMovement({ type: 'plant', modelKey: id })).toBe(false);
+      }
+    }
+  });
+
+  test('crystal biomes generate more cluster shapes without random metallic colors', () => {
+    const engine = new TerrainEngine(25, 25);
+    const sample = (biomeKey) =>
+      new Set(
+        [1, 42, 99, 123, 456, 789].flatMap((seed) =>
+          engine
+            .planBiomeGeneration(biomeKey, {
+              seed,
+              densityMultiplier: 1.65,
+              assetPack: 'pure-poly',
+            })
+            .placements.map(({ modelKey }) => modelKey)
+        )
+      );
+    const fields = sample('crystalFields');
+    const spires = sample('crystalSpires');
+    for (const ids of [fields, spires]) {
+      expect([...ids]).toEqual(
+        expect.arrayContaining(['pure-poly-crystal-cluster-04', 'pure-poly-crystal-cluster-06'])
+      );
+      expect([...ids].some((id) => /-(copper|gold|iron|silver)$/.test(id))).toBe(false);
+    }
+    expect([...fields].some((id) => /cluster-0[3-6]-(green|red)$/.test(id))).toBe(true);
+    expect([...spires].some((id) => /cluster-.*-(green|red)$/.test(id))).toBe(false);
+    expect([...sample('cavern')].some((id) => getPurePolyAsset(id)?.kind === 'crystal')).toBe(
+      false
+    );
+  });
+
   test('protected Dead Forest scenery includes varied purchased leafless trees', () => {
     const engine = new TerrainEngine(25, 25);
     const placements = [1, 42, 99].flatMap(

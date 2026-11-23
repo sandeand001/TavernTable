@@ -190,6 +190,11 @@ describe('ThreeSceneManager sun controls', () => {
     manager.setSceneLightingBiome('crystalFields');
     manager.refreshLocalLighting();
     expect(lights()[0].color.getHex()).toBe(0xff725e);
+    entries.get(0).source.modelKey = 'pure-poly-crystal-cluster-04-copper';
+    pool._revision++;
+    manager.refreshLocalLighting();
+    expect(lights()[0].color.r).toBeGreaterThan(lights()[0].color.g);
+    expect(lights()[0].color.g).toBeGreaterThan(lights()[0].color.b);
     manager.setSceneLightingBiome('cavern');
     manager.refreshLocalLighting();
     expect(lights()).toHaveLength(0);

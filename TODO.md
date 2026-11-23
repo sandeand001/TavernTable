@@ -411,13 +411,13 @@ grid/reset work also underpins independent chamber generation.
       existing saves and the approved Village visuals. Package selected
       restricted models through encrypted delivery, keeping originals and keys
       private, and verify local/cloud behavior and release packaging.
-      Progress: 2,597 individual FBX variants are cataloged. One hundred and three
+      Progress: 2,597 individual FBX variants are cataloged. One hundred and thirty-seven
       selected formations, rocks, pebbles, crystal clusters, trees, grass, cacti, fungi, ore and
       deliberate-site props are encrypted. The natural models default for new
       supported biome choices only after key access is verified; built-in scenery
       remains selectable and saved choices are preserved. Ore and built-site props are
-      manual-only. The other 2,494 remain source-only, not discarded or approved for runtime
-      placement. Mining, forge, construction, equipment and other categories
+      manual-only. The other 2,460 remain source-only, not discarded or approved for runtime
+      placement. Further mining, forge, construction, equipment and other categories
       remain to be reviewed and integrated; visual acceptance remains open.
       Small Pure Poly grass and pebble clusters are passable ground cover in suitable biomes.
       Brighter mushroom clusters generate in fungal groves and temperate forests,
@@ -427,6 +427,9 @@ grid/reset work also underpins independent chamber generation.
       model previously labeled bare; existing placements are unchanged.
       Three ore-stone shapes in seven colors are available as manual decorations;
       mining interactions and depleted states remain unimplemented.
+      All six crystal-cluster shapes and seven colors are available; blue, green
+      and red variants generate in suitable crystal biomes, while the other colors
+      are manual-only.
       New trees, cacti and rocks retain the existing grid-cell movement policy;
       physical footprint and cluster collision remain a separate open task.
 - [ ] **Organic natural routes and scenery clearance** - High-density Caverns
