@@ -103,6 +103,95 @@ export const PURE_POLY_ASSETS = Object.freeze([
       ['pure-poly-rock-05', 'PP_Rock_05', 'assets/protected/pure-poly-rock-05.ttasset', 1.7],
       ['pure-poly-rock-06', 'PP_Rock_06', 'assets/protected/pure-poly-rock-06.ttasset'],
       ['pure-poly-rock-07', 'PP_Rock_07', 'assets/protected/pure-poly-rock-07.ttasset', 1.4],
+      [
+        'pure-poly-rock-pile-01',
+        'PP_Rock_Pile_01',
+        'assets/protected/pure-poly-rock-pile-01.ttasset',
+      ],
+      [
+        'pure-poly-rock-pile-03',
+        'PP_Rock_Pile_03',
+        'assets/protected/pure-poly-rock-pile-03.ttasset',
+        1.4,
+      ],
+      [
+        'pure-poly-rock-pile-09',
+        'PP_Rock_Pile_09',
+        'assets/protected/pure-poly-rock-pile-09.ttasset',
+        1.7,
+      ],
+    ]
+  ),
+  ...pack(
+    'rock',
+    'rock',
+    ['desertHot', 'sandDunes', 'thornscrub', 'hills', 'mountain'],
+    ['desertHot', 'sandDunes', 'thornscrub', 'hills', 'mountain'],
+    1.4,
+    [
+      [
+        'pure-poly-rock-brown-01',
+        'PP_Rock_Brown_01',
+        'assets/protected/pure-poly-rock-brown-01.ttasset',
+        1.1,
+      ],
+      [
+        'pure-poly-rock-brown-02',
+        'PP_Rock_Brown_02',
+        'assets/protected/pure-poly-rock-brown-02.ttasset',
+        0.9,
+      ],
+      [
+        'pure-poly-rock-brown-04',
+        'PP_Rock_Brown_04',
+        'assets/protected/pure-poly-rock-brown-04.ttasset',
+      ],
+    ]
+  ),
+  ...pack(
+    'rock',
+    'rock',
+    ['forestTemperate', 'forestConifer', 'hills'],
+    ['forestTemperate', 'forestConifer', 'hills'],
+    1.3,
+    [
+      [
+        'pure-poly-rock-moss-01',
+        'PP_Rock_Moss_01',
+        'assets/protected/pure-poly-rock-moss-01.ttasset',
+      ],
+      [
+        'pure-poly-rock-moss-02',
+        'PP_Rock_Moss_02',
+        'assets/protected/pure-poly-rock-moss-02.ttasset',
+      ],
+      [
+        'pure-poly-rock-moss-03',
+        'PP_Rock_Moss_03',
+        'assets/protected/pure-poly-rock-moss-03.ttasset',
+        1,
+      ],
+      [
+        'pure-poly-rock-moss-04',
+        'PP_Rock_Moss_04',
+        'assets/protected/pure-poly-rock-moss-04.ttasset',
+      ],
+      [
+        'pure-poly-rock-moss-05',
+        'PP_Rock_Moss_05',
+        'assets/protected/pure-poly-rock-moss-05.ttasset',
+      ],
+      [
+        'pure-poly-rock-moss-06',
+        'PP_Rock_Moss_06',
+        'assets/protected/pure-poly-rock-moss-06.ttasset',
+        1.5,
+      ],
+      [
+        'pure-poly-rock-moss-07',
+        'PP_Rock_Moss_07',
+        'assets/protected/pure-poly-rock-moss-07.ttasset',
+      ],
     ]
   ),
   ...pack(

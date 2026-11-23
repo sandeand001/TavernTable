@@ -144,6 +144,97 @@
       "sha256": "506bfe89939c742c84c59180964a612b7312b8467831daabff8d0a8734481820"
     },
     {
+      "assetId": "pure-poly-rock-pile-01",
+      "source": "PP_Rock_Pile_01.fbx",
+      "path": "assets/protected/pure-poly-rock-pile-01.ttasset",
+      "bytes": 50552,
+      "sha256": "0438f61886e7b01622665a65544aab39ec6e15913b8feb8b734f03953b67fe33"
+    },
+    {
+      "assetId": "pure-poly-rock-pile-03",
+      "source": "PP_Rock_Pile_03.fbx",
+      "path": "assets/protected/pure-poly-rock-pile-03.ttasset",
+      "bytes": 35756,
+      "sha256": "affc2ff10f04df8e63b16ba4c1bb1aab51d1c57f1b0f2ddbd102977c2ad20db0"
+    },
+    {
+      "assetId": "pure-poly-rock-pile-09",
+      "source": "PP_Rock_Pile_09.fbx",
+      "path": "assets/protected/pure-poly-rock-pile-09.ttasset",
+      "bytes": 72804,
+      "sha256": "a1c380296dabc21eacb0bac31f37b61f503c7daf481d93eea513ef2c266a2e2a"
+    },
+    {
+      "assetId": "pure-poly-rock-brown-01",
+      "source": "PP_Rock_Brown_01.fbx",
+      "path": "assets/protected/pure-poly-rock-brown-01.ttasset",
+      "bytes": 29728,
+      "sha256": "75583128a18e94b08746332c3002d9a8ed05f3607663cd40e11c3a20d0aa4abb"
+    },
+    {
+      "assetId": "pure-poly-rock-brown-02",
+      "source": "PP_Rock_Brown_02.fbx",
+      "path": "assets/protected/pure-poly-rock-brown-02.ttasset",
+      "bytes": 31944,
+      "sha256": "05afa2c03841c5d2e40f31fb2db2851ae4777298d27fd4a56513ff41e25636bf"
+    },
+    {
+      "assetId": "pure-poly-rock-brown-04",
+      "source": "PP_Rock_Brown_04.fbx",
+      "path": "assets/protected/pure-poly-rock-brown-04.ttasset",
+      "bytes": 37708,
+      "sha256": "0760ff7008cfdac5c855252ad5d179b9579bd784f2e021c14b7d83c9ec9e24a1"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-01",
+      "source": "PP_Rock_Moss_01.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-01.ttasset",
+      "bytes": 32500,
+      "sha256": "9be62e503a8bd69a5ba930d40c278fcb00fb93dadaaf00396fa6892013f35c09"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-02",
+      "source": "PP_Rock_Moss_02.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-02.ttasset",
+      "bytes": 35084,
+      "sha256": "220a7d080b96bcb2bce494e7e3af78384389b5892db9134664d17eec6045e7c3"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-03",
+      "source": "PP_Rock_Moss_03.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-03.ttasset",
+      "bytes": 34256,
+      "sha256": "23700bed98d9135e4d832bfa0a60f5a94aa5637ae35a5a93fa5da479428b49b4"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-04",
+      "source": "PP_Rock_Moss_04.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-04.ttasset",
+      "bytes": 55804,
+      "sha256": "a8aa0efe4ddc9bff0c532ca0d792ca98c297733bca945034a8f20f5cbdaed11b"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-05",
+      "source": "PP_Rock_Moss_05.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-05.ttasset",
+      "bytes": 53044,
+      "sha256": "99ed9fb004155d6653aaa9aa71506f98df5710d28c7d8b13003c211662c152db"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-06",
+      "source": "PP_Rock_Moss_06.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-06.ttasset",
+      "bytes": 38912,
+      "sha256": "71201b024da3a75c8d40da97b42b389f6e14f1141f48a7757c2daa241055d175"
+    },
+    {
+      "assetId": "pure-poly-rock-moss-07",
+      "source": "PP_Rock_Moss_07.fbx",
+      "path": "assets/protected/pure-poly-rock-moss-07.ttasset",
+      "bytes": 34776,
+      "sha256": "a85d4051b94c8d6a9b80a623ab7a650efe24156ad559ff0f174d4afec8b871e0"
+    },
+    {
       "assetId": "pure-poly-pebbles-01",
       "source": "PP_Pebbles_01.fbx",
       "path": "assets/protected/pure-poly-pebbles-01.ttasset",

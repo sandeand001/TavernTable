@@ -56,6 +56,21 @@ const SOURCE_PACKS = [
         detail: 'Entrances, supports, rails, carts, ores and equipment for planned mining sites',
       },
       {
+        variants: [
+          'cavern',
+          'desertHot',
+          'sandDunes',
+          'thornscrub',
+          'hills',
+          'mountain',
+          'forestTemperate',
+          'forestConifer',
+        ],
+        role: 'natural-rock-candidates',
+        consumer: 'src/terrain/flora/BiomePopulation.js',
+        detail: 'Dark cave outcrops and brown or mossy rocks for suitable outdoor biomes',
+      },
+      {
         variants: ['town', 'city', 'castle', 'ruinedCastle', 'dungeon'],
         role: 'forge-and-settlement-candidates',
         consumer: 'src/terrain/generation/InteriorProps.js',

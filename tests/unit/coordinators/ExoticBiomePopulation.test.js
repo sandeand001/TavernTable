@@ -158,6 +158,29 @@ describe('Biome-appropriate exotic populations', () => {
     );
   });
 
+  test.each([
+    ['cavern', /^pure-poly-rock-pile-/, /^pure-poly-rock-(brown|moss)-/],
+    ['desertHot', /^pure-poly-rock-brown-/, /^pure-poly-rock-moss-/],
+    ['forestTemperate', /^pure-poly-rock-moss-/, /^pure-poly-rock-brown-/],
+    ['forestConifer', /^pure-poly-rock-moss-/, /^pure-poly-rock-brown-/],
+    ['hills', /^pure-poly-rock-(brown|moss)-/, /^pure-poly-rock-pile-/],
+  ])(
+    '%s uses fitting purchased rocks without mixing incompatible finishes',
+    (biomeKey, expected, excluded) => {
+      const engine = new TerrainEngine(25, 25);
+      const placements = [1, 42, 99, 123, 456, 789].flatMap(
+        (seed) =>
+          engine.planBiomeGeneration(biomeKey, {
+            seed,
+            densityMultiplier: 1.65,
+            assetPack: 'pure-poly',
+          }).placements
+      );
+      expect(placements.some(({ modelKey }) => expected.test(modelKey))).toBe(true);
+      expect(placements.some(({ modelKey }) => excluded.test(modelKey))).toBe(false);
+    }
+  );
+
   test('all reviewed crystal-cluster colors can be placed deliberately in a cavern', () => {
     const engine = new TerrainEngine(10, 10);
     engine.setBiome('cavern', { generateIfFlat: false });

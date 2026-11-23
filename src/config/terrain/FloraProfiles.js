@@ -727,11 +727,13 @@ function purePolyProfile(biomeKey) {
     }
   } else if (biomeKey === 'desertHot' || biomeKey === 'sandDunes') {
     add('cactus', 4);
+    add('rock', 1);
     density = 0.035;
     spacing = 4;
     elevationFilter = (_context, height) => Number.isFinite(height) && height >= 0;
   } else if (biomeKey === 'thornscrub' || biomeKey === 'oasis') {
     add('cactus', biomeKey === 'oasis' ? 3 : 6);
+    if (biomeKey === 'thornscrub') add('rock', 1);
   } else if (biomeKey === 'grassland') {
     add('grass', 8);
     add('pebble', 1);
@@ -744,6 +746,7 @@ function purePolyProfile(biomeKey) {
       add('tree', 12);
       add('grass', 3);
       add('pebble', 2);
+      add('rock', 1.5);
     }
   } else if (
     [
@@ -766,6 +769,7 @@ function purePolyProfile(biomeKey) {
     add('tree', purchasedWeight);
     if (biomeKey === 'forestConifer' || biomeKey === 'hills') add('grass', 3);
     if (['forestConifer', 'hills', 'mountain', 'alpine'].includes(biomeKey)) add('pebble', 2);
+    if (['forestConifer', 'hills', 'mountain'].includes(biomeKey)) add('rock', 1.5);
   } else {
     throw new Error(`Pure Poly scenery is not available for ${biomeKey}`);
   }
