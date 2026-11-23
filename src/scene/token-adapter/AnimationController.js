@@ -24,6 +24,8 @@ import { getManualAction } from '../../config/HumanoidActionCatalog.js';
 import { cloneHumanoidRig, retargetHumanoidClip } from './HumanoidRig.js';
 import { getTokenConditions } from '../../entities/creatures/TokenMovement.js';
 
+const EAGER_ANIMATION_BATCH_SIZE = 4;
+
 // ── Animation Setup & Clip Resolution ────────────────────────────
 
 async function _setupAnimationSet(tokenEntry, container, config, templateBundle) {
@@ -40,11 +42,16 @@ async function _setupAnimationSet(tokenEntry, container, config, templateBundle)
     targetCacheKey,
     retarget: config.retargetAnimations === true,
   };
-  for (const [key, descriptor] of Object.entries(animationsConfig)) {
-    if (descriptor.lazy) continue;
-    const clip = await this._resolveAnimationClip(descriptor, null, clipOptions);
-    if (!clip) throw new Error(`Configured character animation is unavailable: ${key}`);
-    loaded[key] = clip;
+  const eager = Object.entries(animationsConfig).filter(([, descriptor]) => !descriptor.lazy);
+  for (let index = 0; index < eager.length; index += EAGER_ANIMATION_BATCH_SIZE) {
+    const batch = await Promise.all(
+      eager.slice(index, index + EAGER_ANIMATION_BATCH_SIZE).map(async ([key, descriptor]) => {
+        const clip = await this._resolveAnimationClip(descriptor, null, clipOptions);
+        if (!clip) throw new Error(`Configured character animation is unavailable: ${key}`);
+        return [key, clip];
+      })
+    );
+    for (const [key, clip] of batch) loaded[key] = clip;
   }
   if (!animationsConfig.idle) {
     const fallback = this._selectPrimaryClip(templateBundle?.animations);

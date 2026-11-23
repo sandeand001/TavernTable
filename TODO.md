@@ -122,6 +122,8 @@ Current audit (2026-11-23):
       camera histories are implemented and tested; authenticated networking remains.
       Track the active networking rollout under
       [Local Hosting, Backups and Multiplayer](#local-hosting-backups-and-multiplayer).
+      A raw generic-token fixture logged a focus error before its first connected-world
+      checkpoint; the corresponding manual-placement path needs direct verification.
 - [x] **Render synchronized cross-grid projections** - Render visible off-map
       characters at their translated position, facing and animation. Resolve
       clicks and targeting to their original ID; do not duplicate state or grant
@@ -409,12 +411,12 @@ grid/reset work also underpins independent chamber generation.
       existing saves and the approved Village visuals. Package selected
       restricted models through encrypted delivery, keeping originals and keys
       private, and verify local/cloud behavior and release packaging.
-      Progress: 2,597 individual FBX variants are cataloged. Eighty-six
+      Progress: 2,597 individual FBX variants are cataloged. One hundred and three
       selected formations, rocks, pebbles, crystal clusters, trees, grass, cacti, fungi, ore and
       deliberate-site props are encrypted. The natural models default for new
       supported biome choices only after key access is verified; built-in scenery
       remains selectable and saved choices are preserved. Ore and built-site props are
-      manual-only. The other 2,511 remain source-only, not discarded or approved for runtime
+      manual-only. The other 2,494 remain source-only, not discarded or approved for runtime
       placement. Mining, forge, construction, equipment and other categories
       remain to be reviewed and integrated; visual acceptance remains open.
       Small Pure Poly grass and pebble clusters are passable ground cover in suitable biomes.
@@ -423,6 +425,8 @@ grid/reset work also underpins independent chamber generation.
       Six distinct leafless trees add variety to protected Dead Forest generation.
       Both scenery choices use leafless legacy trees rather than the crimson-leafed
       model previously labeled bare; existing placements are unchanged.
+      Three ore-stone shapes in seven colors are available as manual decorations;
+      mining interactions and depleted states remain unimplemented.
       New trees, cacti and rocks retain the existing grid-cell movement policy;
       physical footprint and cluster collision remain a separate open task.
 - [ ] **Organic natural routes and scenery clearance** - High-density Caverns
@@ -1461,6 +1465,8 @@ deliberately read-only first slice, not a complete multiplayer combat platform.
       snapshot/notification traffic and caches, and keep per-client graphics
       quality independent of authoritative gameplay. Revisit the performance
       audit before adding particle-heavy VFX.
+      Eager humanoid clips now load in bounded parallel batches; lazy action clips
+      remain on demand and failed loads remain retryable.
 - [ ] **Cloud M5-06 - Ten-client full-session acceptance** - Run the
       representative hosted full-session rehearsal for overlapping valid moves,
       conflict rejection, facing/motion continuity, reconnects and animation

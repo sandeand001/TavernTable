@@ -10,6 +10,7 @@ import { TOKEN_3D_MODELS } from '../../../../src/config/token-adapter/MannequinC
 import { CREATURE_SCALES } from '../../../../src/config/GameConstants.js';
 import { getTokenCommand } from '../../../../src/config/TokenCommandConfig.js';
 import { GameValidators } from '../../../../src/utils/Validation.js';
+import { GameErrors } from '../../../../src/utils/error/ErrorHandler.js';
 import { createCreature } from '../../../../src/entities/creatures/CreatureFactory.js';
 import { getCreatureTypeLabel } from '../../../../src/entities/creatures/creatureHelpers.js';
 import { setTokenMovementSettings } from '../../../../src/entities/creatures/TokenMovement.js';
@@ -72,6 +73,101 @@ test('one action definition supplies the menu, clip and playback metadata withou
   }
   expect(HUMANOID_ANIMATIONS.jump.path).toContain('Rumba Dancing');
   expect(HUMANOID_ANIMATIONS.actionJump.path).toContain('Jumping.fbx');
+});
+
+test('a cold character loads eager animations in bounded parallel batches', async () => {
+  const loader = three.FileLoader.prototype.load;
+  const original = loader.getMockImplementation();
+  const names = [
+    'Standing Idle.fbx',
+    'Walking.fbx',
+    'running.fbx',
+    'Run Backward.fbx',
+    'Sprint.fbx',
+  ];
+  const started = [];
+  let release;
+  let idleStarted;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const firstAnimation = new Promise((resolve) => {
+    idleStarted = resolve;
+  });
+  let idleRequests = 0;
+  loader.mockImplementation(function (url, onLoad, onProgress, onError) {
+    const name = decodeURIComponent(url).split(/[\\/]/).at(-1);
+    if (name === names[0] && ++idleRequests === 1)
+      return original.call(this, url, onLoad, onProgress, onError);
+    if (!names.includes(name)) return original.call(this, url, onLoad, onProgress, onError);
+    started.push(name);
+    if (name === names[0]) idleStarted();
+    void gate.then(() => original.call(this, url, onLoad, onProgress, onError));
+  });
+  const creating = createHumanoidFixture({
+    type: 'mannequin',
+    animationKeys: ['idle', 'walk', 'run', 'runBackward', 'sprint'],
+    warmupFrames: 0,
+  });
+  try {
+    await firstAnimation;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(expect.arrayContaining(names.slice(0, 4)));
+    expect(started).not.toContain('Sprint.fbx');
+  } finally {
+    release();
+    try {
+      const created = await creating;
+      fixtures.push(created);
+      expect(created.adapter.hasAnimation(created.token, 'sprint')).toBe(true);
+    } finally {
+      loader.mockImplementation(original);
+    }
+  }
+});
+
+test('a failed eager animation reports the error and a later character load can retry', async () => {
+  const f = await fixture({ type: 'mannequin', animationKeys: ['idle'], warmupFrames: 0 });
+  const { adapter, gm } = f;
+  const token = {
+    id: 'retry-character',
+    type: 'mannequin',
+    gridX: 4,
+    gridY: 4,
+    facingAngle: 0,
+    world: { x: 4.5, y: 0, z: 4.5 },
+    movementSettings: { speed: 30, mode: 'walk', type: 'default' },
+  };
+  gm.placedTokens.push(token);
+  adapter._animationClipCache.clear();
+  adapter._animationSourceCache.clear();
+  const loader = three.FileLoader.prototype.load;
+  const original = loader.getMockImplementation();
+  const errors = jest.spyOn(GameErrors, 'rendering').mockImplementation(() => {});
+  let unavailable = true;
+  loader.mockImplementation(function (url, onLoad, onProgress, onError) {
+    if (unavailable && decodeURIComponent(url).endsWith('/Walking.fbx')) {
+      queueMicrotask(() => onError(new Error('Fixture animation unavailable')));
+      return;
+    }
+    return original.call(this, url, onLoad, onProgress, onError);
+  });
+  try {
+    expect(await adapter.onTokenAdded(token)).toBeNull();
+    expect(errors).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/Walking\.fbx/) }),
+      expect.objectContaining({ operation: 'create3DToken', tokenId: token.id })
+    );
+    expect(token.__threeMesh).toBeUndefined();
+    unavailable = false;
+    expect(await adapter.onTokenAdded(token)).toBeTruthy();
+    expect(adapter.hasAnimation(token, 'walk')).toBe(true);
+    expect(adapter.hasAnimation(token, 'run')).toBe(true);
+  } finally {
+    loader.mockImplementation(original);
+    errors.mockRestore();
+    adapter.onTokenRemoved(token);
+  }
 });
 
 test('the actual mannequin body is precisely selectable after model setup', async () => {
