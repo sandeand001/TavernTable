@@ -113,6 +113,26 @@ describe('Biome-appropriate exotic populations', () => {
     ).toBe(true);
   });
 
+  test.each([
+    ['desertHot', /^pure-poly-cactus-(02|03|09|13|17|22)$/],
+    ['screeSlope', /^pure-poly-pebbles-(08|09)$/],
+    ['cavern', /^pure-poly-mushroom-(brown-(02|08)|long-(07|10))$/],
+  ])('%s can generate additional reviewed natural scenery', (biomeKey, pattern) => {
+    const engine = new TerrainEngine(25, 25);
+    const placements = [1, 42, 99, 123, 456, 789].flatMap(
+      (seed) =>
+        engine.planBiomeGeneration(biomeKey, {
+          seed,
+          densityMultiplier: 1.65,
+          assetPack: 'pure-poly',
+        }).placements
+    );
+    expect(placements.some(({ modelKey }) => pattern.test(modelKey))).toBe(true);
+    expect(
+      placements.every(({ placeableId }) => isAssetAllowedInBiome(placeableId, biomeKey))
+    ).toBe(true);
+  });
+
   test('ore variants are manually placeable and passable, not random cavern scenery', () => {
     const engine = new TerrainEngine(25, 25);
     engine.setBiome('cavern', { generateIfFlat: false });
@@ -224,7 +244,7 @@ describe('Biome-appropriate exotic populations', () => {
     }
   );
 
-  test('fungal groves use purchased mushroom clusters without scattering them in natural caves', () => {
+  test('fungal groves use brighter mushroom clusters without scattering them in natural caves', () => {
     const engine = new TerrainEngine(25, 25);
     const options = { seed: 42, densityMultiplier: 1.65, assetPack: 'pure-poly' };
     const grove = engine.planBiomeGeneration('fungalGrove', options);

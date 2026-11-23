@@ -186,6 +186,20 @@
       "sha256": "7c359642be0f9034bd8fec70d3b77b9481a55fab319e2cadeff5b52316701c58"
     },
     {
+      "assetId": "pure-poly-pebbles-08",
+      "source": "PP_Pebbles_08.fbx",
+      "path": "assets/protected/pure-poly-pebbles-08.ttasset",
+      "bytes": 24520,
+      "sha256": "d72216262e07af96c201801dcce651ceab71c29095ae8d29cee1f3ea5c659a59"
+    },
+    {
+      "assetId": "pure-poly-pebbles-09",
+      "source": "PP_Pebbles_09.fbx",
+      "path": "assets/protected/pure-poly-pebbles-09.ttasset",
+      "bytes": 25104,
+      "sha256": "4449276db3f4a81bccc5c38f501c91869edb9937c87d5c53d90348c22000a99e"
+    },
+    {
       "assetId": "pure-poly-crystal-cluster-01",
       "source": "PP_Crystal_Cluster_01_Blue.fbx",
       "path": "assets/protected/pure-poly-crystal-cluster-01.ttasset",
@@ -487,11 +501,32 @@
       "sha256": "b524a79f26f732eafd5b1760f24fed3b7f552bfdbdc8c61701dbc2e92a77d685"
     },
     {
+      "assetId": "pure-poly-cactus-02",
+      "source": "PP_Cactus_02.fbx",
+      "path": "assets/protected/pure-poly-cactus-02.ttasset",
+      "bytes": 125992,
+      "sha256": "35fb2177295cb2193b45ba002e39a32b4e28f43e2acd9636907a70426af5a64a"
+    },
+    {
+      "assetId": "pure-poly-cactus-03",
+      "source": "PP_Cactus_03.fbx",
+      "path": "assets/protected/pure-poly-cactus-03.ttasset",
+      "bytes": 194120,
+      "sha256": "0e68bb2dbe01fdebab8e89e2ad51a538e4e9ff3d87b9a6393ba74beca01d148a"
+    },
+    {
       "assetId": "pure-poly-cactus-06",
       "source": "PP_Cactus_06.fbx",
       "path": "assets/protected/pure-poly-cactus-06.ttasset",
       "bytes": 62764,
       "sha256": "40f7df252b66d2118ffa293b9a8d3619b4c77c5a97ed90d6895188139d40761c"
+    },
+    {
+      "assetId": "pure-poly-cactus-09",
+      "source": "PP_Cactus_09.fbx",
+      "path": "assets/protected/pure-poly-cactus-09.ttasset",
+      "bytes": 121260,
+      "sha256": "ad4a671be1a46e0e0bcdaa392c60b215020b0207ebf9352dd7d79795ba8df809"
     },
     {
       "assetId": "pure-poly-cactus-12",
@@ -501,11 +536,32 @@
       "sha256": "cc688b4e971d03ede04c16317a6fba203797691ccd417b74245f234398f02c28"
     },
     {
+      "assetId": "pure-poly-cactus-13",
+      "source": "PP_Cactus_13.fbx",
+      "path": "assets/protected/pure-poly-cactus-13.ttasset",
+      "bytes": 73472,
+      "sha256": "247e43dd6b2b0226228f0b9548366182b2603767e956c0d3663003ddea32f18e"
+    },
+    {
       "assetId": "pure-poly-cactus-16",
       "source": "PP_Cactus_16.fbx",
       "path": "assets/protected/pure-poly-cactus-16.ttasset",
       "bytes": 53996,
       "sha256": "9131dabca542a1a3ce323d908e4bf8e47cef7356cbf5f1bbc993b5fb0817c12f"
+    },
+    {
+      "assetId": "pure-poly-cactus-17",
+      "source": "PP_Cactus_17.fbx",
+      "path": "assets/protected/pure-poly-cactus-17.ttasset",
+      "bytes": 120132,
+      "sha256": "a9654d09176746b196131cbcccbb4ec4d9edb6f748da0b4d706cdd6f2b91fa4c"
+    },
+    {
+      "assetId": "pure-poly-cactus-22",
+      "source": "PP_Cactus_22.fbx",
+      "path": "assets/protected/pure-poly-cactus-22.ttasset",
+      "bytes": 117620,
+      "sha256": "6d5d740b4e01310305b2e07b2bbcc3cecd9ee1db9d0cc084dbf73dad02f99b98"
     },
     {
       "assetId": "pure-poly-mushroom-brown-01",
@@ -515,11 +571,25 @@
       "sha256": "8b4e6816c84b37e315bd648f1f7e818f86ef3bdbdd18c778ad8195e1db9da0b9"
     },
     {
+      "assetId": "pure-poly-mushroom-brown-02",
+      "source": "PP_Mushroom_Dark_Brown_02.fbx",
+      "path": "assets/protected/pure-poly-mushroom-brown-02.ttasset",
+      "bytes": 67936,
+      "sha256": "a2760d184295c91e778d1eecf10547471ec2a94b8f57cf91f18dc1d8a26d2f14"
+    },
+    {
       "assetId": "pure-poly-mushroom-brown-03",
       "source": "PP_Mushroom_Dark_Brown_03.fbx",
       "path": "assets/protected/pure-poly-mushroom-brown-03.ttasset",
       "bytes": 34704,
       "sha256": "dadee49b1b61492395c7926b7a998e9821d201546c96969a7fba90fc0066c407"
+    },
+    {
+      "assetId": "pure-poly-mushroom-brown-08",
+      "source": "PP_Mushroom_Dark_Brown_08.fbx",
+      "path": "assets/protected/pure-poly-mushroom-brown-08.ttasset",
+      "bytes": 88076,
+      "sha256": "7e37d8396fb280e72d953227b17b3e46c335e5f2c84142d23ce79d32024a5b21"
     },
     {
       "assetId": "pure-poly-mushroom-long-02",
@@ -534,6 +604,20 @@
       "path": "assets/protected/pure-poly-mushroom-long-03.ttasset",
       "bytes": 35456,
       "sha256": "c9ac8bebed5577c17e62868945fd035a39314f91e5502444cf98e56ec4013f1e"
+    },
+    {
+      "assetId": "pure-poly-mushroom-long-07",
+      "source": "PP_Mushroom_Long_Dark_Brown_07.fbx",
+      "path": "assets/protected/pure-poly-mushroom-long-07.ttasset",
+      "bytes": 65812,
+      "sha256": "17e702ece2a76081e8785730fab927cb8f923e03ba32c5159cbff839d4828a36"
+    },
+    {
+      "assetId": "pure-poly-mushroom-long-10",
+      "source": "PP_Mushroom_Long_Dark_Brown_10.fbx",
+      "path": "assets/protected/pure-poly-mushroom-long-10.ttasset",
+      "bytes": 91896,
+      "sha256": "483cb968a7a55bdf541e2aa7b002a0c4b861b2670212c4911be753109333797c"
     },
     {
       "assetId": "pure-poly-mushroom-cluster-01",

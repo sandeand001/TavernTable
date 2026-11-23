@@ -136,6 +136,8 @@ export const PURE_POLY_ASSETS = Object.freeze([
       ['pure-poly-pebbles-04', 'PP_Pebbles_04', 'assets/protected/pure-poly-pebbles-04.ttasset'],
       ['pure-poly-pebbles-05', 'PP_Pebbles_05', 'assets/protected/pure-poly-pebbles-05.ttasset'],
       ['pure-poly-pebbles-06', 'PP_Pebbles_06', 'assets/protected/pure-poly-pebbles-06.ttasset'],
+      ['pure-poly-pebbles-08', 'PP_Pebbles_08', 'assets/protected/pure-poly-pebbles-08.ttasset'],
+      ['pure-poly-pebbles-09', 'PP_Pebbles_09', 'assets/protected/pure-poly-pebbles-09.ttasset'],
     ]
   ),
   ...pack(
@@ -441,9 +443,15 @@ export const PURE_POLY_ASSETS = Object.freeze([
     2,
     [
       ['pure-poly-cactus-01', 'PP_Cactus_01', 'assets/protected/pure-poly-cactus-01.ttasset', 2.4],
+      ['pure-poly-cactus-02', 'PP_Cactus_02', 'assets/protected/pure-poly-cactus-02.ttasset', 2.1],
+      ['pure-poly-cactus-03', 'PP_Cactus_03', 'assets/protected/pure-poly-cactus-03.ttasset', 1.6],
       ['pure-poly-cactus-06', 'PP_Cactus_06', 'assets/protected/pure-poly-cactus-06.ttasset'],
+      ['pure-poly-cactus-09', 'PP_Cactus_09', 'assets/protected/pure-poly-cactus-09.ttasset', 2.8],
       ['pure-poly-cactus-12', 'PP_Cactus_12', 'assets/protected/pure-poly-cactus-12.ttasset', 1.4],
+      ['pure-poly-cactus-13', 'PP_Cactus_13', 'assets/protected/pure-poly-cactus-13.ttasset', 1.2],
       ['pure-poly-cactus-16', 'PP_Cactus_16', 'assets/protected/pure-poly-cactus-16.ttasset', 0.55],
+      ['pure-poly-cactus-17', 'PP_Cactus_17', 'assets/protected/pure-poly-cactus-17.ttasset', 2.6],
+      ['pure-poly-cactus-22', 'PP_Cactus_22', 'assets/protected/pure-poly-cactus-22.ttasset', 1.8],
     ]
   ),
   ...pack(
@@ -459,9 +467,19 @@ export const PURE_POLY_ASSETS = Object.freeze([
         'assets/protected/pure-poly-mushroom-brown-01.ttasset',
       ],
       [
+        'pure-poly-mushroom-brown-02',
+        'PP_Mushroom_Dark_Brown_02',
+        'assets/protected/pure-poly-mushroom-brown-02.ttasset',
+      ],
+      [
         'pure-poly-mushroom-brown-03',
         'PP_Mushroom_Dark_Brown_03',
         'assets/protected/pure-poly-mushroom-brown-03.ttasset',
+      ],
+      [
+        'pure-poly-mushroom-brown-08',
+        'PP_Mushroom_Dark_Brown_08',
+        'assets/protected/pure-poly-mushroom-brown-08.ttasset',
       ],
       [
         'pure-poly-mushroom-long-02',
@@ -473,6 +491,18 @@ export const PURE_POLY_ASSETS = Object.freeze([
         'pure-poly-mushroom-long-03',
         'PP_Mushroom_Long_Dark_Brown_03',
         'assets/protected/pure-poly-mushroom-long-03.ttasset',
+        0.95,
+      ],
+      [
+        'pure-poly-mushroom-long-07',
+        'PP_Mushroom_Long_Dark_Brown_07',
+        'assets/protected/pure-poly-mushroom-long-07.ttasset',
+        0.95,
+      ],
+      [
+        'pure-poly-mushroom-long-10',
+        'PP_Mushroom_Long_Dark_Brown_10',
+        'assets/protected/pure-poly-mushroom-long-10.ttasset',
         0.95,
       ],
     ]
